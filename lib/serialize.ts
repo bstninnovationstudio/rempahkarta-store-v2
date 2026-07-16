@@ -1,0 +1,8 @@
+export function serializeBigInt<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  return JSON.parse(
+    JSON.stringify(obj, (_, value) =>
+      typeof value === "bigint" ? Number(value) : value
+    )
+  );
+}

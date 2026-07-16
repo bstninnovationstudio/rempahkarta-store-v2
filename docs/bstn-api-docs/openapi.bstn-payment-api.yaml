@@ -1,0 +1,2082 @@
+openapi: 3.1.0
+info:
+  title: BSTN Payment API
+  version: 1.0.0
+  description: |
+    Production API contract for Payment Page - BSTN Innovation Studio.
+    Current stable API version: v1. The `/api/v1` response format is standardized across SNAP Link Midtrans and Dynamic QRIS.
+    Versioning rule: breaking changes will use a new path version such as `/api/v2`; fields added to `/api/v1` are backwards-compatible.
+servers:
+  - url: https://www.bstn-innovation-studio.web.id
+    description: Production
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Payments
+    description: Project-authenticated payment operations
+  - name: Messaging
+    description: Project-authenticated WhatsApp and email messaging operations
+  - name: Public Payment Page
+    description: Public token-based payment page data
+  - name: Provider Webhook
+    description: Webhook endpoint for Midtrans HTTP notifications
+  - name: Workspace Webhook
+    description: Outbound final payment notification sent to workspace systems
+  - name: System
+    description: Health and documentation endpoints
+paths:
+  /api/v1/payments:
+    post:
+      tags:
+        - Payments
+      summary: Create payment
+      description: |
+        Create a payment for a BSTN internal project and return a BSTN payment page URL.
+        Provider can be selected with `payment_provider`: `qris_dynamic` or `midtrans`. Default provider is `qris_dynamic`.
+        For Midtrans, the Payment Page embeds the SNAP URL. Midtrans QRIS image creation is no longer supported.
+        For qris_dynamic, the API converts `QRIS_DYNAMIC_RAW` into a dynamic QRIS payload, adds a 2-digit unique code plus admin fee, and validates payment from Midtrans QRIS webhook `gross_amount`.
+        The API is idempotent by project_id plus project_payment_ref.
+        All providers return the same response schema. Provider-specific values that do not apply are returned as `null` inside `midtrans`, `qris`, and `provider` objects.
+        The Midtrans environment is selected from the API key prefix: `bstn_test_*` uses sandbox and `bstn_live_*` uses production.
+        If the project is in maintenance mode, new payments are rejected while existing payment status/sync/cancel/webhook operations remain available.
+      operationId: createPayment
+      security:
+        - ProjectBearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+          description: Optional client idempotency key. Business idempotency still uses project_payment_ref.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+            examples:
+              localDynamicQrisDefault:
+                summary: Local dynamic QRIS default payment
+                value:
+                  project_payment_ref: INV-DYNQRIS-20260513-0001
+                  amount: 100000
+                  currency: IDR
+                  description: Default local dynamic QRIS payment example
+                  customer:
+                    name: Budi Santoso
+                    email: budi@example.com
+                  items:
+                    - id: DYNQRIS-001
+                      name: Local dynamic QRIS invoice
+                      price: 100000
+                      quantity: 1
+                  redirect_url: https://project.example.com/payment/return
+                  finish_url: https://project.example.com/orders/INV-DYNQRIS-20260513-0001/payment-finished
+                  expiry_minutes: 15
+              snap:
+                summary: SNAP payment URL on BSTN Payment Page
+                value:
+                  project_payment_ref: INV-SNAP-20260513-0002
+                  amount: 150000
+                  currency: IDR
+                  description: Pembayaran invoice INV-20260513-0001
+                  payment_mode: snap
+                  payment_provider: midtrans
+                  image_qris: false
+                  customer:
+                    name: Budi Santoso
+                    email: budi@example.com
+                    phone: '+6281234567890'
+                  items:
+                    - id: INV-001
+                      name: Invoice INV-20260513-0001
+                      price: 150000
+                      quantity: 1
+                  redirect_url: https://project.example.com/payment/return
+                  finish_url: https://project.example.com/orders/INV-20260513-0001/payment-finished
+                  expiry_minutes: 15
+                  metadata:
+                    user_id: user_123
+                    module: subscription
+              localDynamicQris:
+                summary: Local dynamic QRIS from static QRIS raw payload
+                value:
+                  project_payment_ref: INV-DYNQRIS-20260513-0005
+                  amount: 100000
+                  currency: IDR
+                  description: Local dynamic QRIS payment example
+                  payment_provider: qris_dynamic
+                  image_qris: true
+                  customer:
+                    name: Budi Santoso
+                    email: budi@example.com
+                  items:
+                    - id: DYNQRIS-001
+                      name: Local dynamic QRIS invoice
+                      price: 100000
+                      quantity: 1
+                  redirect_url: https://project.example.com/payment/return
+                  finish_url: https://project.example.com/orders/INV-DYNQRIS-20260513-0005/payment-finished
+      responses:
+        '201':
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentEnvelope'
+        '200':
+          description: Existing payment returned due to idempotency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+        '503':
+          $ref: '#/components/responses/MaintenanceError'
+  /api/v1/payments/{payment_id}:
+    get:
+      tags:
+        - Payments
+      summary: Get payment detail from database
+      description: |
+        Internal/workspace endpoint to read the local BSTN payment record.
+        This endpoint does not call Midtrans and does not mutate payment status.
+        Use it for audit/debugging or to retrieve the saved payment_page_url, Midtrans payment URL, and local transaction snapshot.
+        For status refresh that syncs from Midtrans, use `GET /api/v1/payments/{payment_id}/status`.
+      operationId: getPayment
+      security:
+        - ProjectBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment found in local database
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentEnvelope'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/payments/{payment_id}/status:
+    get:
+      tags:
+        - Payments
+      summary: Get payment status
+      description: Workspace status endpoint that returns compact payment status and syncs from Midtrans first when the payment is not terminal. The Payment Page Refresh button uses `GET /api/v1/payment-page/{token}/status`, not this workspace-authenticated endpoint.
+      operationId: getPaymentStatus
+      security:
+        - ProjectBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment status found
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                      - payment_id
+                      - payment_provider
+                      - order_id
+                      - status
+                      - amount
+                      - currency
+                    properties:
+                      payment_id:
+                        type: string
+                      payment_provider:
+                        $ref: '#/components/schemas/PaymentProvider'
+                      order_id:
+                        type: string
+                      status:
+                        $ref: '#/components/schemas/PaymentStatus'
+                      status_before:
+                        $ref: '#/components/schemas/PaymentStatus'
+                      amount:
+                        type: integer
+                      currency:
+                        type: string
+                      midtrans:
+                        oneOf:
+                          - $ref: '#/components/schemas/MidtransSummary'
+                          - type: 'null'
+                      midtrans_status_not_found:
+                        type: boolean
+                      synced_from_midtrans:
+                        type: boolean
+                      expires_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      paid_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+  /api/v1/payments/{payment_id}/sync:
+    post:
+      tags:
+        - Payments
+      summary: Manually sync payment status from Midtrans
+      description: |
+        Internal/operational endpoint to force a Midtrans GET Status call and reconcile the local database.
+        This endpoint is mainly for debugging or exceptional operational checks, including terminal follow-up states such as refund or chargeback when a webhook was missed.
+        For normal workspace status checks, prefer `GET /api/v1/payments/{payment_id}/status`.
+      operationId: syncPayment
+      security:
+        - ProjectBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  maxLength: 160
+                  examples:
+                    - manual_project_check_after_return
+      responses:
+        '200':
+          description: Payment synced from Midtrans
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SyncPaymentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+  /api/v1/payments/{payment_id}/cancel:
+    post:
+      tags:
+        - Payments
+      summary: Cancel payment
+      description: Internal/operational endpoint to cancel a pending payment through BSTN backend and Midtrans when applicable.
+      operationId: cancelPayment
+      security:
+        - ProjectBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+                  examples:
+                    - customer_requested
+      responses:
+        '200':
+          description: Payment cancel request processed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    type: object
+                    required:
+                      - payment_id
+                      - payment_provider
+                      - order_id
+                      - status
+                      - status_before
+                      - status_after
+                      - internal_only
+                      - idempotent
+                    properties:
+                      payment_id:
+                        type: string
+                      payment_provider:
+                        $ref: '#/components/schemas/PaymentProvider'
+                      order_id:
+                        type: string
+                      status:
+                        $ref: '#/components/schemas/PaymentStatus'
+                      midtrans_status:
+                        type:
+                          - string
+                          - 'null'
+                      status_before:
+                        $ref: '#/components/schemas/PaymentStatus'
+                      status_after:
+                        $ref: '#/components/schemas/PaymentStatus'
+                      internal_only:
+                        type: boolean
+                      idempotent:
+                        type: boolean
+                      canceled_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Payment cannot be canceled in current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+  /api/v1/payments/{payment_id}/webhook/resend:
+    post:
+      tags:
+        - Payments
+      summary: Resend workspace webhook
+      description: Internal/operational endpoint to manually resend the sanitized final payment webhook to the workspace webhook target. The target is the project's current default_webhook_url, falling back to the payment webhook_url for legacy records. The payment must already be terminal. Every resend creates a delivery attempt record and updates the delivery summary.
+      operationId: resendWorkspaceWebhook
+      security:
+        - ProjectBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Workspace webhook resend attempted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    type: object
+                    required:
+                      - payment_id
+                      - payment_provider
+                      - status
+                      - target_url
+                      - delivery_id
+                      - attempt_id
+                      - attempt_number
+                      - response_valid
+                    properties:
+                      payment_id:
+                        type: string
+                      payment_provider:
+                        $ref: '#/components/schemas/PaymentProvider'
+                      status:
+                        $ref: '#/components/schemas/PaymentStatus'
+                      target_url:
+                        type:
+                          - string
+                          - 'null'
+                        format: uri
+                      delivery_id:
+                        type:
+                          - string
+                          - 'null'
+                      attempt_id:
+                        type:
+                          - string
+                          - 'null'
+                      attempt_number:
+                        type:
+                          - integer
+                          - 'null'
+                      response_status:
+                        type:
+                          - integer
+                          - 'null'
+                      response_valid:
+                        type: boolean
+                      error:
+                        type:
+                          - string
+                          - 'null'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Payment is not terminal or no workspace webhook target is configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/payment-page/{token}:
+    get:
+      tags:
+        - Public Payment Page
+      summary: Get public payment page data
+      description: Return safe public payment data for /pay/{token}.
+      operationId: getPublicPaymentPage
+      parameters:
+        - $ref: '#/components/parameters/PaymentPageToken'
+      responses:
+        '200':
+          description: Public payment page data
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicPaymentPageResponse'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '410':
+          description: Payment page token expired or no longer available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/payment-page/{token}/status:
+    get:
+      tags:
+        - Public Payment Page
+      summary: Get public payment page status
+      description: Internal endpoint used by the public payment landing page. It reconciles expiry locally and may sync from Midtrans while the payment is not terminal.
+      operationId: getPublicPaymentPageStatus
+      parameters:
+        - $ref: '#/components/parameters/PaymentPageToken'
+      responses:
+        '200':
+          description: Public payment page status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicPaymentStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/payment-page/{token}/cancel:
+    post:
+      tags:
+        - Public Payment Page
+      summary: Cancel payment from payment page
+      description: Internal endpoint used by the public payment page Cancel button. It does not require ProjectBearerAuth because possession of the public token is the authorization boundary for this customer action.
+      operationId: cancelPublicPaymentPagePayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentPageToken'
+      responses:
+        '200':
+          description: Payment cancel request processed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    const: true
+                  data:
+                    type: object
+                    required:
+                      - payment_id
+                      - status
+                      - is_terminal
+                      - server_time
+                      - order_id
+                      - internal_only
+                      - idempotent
+                    properties:
+                      payment_id:
+                        type: string
+                      status:
+                        $ref: '#/components/schemas/PaymentStatus'
+                      is_terminal:
+                        type: boolean
+                      midtrans_transaction_status:
+                        type:
+                          - string
+                          - 'null'
+                      midtrans_payment_type:
+                        type:
+                          - string
+                          - 'null'
+                      sync:
+                        type: object
+                        additionalProperties: true
+                      expires_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      paid_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      canceled_at:
+                        type:
+                          - string
+                          - 'null'
+                        format: date-time
+                      redirect_url:
+                        type:
+                          - string
+                          - 'null'
+                        format: uri
+                      server_time:
+                        type: string
+                        format: date-time
+                      order_id:
+                        type: string
+                      midtrans_status:
+                        type:
+                          - string
+                          - 'null'
+                      internal_only:
+                        type: boolean
+                      idempotent:
+                        type: boolean
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: Payment cannot be canceled in current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+  /api/v1/webhooks/midtrans:
+    get:
+      tags:
+        - Provider Webhook
+      summary: Check provider webhook reachability
+      description: Returns the configured Midtrans notification endpoint so operators can verify that the public URL is reachable.
+      operationId: checkProviderWebhookReachability
+      responses:
+        '200':
+          description: Webhook endpoint is reachable
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - endpoint
+                  - message
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  endpoint:
+                    type: string
+                    format: uri
+                  message:
+                    type: string
+    post:
+      tags:
+        - Provider Webhook
+      summary: Receive Midtrans webhook
+      description: |
+        Receives Midtrans HTTP notification/webhook events.
+        This endpoint does not use ProjectBearerAuth. It verifies Midtrans `signature_key`.
+      operationId: receiveProviderWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MidtransWebhookPayload'
+            examples:
+              settlement:
+                value:
+                  transaction_time: '2026-05-13 16:02:20'
+                  transaction_status: settlement
+                  transaction_id: 6f3c-example
+                  status_message: midtrans payment notification
+                  status_code: '200'
+                  signature_key: example_signature
+                  payment_type: bank_transfer
+                  order_id: BSTN-DEMO-20260513-01HZX9T8NA2X
+                  merchant_id: G000000000
+                  gross_amount: '150000.00'
+                  fraud_status: accept
+      responses:
+        '200':
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '403':
+          description: Invalid provider signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/messages/whatsapp:
+    post:
+      tags:
+        - Messaging
+      summary: Send WhatsApp message
+      description: |
+        Send a WhatsApp text message through BSTN GOWA integration. `bstn_live_*` sends to the requested phone. `bstn_test_*` sends a real WhatsApp message to the configured BSTN test phone and returns `sandbox_redirected: true`.
+      operationId: sendWhatsappMessage
+      security:
+        - ProjectBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WhatsappMessageRequest'
+      responses:
+        '200':
+          description: WhatsApp message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WhatsappMessageResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+        '503':
+          $ref: '#/components/responses/MaintenanceError'
+  /api/v1/messages/email:
+    post:
+      tags:
+        - Messaging
+      summary: Send email
+      description: |
+        Send an email through BSTN centralized SMTP integration. `bstn_live_*` sends to the requested email. `bstn_test_*` sends a real email to the configured BSTN test inbox and returns `sandbox_redirected: true`.
+      operationId: sendEmailMessage
+      security:
+        - ProjectBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailMessageRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmailMultipartMessageRequest'
+      responses:
+        '200':
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailMessageResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+        '503':
+          $ref: '#/components/responses/MaintenanceError'
+  /api/v1/messages/whatsapp/media:
+    post:
+      tags:
+        - Messaging
+      summary: Send WhatsApp media
+      description: |
+        Send WhatsApp media through BSTN GOWA integration. This endpoint only accepts binary multipart file upload. Base64, media URL, image_url, and file_url inputs are rejected.
+      operationId: sendWhatsappMediaMessage
+      security:
+        - ProjectBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/WhatsappMediaRequest'
+      responses:
+        '200':
+          description: WhatsApp media sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WhatsappMediaResponseEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '413':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/MidtransError'
+        '503':
+          $ref: '#/components/responses/MaintenanceError'
+  /api/v1/health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - service
+                  - time
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  service:
+                    type: string
+                    examples:
+                      - bstn-payment-api
+                  time:
+                    type: string
+                    format: date-time
+  /api/v1/openapi:
+    get:
+      tags:
+        - System
+      summary: Get OpenAPI document
+      operationId: getOpenApiDocument
+      responses:
+        '200':
+          description: OpenAPI document
+          content:
+            application/yaml:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    ProjectBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: BSTN project API key (`bstn_test_*` sandbox or `bstn_live_*` production)
+  parameters:
+    PaymentId:
+      name: payment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^pay_[A-Za-z0-9]+$'
+      examples:
+        example:
+          value: pay_01HZX9T8NA2XABCDE12345
+    PaymentPageToken:
+      name: token
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 24
+        maxLength: 80
+      examples:
+        example:
+          value: 6zdDkLqMzW3vPzY9sXy1nB0aAeF2QpR7
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnauthorizedError:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ForbiddenError:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFoundError:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimitedError:
+      description: Rate limited
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Internal error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    MidtransError:
+      description: Midtrans upstream error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    MaintenanceError:
+      description: Project is in maintenance mode and cannot create new payments
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    WhatsappMessageRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+        - message
+      properties:
+        phone:
+          type: string
+          maxLength: 80
+          examples:
+            - '081234567890'
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        metadata:
+          type: object
+          additionalProperties: true
+    WhatsappMessageResponseEnvelope:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required:
+            - message_id
+            - channel
+            - provider_env
+            - status
+            - requested_phone
+            - phone
+            - target
+            - sandbox_redirected
+          properties:
+            message_id:
+              type: string
+            channel:
+              type: string
+              const: whatsapp
+            provider_env:
+              $ref: '#/components/schemas/ProviderEnv'
+            status:
+              type: string
+              const: sent
+            requested_phone:
+              type: string
+            phone:
+              type: string
+            target:
+              type: string
+            sandbox_redirected:
+              type: boolean
+            upstream_status:
+              type: integer
+            upstream:
+              type: object
+              additionalProperties: true
+    WhatsappMediaRequest:
+      type: object
+      required:
+        - phone
+        - kind
+        - file
+      properties:
+        phone:
+          type: string
+          maxLength: 80
+        kind:
+          type: string
+          enum:
+            - image
+            - document
+        caption:
+          type: string
+          maxLength: 4096
+        metadata:
+          type: string
+          description: Optional JSON object encoded as string.
+        file:
+          type: string
+          format: binary
+    WhatsappMediaResponseEnvelope:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required:
+            - message_id
+            - channel
+            - provider_env
+            - status
+            - requested_phone
+            - phone
+            - target
+            - sandbox_redirected
+            - media
+          properties:
+            message_id:
+              type: string
+            channel:
+              type: string
+              const: whatsapp
+            provider_env:
+              $ref: '#/components/schemas/ProviderEnv'
+            status:
+              type: string
+              const: sent
+            requested_phone:
+              type: string
+            phone:
+              type: string
+            target:
+              type: string
+            sandbox_redirected:
+              type: boolean
+            media:
+              type: object
+              properties:
+                kind:
+                  type: string
+                filename:
+                  type: string
+                mime:
+                  type: string
+                size:
+                  type: integer
+            upstream_status:
+              type: integer
+            upstream:
+              type: object
+              additionalProperties: true
+    EmailAttachment:
+      type: object
+      additionalProperties: false
+      required:
+        - filename
+      properties:
+        filename:
+          type: string
+          maxLength: 180
+        content_type:
+          type: string
+          maxLength: 120
+        content_base64:
+          type: string
+          description: Base64 encoded attachment content.
+        url:
+          type: string
+          format: uri
+      anyOf:
+        - required:
+            - content_base64
+        - required:
+            - url
+    EmailMessageRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - to
+        - subject
+      properties:
+        to:
+          type: string
+          format: email
+          maxLength: 320
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 255
+        from_name:
+          type: string
+          maxLength: 120
+        text:
+          type: string
+          maxLength: 10000
+        html:
+          type: string
+          maxLength: 50000
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/EmailAttachment'
+        metadata:
+          type: object
+          additionalProperties: true
+      oneOf:
+        - required:
+            - text
+        - required:
+            - html
+    EmailMultipartMessageRequest:
+      type: object
+      required:
+        - to
+        - subject
+        - body_mode
+        - body
+      properties:
+        to:
+          type: string
+          format: email
+          maxLength: 320
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 255
+        from_name:
+          type: string
+          maxLength: 120
+        body_mode:
+          type: string
+          enum:
+            - text
+            - html
+        body:
+          type: string
+          maxLength: 50000
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: binary
+        metadata:
+          type: string
+          description: Optional JSON object encoded as string.
+    EmailMessageResponseEnvelope:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required:
+            - message_id
+            - channel
+            - provider_env
+            - status
+            - requested_to
+            - to
+            - sandbox_redirected
+          properties:
+            message_id:
+              type: string
+            channel:
+              type: string
+              const: email
+            provider_env:
+              $ref: '#/components/schemas/ProviderEnv'
+            status:
+              type: string
+              const: sent
+            requested_to:
+              type: string
+              format: email
+            to:
+              type: string
+              format: email
+            sandbox_redirected:
+              type: boolean
+            smtp:
+              type: object
+              additionalProperties: true
+    CreatePaymentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - project_payment_ref
+        - amount
+        - items
+        - redirect_url
+      properties:
+        project_payment_ref:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Unique payment reference from the project.
+          examples:
+            - INV-20260513-0001
+        amount:
+          type: integer
+          minimum: 1
+          description: Gross amount in IDR.
+          examples:
+            - 150000
+        currency:
+          type: string
+          enum:
+            - IDR
+          default: IDR
+        description:
+          type: string
+          maxLength: 255
+          examples:
+            - Pembayaran invoice INV-20260513-0001
+        payment_mode:
+          type: string
+          enum:
+            - snap
+            - payment_link
+            - qris
+          default: qris
+          description: Default create flow is Local Dynamic QRIS. For Midtrans, legacy values `payment_link` and `qris` are still accepted and normalized to `snap`.
+        payment_provider:
+          $ref: '#/components/schemas/PaymentProvider'
+          default: qris_dynamic
+          description: Select `qris_dynamic` or `midtrans` payment creation flow.
+        provider:
+          $ref: '#/components/schemas/PaymentProvider'
+          description: Optional alias for payment_provider.
+        image_qris:
+          type: boolean
+          default: false
+          description: When true, response includes generated QRIS image data for Dynamic QRIS when available. Midtrans SNAP ignores this flag.
+        customer:
+          $ref: '#/components/schemas/Customer'
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/PaymentItemInput'
+        redirect_url:
+          type: string
+          format: uri
+          maxLength: 700
+          description: Legacy workspace return URL. Used as fallback when finish_url is omitted. Host must match the project allowlist. Allowlist entries can be exact hosts, full URLs, or suffix rules such as `.trycloudflare.com`.
+        finish_url:
+          type: string
+          format: uri
+          maxLength: 700
+          description: Workspace URL used by the terminal Payment Page "Kembali ke workspace" button. Signed payment_id, project_payment_ref, status, and signature query parameters are appended when the transaction is final. Host validation uses the same allowlist as redirect_url.
+        webhook_url:
+          type: string
+          format: uri
+          maxLength: 700
+          description: Optional legacy per-payment workspace webhook endpoint. Current delivery resolves the project's default_webhook_url first, then falls back to this value when the project default is empty.
+        expiry_minutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          default: 15
+        metadata:
+          type: object
+          additionalProperties: true
+    Customer:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        email:
+          type: string
+          format: email
+          maxLength: 200
+        phone:
+          type: string
+          maxLength: 40
+    PaymentItemInput:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - price
+        - quantity
+      properties:
+        id:
+          type: string
+          maxLength: 80
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        price:
+          type: integer
+          minimum: 0
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 999
+    PaymentEnvelope:
+      type: object
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: '#/components/schemas/PaymentResponse'
+    PaymentResponse:
+      type: object
+      required:
+        - payment_id
+        - project_payment_ref
+        - api_version
+        - payment_provider
+        - payment_type
+        - provider_env
+        - status
+        - payment_mode
+        - amount
+        - fee_amount
+        - payable_amount
+        - currency
+        - payment_page_url
+        - created_at
+        - updated_at
+      properties:
+        payment_id:
+          type: string
+          examples:
+            - pay_01HZX9T8NA2XABCDE12345
+        project_payment_ref:
+          type: string
+          examples:
+            - INV-20260513-0001
+        api_version:
+          $ref: '#/components/schemas/ApiVersion'
+        payment_provider:
+          $ref: '#/components/schemas/PaymentProvider'
+        payment_type:
+          $ref: '#/components/schemas/PaymentType'
+        provider_env:
+          $ref: '#/components/schemas/ProviderEnv'
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        payment_mode:
+          type: string
+          enum:
+            - snap
+            - payment_link
+            - qris
+        amount:
+          type: integer
+          examples:
+            - 150000
+        fee_amount:
+          type: integer
+          description: Difference between payable_amount and amount. Includes Dynamic QRIS unique code/admin fee or estimated SNAP customer QRIS fee for display.
+        payable_amount:
+          type: integer
+          description: Final amount shown to customer. For Dynamic QRIS this includes unique code/admin fee; for SNAP this may include estimated customer QRIS fee while the Midtrans transaction amount remains `amount`.
+        currency:
+          type: string
+          examples:
+            - IDR
+        description:
+          type:
+            - string
+            - 'null'
+        payment_page_url:
+          type: string
+          format: uri
+        finish_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        idempotent_replay:
+          type: boolean
+          default: false
+        midtrans:
+          oneOf:
+            - $ref: '#/components/schemas/MidtransSummary'
+            - type: 'null'
+        qris:
+          oneOf:
+            - $ref: '#/components/schemas/QrisSummary'
+            - type: 'null'
+        provider:
+          $ref: '#/components/schemas/ProviderSummary'
+        expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        paid_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        canceled_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PaymentStatus:
+      type: string
+      enum:
+        - created
+        - pending
+        - paid
+        - challenge
+        - expired
+        - canceled
+        - denied
+        - failed
+        - refunded
+        - partially_refunded
+        - chargeback
+        - partial_chargeback
+        - authorized
+        - unknown
+    ApiVersion:
+      type: string
+      enum:
+        - v1
+      description: API contract version used when the payment was created.
+    PaymentProvider:
+      type: string
+      enum:
+        - midtrans
+        - qris_dynamic
+      description: Payment gateway/provider selected for this payment.
+    PaymentType:
+      type: string
+      enum:
+        - snap_link_midtrans
+        - dynamic_qr_midtrans
+      description: Stable normalized payment product type.
+    ProviderEnv:
+      type: string
+      enum:
+        - sandbox
+        - production
+      description: Provider environment label derived from API key prefix.
+    QrisSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        requested:
+          type: boolean
+        available:
+          type: boolean
+        image_data_url:
+          type:
+            - string
+            - 'null'
+          description: Data URL image generated from qris_string for Dynamic QRIS when image_qris=true.
+        qris_string:
+          type:
+            - string
+            - 'null'
+        dynamic_amount:
+          type:
+            - integer
+            - 'null'
+          description: Final payable amount for qris_dynamic provider after unique code and admin fee.
+        payable_amount:
+          type: integer
+          description: Final amount customer should pay for the QR payment.
+        unique_code:
+          type:
+            - string
+            - 'null'
+        admin_fee:
+          type:
+            - integer
+            - 'null'
+        admin_rate_basis_points:
+          type:
+            - integer
+            - 'null'
+        acquirer:
+          type:
+            - string
+            - 'null'
+    ProviderSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          $ref: '#/components/schemas/PaymentProvider'
+        environment:
+          $ref: '#/components/schemas/ProviderEnv'
+        payment_type:
+          $ref: '#/components/schemas/PaymentType'
+        transaction_id:
+          type:
+            - string
+            - 'null'
+        transaction_status:
+          type:
+            - string
+            - 'null'
+        method:
+          type:
+            - string
+            - 'null'
+        acquirer:
+          type:
+            - string
+            - 'null'
+    MidtransSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        order_id:
+          type:
+            - string
+            - 'null'
+        transaction_id:
+          type:
+            - string
+            - 'null'
+        transaction_status:
+          type:
+            - string
+            - 'null'
+        payment_type:
+          type:
+            - string
+            - 'null'
+        fraud_status:
+          type:
+            - string
+            - 'null'
+        snap_token:
+          type:
+            - string
+            - 'null'
+        payment_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+    SyncPaymentResponse:
+      type: object
+      required:
+        - payment_id
+        - payment_provider
+        - status_before
+        - status_after
+        - synced_at
+      properties:
+        payment_id:
+          type: string
+        payment_provider:
+          $ref: '#/components/schemas/PaymentProvider'
+        status_before:
+          $ref: '#/components/schemas/PaymentStatus'
+        status_after:
+          $ref: '#/components/schemas/PaymentStatus'
+        midtrans_transaction_status:
+          type:
+            - string
+            - 'null'
+        midtrans_status_not_found:
+          type: boolean
+          description: True when Midtrans GET Status returned 404. For a created SNAP payment, investigate the order_id/transaction state.
+        synced_at:
+          type: string
+          format: date-time
+    PublicPaymentPageResponse:
+      type: object
+      required:
+        - page_title
+        - brand_name
+        - payment_id
+        - project_payment_ref
+        - order_id
+        - payment_provider
+        - status
+        - payment_mode
+        - amount
+        - currency
+        - amount_display
+        - expires_at
+        - server_time
+        - redirect_available
+      properties:
+        page_title:
+          type: string
+          description: Workspace/project display name used as page title.
+        brand_name:
+          type: string
+          description: Workspace/project display name shown in the payment page header.
+        payment_id:
+          type: string
+        project_payment_ref:
+          type: string
+        order_id:
+          type: string
+        payment_provider:
+          $ref: '#/components/schemas/PaymentProvider'
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        payment_mode:
+          type: string
+          enum:
+            - snap
+            - payment_link
+            - qris
+        amount:
+          type: integer
+        payable_amount:
+          type: integer
+          description: Final amount shown to customer. For qris_dynamic this includes unique code/admin fee; for SNAP this may include estimated customer QRIS fee.
+        fee_amount:
+          type: integer
+          description: Difference between payable_amount and amount.
+        currency:
+          type: string
+        amount_display:
+          type: string
+          examples:
+            - Rp150.000
+        net_amount_display:
+          type: string
+        fee_amount_display:
+          type: string
+        qris_unique_code:
+          type:
+            - string
+            - 'null'
+        qris_admin_fee:
+          type:
+            - integer
+            - 'null'
+        description:
+          type:
+            - string
+            - 'null'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicPaymentItem'
+        payment_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        midtrans:
+          oneOf:
+            - $ref: '#/components/schemas/MidtransSummary'
+            - type: 'null'
+        qris:
+          oneOf:
+            - $ref: '#/components/schemas/QrisSummary'
+            - type: 'null'
+        provider:
+          $ref: '#/components/schemas/ProviderSummary'
+        expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        redirect_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        finish_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        server_time:
+          type: string
+          format: date-time
+        redirect_available:
+          type: boolean
+    PublicPaymentItem:
+      type: object
+      required:
+        - name
+        - price
+        - quantity
+        - subtotal
+      properties:
+        name:
+          type: string
+        price:
+          type: integer
+        quantity:
+          type: integer
+        subtotal:
+          type: integer
+    PublicPaymentStatusResponse:
+      type: object
+      required:
+        - payment_id
+        - payment_provider
+        - status
+        - is_terminal
+        - server_time
+      properties:
+        payment_id:
+          type: string
+        payment_provider:
+          $ref: '#/components/schemas/PaymentProvider'
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        is_terminal:
+          type: boolean
+        midtrans_transaction_status:
+          type:
+            - string
+            - 'null'
+        midtrans_payment_type:
+          type:
+            - string
+            - 'null'
+        sync:
+          type: object
+          required:
+            - attempted
+            - not_found
+            - status_before
+            - source
+          properties:
+            attempted:
+              type: boolean
+            not_found:
+              type: boolean
+            status_before:
+              $ref: '#/components/schemas/PaymentStatus'
+            source:
+              type: string
+              enum:
+                - local
+                - midtrans_status
+        expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        paid_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        canceled_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        redirect_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        server_time:
+          type: string
+          format: date-time
+    MidtransWebhookPayload:
+      type: object
+      additionalProperties: true
+      required:
+        - order_id
+        - status_code
+        - gross_amount
+        - signature_key
+        - transaction_status
+      properties:
+        transaction_time:
+          type: string
+        transaction_status:
+          type: string
+          examples:
+            - settlement
+            - pending
+            - expire
+            - deny
+            - cancel
+            - capture
+        transaction_id:
+          type: string
+        status_message:
+          type: string
+        status_code:
+          type: string
+          examples:
+            - '200'
+            - '201'
+            - '202'
+        signature_key:
+          type: string
+        payment_type:
+          type: string
+        order_id:
+          type: string
+        merchant_id:
+          type: string
+        gross_amount:
+          type: string
+          examples:
+            - '150000.00'
+        fraud_status:
+          type: string
+          examples:
+            - accept
+            - challenge
+            - deny
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+    ErrorObject:
+      type: object
+      required:
+        - code
+        - message
+        - request_id
+      properties:
+        code:
+          type: string
+          examples:
+            - VALIDATION_ERROR
+            - UNAUTHORIZED
+            - PAYMENT_NOT_FOUND
+            - MIDTRANS_PROVIDER_ERROR
+        message:
+          type: string
+        details:
+          oneOf:
+            - type: array
+              items:
+                type: object
+                additionalProperties: true
+            - type: object
+              additionalProperties: true
+            - type: string
+            - type: 'null'
+        request_id:
+          type: string
+    WorkspacePaymentWebhookPayload:
+      type: object
+      required:
+        - event
+        - sent_at
+        - payment
+        - midtrans
+        - provider
+        - qris
+      properties:
+        event:
+          type: string
+          const: payment.finalized
+        sent_at:
+          type: string
+          format: date-time
+        payment:
+          type: object
+          required:
+            - payment_id
+            - project_id
+            - project_payment_ref
+            - api_version
+            - order_id
+            - payment_provider
+            - payment_type
+            - provider_env
+            - status
+            - amount
+            - net_amount
+            - payable_amount
+            - currency
+          properties:
+            payment_id:
+              type: string
+            project_id:
+              type: string
+            project_payment_ref:
+              type: string
+            api_version:
+              $ref: '#/components/schemas/ApiVersion'
+            order_id:
+              type: string
+            payment_provider:
+              $ref: '#/components/schemas/PaymentProvider'
+            payment_type:
+              $ref: '#/components/schemas/PaymentType'
+            provider_env:
+              $ref: '#/components/schemas/ProviderEnv'
+            status:
+              $ref: '#/components/schemas/PaymentStatus'
+            amount:
+              type: integer
+            net_amount:
+              type: integer
+            payable_amount:
+              type: integer
+            currency:
+              type: string
+            qris_unique_code:
+              type:
+                - string
+                - 'null'
+            qris_admin_fee:
+              type:
+                - integer
+                - 'null'
+            payment_mode:
+              type: string
+            payment_page_url:
+              type: string
+              format: uri
+            description:
+              type:
+                - string
+                - 'null'
+            occurred_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            paid_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            expired_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            canceled_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            failed_at:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+        midtrans:
+          type: object
+          properties:
+            transaction_id:
+              type:
+                - string
+                - 'null'
+            transaction_status:
+              type:
+                - string
+                - 'null'
+            payment_type:
+              type:
+                - string
+                - 'null'
+            fraud_status:
+              type:
+                - string
+                - 'null'
+            status_code:
+              type:
+                - string
+                - 'null'
+            status_message:
+              type:
+                - string
+                - 'null'
+        provider:
+          $ref: '#/components/schemas/ProviderSummary'
+        qris:
+          $ref: '#/components/schemas/QrisSummary'
+    WorkspaceWebhookAck:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          const: true
+webhooks:
+  workspacePaymentFinalized:
+    post:
+      tags:
+        - Workspace Webhook
+      summary: Workspace final payment webhook
+      description: |
+        BSTN sends this sanitized payload once to the configured workspace webhook target when a payment reaches a terminal status. The target is the project's current default_webhook_url, falling back to the payment webhook_url for legacy records.
+        The request includes X-BSTN-Signature, an HMAC-SHA256 of the raw JSON body using RETURN_SIGNATURE_SECRET.
+        To mark delivery as successful, the workspace must return HTTP 2xx with JSON body `{ "success": true }`.
+      operationId: receiveWorkspacePaymentFinalizedWebhook
+      parameters:
+        - name: X-BSTN-Event
+          in: header
+          required: true
+          schema:
+            type: string
+            const: payment.finalized
+        - name: X-BSTN-Delivery-Id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-BSTN-Attempt-Id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-BSTN-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspacePaymentWebhookPayload'
+      responses:
+        '200':
+          description: Workspace accepted webhook
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceWebhookAck'

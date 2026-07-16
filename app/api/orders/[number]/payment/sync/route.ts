@@ -1,0 +1,19 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { BstnPaymentAdapter } from "@/lib/adapters/bstn";
+import { prisma } from "@/lib/db";
+import { releaseOrderReservation } from "@/lib/inventory";
+import { sha256 } from "@/lib/security";
+import { customerFromRequest } from "@/lib/customer-auth";
+
+const schema=z.object({token:z.string().optional()});const failed=new Set(["expired","canceled","failed","denied"]);
+export async function POST(request:Request,{params}:{params:Promise<{number:string}>}){
+  const customer = await customerFromRequest();
+  if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const{number}=await params;
+  const order=await prisma.order.findUnique({where:{publicNumber:number},include:{payments:{orderBy:{createdAt:"desc"},take:1}}});
+  if(!order) return NextResponse.json({error:"Pesanan tidak ditemukan"},{status:404});
+
+  const isOwner = order.userId === customer.id || (order.userId === null && order.guestEmail.toLowerCase() === customer.email.toLowerCase());
+  if(!isOwner) return NextResponse.json({error:"Unauthorized"},{status:401});const payment=order.payments[0];if(!payment)return NextResponse.json({error:"Pembayaran tidak ditemukan"},{status:404});if(payment.provider==="mock")return NextResponse.json({success:true,status:payment.status});if(!payment.providerPaymentId||!process.env.BSTN_PROJECT_API_KEY||!process.env.BSTN_RETURN_SIGNATURE_SECRET)return NextResponse.json({error:"Konfigurasi BSTN belum lengkap"},{status:503});try{const adapter=new BstnPaymentAdapter(process.env.BSTN_BASE_URL||"https://www.bstn-innovation-studio.web.id",process.env.BSTN_PROJECT_API_KEY,process.env.BSTN_RETURN_SIGNATURE_SECRET);const detail=await adapter.getPayment(payment.providerPaymentId);if(detail.data.project_payment_ref!==payment.projectPaymentRef||detail.data.amount!==Number(payment.amount))return NextResponse.json({error:"Data pembayaran BSTN tidak cocok"},{status:409});const status=detail.data.status;await prisma.$transaction(async tx=>{if(status==="paid"&&payment.status!=="paid"){await tx.payment.update({where:{id:payment.id},data:{status:"paid",paidAt:detail.data.paid_at?new Date(detail.data.paid_at):new Date(),raw:detail.data}});await tx.order.update({where:{id:order.id},data:{paymentState:order.fulfillmentState==="cancelled"?"refund_pending":"paid",...(order.fulfillmentState==="awaiting_payment"?{fulfillmentState:"awaiting_processing"}: {})}})}else if(failed.has(status)&&payment.status==="pending"){const local=status as "expired"|"canceled"|"failed"|"denied";await tx.payment.update({where:{id:payment.id},data:{status:local,raw:detail.data}});await tx.order.update({where:{id:order.id},data:{paymentState:local,fulfillmentState:"cancelled"}});await releaseOrderReservation(tx,order.id,`payment_sync_${status}`)}await tx.auditLog.create({data:{actorType:"guest",action:"payment.synced",entityType:"order",entityId:order.id,after:{providerStatus:status}}})});return NextResponse.json({success:true,status})}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Sinkronisasi pembayaran gagal"},{status:502})}}
