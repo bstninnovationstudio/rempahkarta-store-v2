@@ -1,10 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Bell,
   Boxes,
   ClipboardList,
   FolderTree,
@@ -13,27 +13,42 @@ import {
   Menu,
   PackageSearch,
   RotateCcw,
-  Search,
   Settings,
   ShoppingBag,
   Users,
   Warehouse,
   X,
 } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import type { LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-const nav = [
-  ["/admin", "Dashboard", LayoutDashboard],
-  ["/admin/orders", "Pesanan", ClipboardList],
-  ["/admin/products", "Produk", ShoppingBag],
-  ["/admin/categories", "Kategori", FolderTree],
-  ["/admin/inventory", "Inventori", Warehouse],
-  ["/admin/shipments", "Pengiriman", PackageSearch],
-  ["/admin/returns", "Retur & refund", RotateCcw],
-  ["/admin/users", "Pelanggan", Users],
-] as const;
+type NavigationItem = readonly [href: string, label: string, icon: LucideIcon];
+type NavigationSection = { label: string; items: readonly NavigationItem[] };
 
-const mobileQuery = "(max-width: 760px)";
+const navigation = [
+  {
+    label: "Operasional",
+    items: [
+      ["/admin", "Dashboard", LayoutDashboard],
+      ["/admin/orders", "Pesanan", ClipboardList],
+      ["/admin/products", "Produk", ShoppingBag],
+      ["/admin/categories", "Kategori", FolderTree],
+      ["/admin/inventory", "Inventori", Warehouse],
+      ["/admin/shipments", "Pengiriman", PackageSearch],
+      ["/admin/returns", "Retur & refund", RotateCcw],
+      ["/admin/users", "Pelanggan", Users],
+    ],
+  },
+  {
+    label: "Sistem",
+    items: [
+      ["/admin/settings", "Pengaturan", Settings],
+      ["/admin/audit", "Audit log", Boxes],
+    ],
+  },
+] as const satisfies readonly NavigationSection[];
+
+const mobileQuery = "(max-width: 1023px)";
 
 function subscribeMobile(callback: () => void) {
   const query = window.matchMedia(mobileQuery);
@@ -48,10 +63,61 @@ function getMobileSnapshot() {
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const isMobile = useSyncExternalStore(subscribeMobile, getMobileSnapshot, () => false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
   const sidebarExpanded = isMobile ? mobileSidebarOpen : !desktopSidebarCollapsed;
+  const allNavigationItems: NavigationItem[] = navigation.flatMap(section => section.items as readonly NavigationItem[]);
+  const currentItem = allNavigationItems.find(([href]) => href === "/admin" ? path === href : path.startsWith(href));
+  const currentLabel = currentItem?.[1] || "Panel admin";
+
+  useEffect(() => {
+    if (!isMobile || !mobileSidebarOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const target = sidebarRef.current?.querySelector<HTMLElement>(".admin-nav a.active, .admin-nav a");
+      target?.focus();
+    });
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMobileSidebarOpen(false);
+        window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+        return;
+      }
+
+      if (event.key === "Tab") {
+        const focusable = Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || []).filter(element => !element.hasAttribute("hidden"));
+        if (!focusable.length) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+
+        if (event.shiftKey && (active === first || !sidebarRef.current?.contains(active))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (active === last || !sidebarRef.current?.contains(active))) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMobile, mobileSidebarOpen]);
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -63,8 +129,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     else setDesktopSidebarCollapsed(current => !current);
   }
 
+  function closeMobileSidebar(restoreFocus = false) {
+    setMobileSidebarOpen(false);
+    if (restoreFocus) window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+  }
+
   function closeSidebar() {
-    if (isMobile) setMobileSidebarOpen(false);
+    if (isMobile) closeMobileSidebar(true);
     else setDesktopSidebarCollapsed(true);
   }
 
@@ -76,16 +147,23 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     <div className="admin-body">
       <div className={`admin-layout ${desktopSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         <aside
+          ref={sidebarRef}
           id="admin-navigation"
           className={`admin-sidebar ${mobileSidebarOpen ? "open" : ""}`}
           aria-label="Navigasi admin"
+          aria-modal={isMobile && mobileSidebarOpen ? true : undefined}
+          aria-hidden={isMobile && !mobileSidebarOpen ? true : undefined}
+          role={isMobile && mobileSidebarOpen ? "dialog" : undefined}
+          inert={isMobile && !mobileSidebarOpen ? true : undefined}
         >
           <div className="admin-brand">
-            <span className="wordmark brand-wordmark">
-              <img src="/main-logo.webp" alt="" className="brand-logo-img" />
-              REMPAHKARTA
-            </span>
-            <small>Commerce<br />Console</small>
+            <Link href="/admin" className="admin-brand-link" onClick={closeSidebarOnMobile}>
+              <span className="wordmark brand-wordmark">
+                <Image src="/main-logo.webp" alt="" width={30} height={30} className="brand-logo-img" priority />
+                REMPAHKARTA
+              </span>
+              <small>Commerce console</small>
+            </Link>
             <button
               type="button"
               className="icon-button admin-sidebar-close"
@@ -96,37 +174,35 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <p className="admin-nav-label">Operasional</p>
-          <nav className="admin-nav">
-            {nav.map(([href, label, Icon]) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={closeSidebarOnMobile}
-                className={path === href || href !== "/admin" && path.startsWith(href) ? "active" : ""}
-              >
-                <Icon size={17} />
-                {label}
-              </Link>
+          <div className="admin-navigation-scroll">
+            {navigation.map(section => (
+              <div className="admin-nav-group" key={section.label}>
+                <p className="admin-nav-label">{section.label}</p>
+                <nav className="admin-nav" aria-label={section.label}>
+                  {section.items.map(([href, label, Icon]) => {
+                    const active = href === "/admin" ? path === href : path.startsWith(href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        onClick={closeSidebarOnMobile}
+                        className={active ? "active" : ""}
+                        aria-current={active ? "page" : undefined}
+                      >
+                        <span className="admin-nav-icon"><Icon size={17} /></span>
+                        <span>{label}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
             ))}
-          </nav>
-
-          <p className="admin-nav-label">Sistem</p>
-          <nav className="admin-nav">
-            <Link href="/admin/settings" onClick={closeSidebarOnMobile} className={path === "/admin/settings" ? "active" : ""}>
-              <Settings size={17} />
-              Pengaturan
-            </Link>
-            <Link href="/admin/audit" onClick={closeSidebarOnMobile} className={path === "/admin/audit" ? "active" : ""}>
-              <Boxes size={17} />
-              Audit log
-            </Link>
-          </nav>
+          </div>
 
           <div className="admin-sidebar-foot">
             <button className="admin-logout" type="button" onClick={logout}>
               <LogOut size={15} />
-              Keluar
+              <span>Keluar dari admin</span>
             </button>
             <div className="admin-user">
               <span className="admin-avatar">RK</span>
@@ -142,15 +218,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             className="admin-sidebar-scrim"
-            onClick={() => setMobileSidebarOpen(false)}
+            tabIndex={-1}
+            onClick={() => closeMobileSidebar(true)}
             aria-label="Tutup navigasi"
           />
         )}
 
-        <main className="admin-main">
+        <main className="admin-main" inert={isMobile && mobileSidebarOpen ? true : undefined}>
           <header className="admin-topbar">
             <div className="admin-top-left">
               <button
+                ref={menuButtonRef}
                 className="icon-button admin-menu-button"
                 type="button"
                 aria-label={sidebarExpanded ? "Tutup navigasi" : "Buka navigasi"}
@@ -165,15 +243,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   <ArrowLeft size={18} />
                 </button>
               )}
-              <label className="admin-search">
-                <Search size={15} />
-                <input placeholder="Cari pesanan, produk, atau SKU…" aria-label="Cari admin" />
-              </label>
+              <div className="admin-topbar-context" aria-live="polite">
+                <span>Panel admin</span>
+                <strong>{currentLabel}</strong>
+              </div>
             </div>
             <div className="admin-top-actions">
-              <button className="icon-button" aria-label="Notifikasi">
-                <Bell size={18} />
-              </button>
               <Link href="/" className="button button-light admin-store-link">Lihat toko</Link>
             </div>
           </header>

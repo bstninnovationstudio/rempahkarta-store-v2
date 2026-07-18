@@ -1,10 +1,10 @@
 # Audit UI REMPAHKARTA
 
-Tanggal: 16 Juli 2026, Asia/Jakarta
+Tanggal: 18 Juli 2026, Asia/Jakarta
 
 ## Ruang lingkup
 
-Audit mencakup seluruh page route, komponen presentasi, conditional render, status pembayaran, status fulfillment, status pembatalan, status retur, state form, empty state, loading state, dan responsive layout. API, schema Prisma, aturan stok, state machine, payload, serta integrasi provider tidak diubah.
+Audit mencakup seluruh page route, komponen presentasi, conditional render, status pembayaran, status fulfillment, status pembatalan, status retur, state form, empty state, loading state, dan responsive layout. Putaran 18 Juli berfokus pada 17 route UI admin (16 route terlindungi dan satu route login), termasuk detail dinamis terdalam serta komponen aksi/form yang dipakai route tersebut. API, schema Prisma, aturan stok, state machine, payload, serta integrasi provider tidak diubah.
 
 ## Storefront dan halaman publik
 
@@ -42,25 +42,39 @@ Render runtime halaman akun memerlukan session pelanggan dan MySQL. Tidak ada by
 
 ## Panel admin
 
-| Route | Area yang diaudit | State utama | Verifikasi HTTP demo |
+| Route | Area yang diaudit | State utama | Verifikasi akhir |
 | --- | --- | --- | --- |
-| `/admin-login` | form akses, error, busy | kosong, kredensial salah, submit | build |
-| `/admin` | shell, metrics, order terbaru, antrean | data terisi, nilai nol, nominal panjang | 200 |
-| `/admin/orders` | filter, issue order, tabel, status | semua, issue, payment, fulfillment, data padat | 200 |
-| `/admin/orders/[number]` | timeline, item, shipment, alamat, summary, actions | payment sync, transisi, cancel, shipment, issue resolution | source audit dan build |
-| `/admin/products` | toolbar, tabel, stok, status | aktif, draft, stok rendah, stok habis | 200 |
-| `/admin/products/new` | form produk | tanpa varian, varian tingkat I dan II, media, dimensi, publish | source audit dan build |
-| `/admin/products/[id]` | edit produk | data ada, tidak ditemukan, varian nonaktif | source audit dan build |
-| `/admin/categories` | manager kategori | kosong, terisi, create, delete error | 200 |
-| `/admin/categories/[id]` | editor dan assignment | kategori ada, produk kosong, produk terpilih | source audit dan build |
-| `/admin/inventory` | metrics, tabel, adjustment | aman, rendah, habis, reserved, validation error | 200 |
-| `/admin/shipments` | daftar shipment | waybill ada, belum ada, pickup, drop-off, status berbeda | 200 |
-| `/admin/returns` | metrics, filter, tabel | requested, in transit, refund pending, selesai | 200 |
-| `/admin/returns/[id]` | bukti, item, rekening, refund, action | buyer issue, admin issue, rejected, refund diproses | source audit dan build |
-| `/admin/users` | search, avatar, statistik pelanggan | kosong, data terisi, avatar fallback | source audit, runtime butuh MySQL |
-| `/admin/users/[id]` | profil, alamat, rekening, order | tanpa alamat, tanpa rekening, tanpa order, data lengkap | source audit dan build |
-| `/admin/settings` | konfigurasi dan readiness | payment mock, BSTN, Biteship, MySQL siap atau kosong | 200 |
-| `/admin/audit` | tabel audit | kosong dan data padat | 200 |
+| `/admin-login` | identitas produk, label field, status error/busy, catatan keamanan | kosong, kredensial salah, jaringan gagal, submit | source, TypeScript, lint, build |
+| `/admin` | shell, metrik, pesanan terbaru, antrean operasional | data terisi, nilai nol, nominal panjang, antrean kosong | source, TypeScript, lint, build |
+| `/admin/orders` | filter URL, issue order, tabel, status | semua, issue, payment, fulfillment, kosong, data padat | source, TypeScript, lint, build |
+| `/admin/orders/[number]` | timeline, item, shipment, alamat, ringkasan, action rail, developer disclosure | payment sync, transisi, cancel, shipment, issue resolution | source, TypeScript, lint, build |
+| `/admin/products` | daftar, stok, status, aksi | aktif, draft, diarsipkan, stok rendah, stok habis, kosong | source, TypeScript, lint, build |
+| `/admin/products/new` | form produk bersama | tanpa varian, varian tingkat I/II, media, dimensi, marketplace, publish | source, TypeScript, lint, build |
+| `/admin/products/[id]` | form produk bersama | data ada, tidak ditemukan, varian nonaktif, data panjang | source, TypeScript, lint, build |
+| `/admin/categories` | tambah, daftar, hapus | kosong, terisi, create, delete error | source, TypeScript, lint, build |
+| `/admin/categories/[id]` | informasi dan assignment produk | kategori ada, produk kosong, produk terpilih | source, TypeScript, lint, build |
+| `/admin/inventory` | metrik, tabel, disclosure adjustment | aman, rendah, habis, reserved, validation error | source, TypeScript, lint, build |
+| `/admin/shipments` | daftar dan tautan pesanan | waybill ada, belum ada, pickup/drop-off, status berbeda | source, TypeScript, lint, build |
+| `/admin/returns` | metrik, filter URL, tabel | requested, in transit, refund pending, selesai, kosong | source, TypeScript, lint, build |
+| `/admin/returns/[id]` | bukti, item, rekening, refund, action rail | buyer issue, admin issue, rejected, refund diproses | source, TypeScript, lint, build |
+| `/admin/users` | avatar, identitas, statistik pelanggan | kosong, data terisi, avatar/fallback, teks panjang | source, TypeScript, lint, build |
+| `/admin/users/[id]` | profil, alamat, rekening, order | tanpa alamat, rekening, atau order; data lengkap | source, TypeScript, lint, build |
+| `/admin/settings` | konfigurasi dan readiness | payment mock, BSTN, Biteship, MySQL siap atau kosong | source, TypeScript, lint, build |
+| `/admin/audit` | jejak perubahan | empty state jujur; tidak menampilkan log statis/fiktif | source, TypeScript, lint, build |
+
+### Masalah utama dan penyempurnaan
+
+| Temuan kode | Risiko UI/operasional | Penyempurnaan yang diterapkan |
+| --- | --- | --- |
+| Sidebar desktop masih dipakai pada lebar tablet | area konten dan rail detail terjepit | breakpoint shell dipindah ke 1024 px; tablet dan mobile memakai drawer fokus-terkelola dengan scrim, Escape, scroll lock, serta `inert` saat tertutup |
+| Cascade lama mengembalikan beberapa detail grid menjadi dua kolom | rail detail dan form dapat overlap pada 768–1023 px | override akhir menyatukan detail, produk, kategori, dan pelanggan ke satu kolom sampai 1023 px |
+| Canvas admin krem dan permukaan tidak seragam | hierarki visual berat dan berbeda dari arahan light UI | canvas utama putih, surface sekunder tipis, border/shadow/radius dikonsolidasikan dalam kontrak admin |
+| Toolbar pencarian, ekspor, rekonsiliasi, dan notifikasi tanpa handler | kontrol tampak aktif tetapi tidak bekerja | kontrol semu dihapus; hanya filter URL, link, dan action dengan handler nyata yang dipertahankan |
+| Dashboard/audit memuat angka atau baris statis | informasi operasional dapat menyesatkan | diganti dengan state kosong atau nilai tidak tersedia yang jujur |
+| Form produk panjang dengan konfigurasi tercampur | scanning lambat, tombol simpan jauh, tabel varian sulit dipakai | informasi dasar/media, rail penjualan, tabel varian penuh, marketplace, dan action bar bawah dipisahkan tanpa mengubah payload atau submit handler |
+| Tabel kurang semantik dan kontrol kecil | navigasi keyboard/screen reader lemah; risiko salah tap | caption tersembunyi, `scope`, nama aksi, region scroll fokus, label kontekstual, dan target sentuh 44 px ditambahkan |
+| Status mentah/tidak konsisten | operator sulit membaca prioritas | label Indonesia serta tone sukses/info/peringatan/bahaya dipusatkan pada status pill |
+| Developer mock terlalu dominan | berisiko terpicu dalam pekerjaan rutin | dipindah ke disclosure tertutup dengan peringatan dan konteks eksplisit |
 
 ## Audit komponen lintas halaman
 
@@ -73,8 +87,8 @@ Render runtime halaman akun memerlukan session pelanggan dan MySQL. Tidak ada by
 | Form controls | border, focus halo, label, placeholder, disabled, error |
 | Status pill | titik dan teks, warna semantik, state tambahan |
 | Order timeline | marker, hierarchy, responsive columns, issue progress |
-| Admin shell | active state, sidebar desktop collapsible, drawer mobile independen, scrim |
-| Admin table | toolbar wrapping, header muted, row hover, mobile overflow |
+| Admin shell | active state, sidebar desktop collapsible, drawer tablet/mobile, focus return, Escape, scrim, scroll lock |
+| Admin table | caption/scope, header muted, row hover, empty state jujur, overflow terlokalisasi |
 | User panel | sticky sidebar desktop, nav horizontal mobile, card consistency |
 | Login | branding, surface, form hierarchy, responsive spacing |
 
@@ -85,8 +99,8 @@ Render runtime halaman akun memerlukan session pelanggan dan MySQL. Tidak ada by
 | 320 px | topbar admin, judul panjang, metrik, tombol dua aksi, timeline | kolom dapat menyusut, label wrap, metrik dua kolom, aksi berubah satu kolom bila perlu |
 | 360–390 px | katalog, keranjang, return wizard, rekening refund | media 1:1, item tidak overlap, field satu kolom, target sentuh 44 px |
 | 640–760 px | account navigation, filter chip, tabel admin, sidebar | navigasi dan chip scroll terkontrol, tabel punya wrapper, admin memakai drawer |
-| 768–1024 px | checkout summary, detail produk, detail order/admin | grid memakai `minmax(0,1fr)` dan turun menjadi satu kolom saat ruang tidak cukup |
-| di atas 1024 px | sticky gallery, summary, account sidebar, admin rail | sticky dibatasi viewport, sidebar admin dapat diciutkan, content tetap memakai batas maksimal |
+| 768–1023 px | detail order/admin, form produk, kategori, pelanggan | admin memakai drawer dan seluruh rail/detail turun ke satu kolom tanpa overlap |
+| mulai 1024 px | sticky gallery, summary, account sidebar, admin rail | sticky dibatasi viewport, sidebar admin dapat diciutkan, content memakai batas maksimal 1320 px |
 
 Pengecualian overflow hanya dipakai pada tabel, filter chip, progress ringkas, dan navigasi akun. `body` memakai proteksi overflow horizontal, tetapi komponen tetap diperbaiki pada sumbernya agar konten tidak sekadar terpotong.
 
@@ -107,12 +121,12 @@ Pengecualian overflow hanya dipakai pada tabel, filter chip, progress ringkas, d
 | Pemeriksaan | Hasil |
 | --- | --- |
 | TypeScript | lulus |
-| ESLint | lulus, exit code 0, warning lama tidak memblokir |
+| ESLint | lulus, exit code 0; 41 warning lama di luar file UI admin yang diubah tidak memblokir |
 | Unit/domain test | 13 dari 13 lulus |
 | Production build | lulus |
 | Validasi media | 6 dari 6 PNG demo valid dan 1:1 |
-| HTTP smoke test | 19 route utama merespons 200; 4 route akun redirect aman ke login |
+| Perlindungan API/lib | `app/api` dan `lib` identik dengan sumber sebelum perubahan |
 
 ## Keterbatasan
 
-Cloud browser tidak mengizinkan akses ke URL lokal runtime. Halaman edit produk demo mengembalikan 404 karena repository demo tidak menyediakan detail editor, sedangkan detail retur dan pelanggan membutuhkan MySQL. Bypass autentikasi atau data palsu tidak ditinggalkan karena perubahan dibatasi pada presentasi. Source, conditional render, HTTP demo yang tersedia, TypeScript, lint, unit test, dan production build telah diverifikasi.
+Sesuai arahan pekerjaan ini, validasi visual tidak bergantung pada login/database atau screenshot runtime. Detail retur, pelanggan, dan edit produk tetap memerlukan MySQL serta autentikasi nyata; bypass autentikasi atau data palsu tidak ditambahkan. Verifikasi dilakukan berlapis melalui pembacaan source dan conditional render, audit cascade di breakpoint 320/390/760/768/1023/1024/1280 px, perbandingan area logic/API, TypeScript, lint, unit test, dan production build.

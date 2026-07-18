@@ -11,5 +11,5 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
     prisma.product.findMany({ select: { id: true, name: true, status: true, categoryId: true }, orderBy: { name: "asc" } }),
   ]);
   if (!category) notFound();
-  return <div className="admin-content"><div className="admin-page-head"><div><Link href="/admin/categories" className="eyebrow admin-back"><ChevronLeft size={13}/> Kembali ke kategori</Link><h1>{category.name}</h1><p>Edit informasi kategori dan masukkan atau keluarkan produk.</p></div></div><CategoryEditor category={{ id: category.id, name: category.name, description: category.description }} products={products.map(item => ({ id: item.id, name: item.name, status: item.status, selected: item.categoryId === id }))}/></div>;
+  return <div className="admin-content admin-category-detail-page"><div className="admin-page-head"><div><Link href="/admin/categories" className="eyebrow admin-back"><ChevronLeft size={13} aria-hidden="true" /> Kembali ke kategori</Link><h1>{category.name}</h1><p>Edit informasi kategori dan atur produk yang termasuk di dalamnya.</p></div></div><CategoryEditor category={{ id: category.id, name: category.name, description: category.description }} products={products.map(item => ({ id: item.id, name: item.name, status: item.status, selected: item.categoryId === id }))}/></div>;
 }

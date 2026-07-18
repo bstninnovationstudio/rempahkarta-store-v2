@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Download, Filter } from "lucide-react";
 import { StatusPill } from "@/components/status-pill";
 import { getAdminOrders } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
@@ -36,86 +35,73 @@ export default async function OrdersPage({
     <div className="admin-content">
       <div className="admin-page-head">
         <div>
-          <p className="eyebrow">Order management</p>
+          <p className="eyebrow">Manajemen pesanan</p>
           <h1>Pesanan</h1>
-          <p>Kelola pembayaran, pemrosesan, handover, dan exception.</p>
+          <p>Kelola pembayaran, pemrosesan, serah terima, dan pesanan bermasalah.</p>
         </div>
-        <button className="button button-light">
-          <Download size={15} /> Export CSV
-        </button>
       </div>
 
-      <div className="filter-row">
-        <Link href="/admin/orders" className={`filter-chip ${!filter ? "active" : ""}`}>
+      <nav className="filter-row" aria-label="Filter status pesanan">
+        <Link href="/admin/orders" aria-current={!filter ? "page" : undefined} className={`filter-chip ${!filter ? "active" : ""}`}>
           Semua <b>{allOrders.length}</b>
         </Link>
-        <Link href="/admin/orders?filter=processing" className={`filter-chip ${filter === "processing" ? "active" : ""}`}>
+        <Link href="/admin/orders?filter=processing" aria-current={filter === "processing" ? "page" : undefined} className={`filter-chip ${filter === "processing" ? "active" : ""}`}>
           Perlu diproses <b>{processingCount}</b>
         </Link>
-        <Link href="/admin/orders?filter=active" className={`filter-chip ${filter === "active" ? "active" : ""}`}>
+        <Link href="/admin/orders?filter=active" aria-current={filter === "active" ? "page" : undefined} className={`filter-chip ${filter === "active" ? "active" : ""}`}>
           Sedang diproses <b>{activeCount}</b>
         </Link>
-        <Link href="/admin/orders?filter=pickup" className={`filter-chip ${filter === "pickup" ? "active" : ""}`}>
+        <Link href="/admin/orders?filter=pickup" aria-current={filter === "pickup" ? "page" : undefined} className={`filter-chip ${filter === "pickup" ? "active" : ""}`}>
           Menunggu pickup <b>{pickupCount}</b>
         </Link>
-        <Link href="/admin/orders?filter=intransit" className={`filter-chip ${filter === "intransit" ? "active" : ""}`}>
+        <Link href="/admin/orders?filter=intransit" aria-current={filter === "intransit" ? "page" : undefined} className={`filter-chip ${filter === "intransit" ? "active" : ""}`}>
           Dalam perjalanan <b>{inTransitCount}</b>
         </Link>
         <Link
           href="/admin/orders?filter=issue"
+          aria-current={filter === "issue" ? "page" : undefined}
           className={`filter-chip filter-chip-danger ${filter === "issue" ? "active" : ""}`}
         >
           Pesanan bermasalah <b>{issueCount}</b>
         </Link>
-      </div>
+      </nav>
 
       <section className="table-card">
-        <div className="table-toolbar">
-          <input placeholder="Cari nomor pesanan atau pelanggan" />
-          <select>
-            <option>Semua pembayaran</option>
-            <option>Lunas</option>
-            <option>Refund pending</option>
-          </select>
-          <button className="button button-light button-compact">
-            <Filter size={14} /> Filter
-          </button>
-        </div>
-
         <div className="admin-table-wrap">
           <table className="admin-table">
+            <caption className="admin-table-caption">Daftar pesanan sesuai filter yang dipilih</caption>
             <thead>
               <tr>
-                <th>Pesanan</th>
-                <th>Pelanggan</th>
-                <th>Pembayaran</th>
-                <th>Fulfillment</th>
-                <th>Kurir</th>
-                <th>Total</th>
-                <th>SLA</th>
-                <th />
+                <th scope="col">Pesanan</th>
+                <th scope="col">Pelanggan</th>
+                <th scope="col">Pembayaran</th>
+                <th scope="col">Pemrosesan</th>
+                <th scope="col">Kurir</th>
+                <th scope="col">Total</th>
+                <th scope="col">SLA</th>
+                <th scope="col">Aksi</th>
               </tr>
             </thead>
             <tbody>
               {orders.map(order => (
                 <tr key={order.number} className={order.issueOrder ? "admin-issue-row" : ""}>
                   <td>
-                    <strong>{order.number}</strong>
+                    <strong className="admin-data-code">{order.number}</strong>
                     {order.issueOrder && (
-                      <span className="issue-badge">Issue</span>
+                      <span className="issue-badge">Masalah</span>
                     )}
                     <span className="sub">{order.createdAt}</span>
                   </td>
-                  <td>{order.customer}</td>
+                  <td className="admin-table-cell-wrap">{order.customer}</td>
                   <td>
                     <StatusPill status={order.payment} />
                   </td>
                   <td>
                     <StatusPill status={order.fulfillment} />
                   </td>
-                  <td>{order.courier}</td>
+                  <td className="admin-table-cell-wrap">{order.courier}</td>
                   <td>
-                    <strong>{rupiah(order.total)}</strong>
+                    <strong className="admin-numeric">{rupiah(order.total)}</strong>
                   </td>
                   <td>{order.sla}</td>
                   <td>
@@ -126,7 +112,17 @@ export default async function OrdersPage({
                   </td>
                 </tr>
               ))}
-              {!orders.length && <tr><td colSpan={8} className="admin-table-empty">Tidak ada pesanan untuk filter ini.</td></tr>}
+              {!orders.length && (
+                <tr>
+                  <td colSpan={8} className="admin-table-empty">
+                    <div className="admin-table-empty-content">
+                      <strong>Tidak ada pesanan untuk filter ini</strong>
+                      <span>Pilih filter lain atau tampilkan kembali semua pesanan.</span>
+                      {filter && <Link href="/admin/orders" className="table-link">Tampilkan semua pesanan</Link>}
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -79,17 +79,25 @@ export function AdminOrderStatusMock({
   }
 
   return (
-    <div className="developer-tools">
-      <strong className="developer-tools-title">Developer mock & testing tools</strong>
+    <details className="developer-tools">
+      <summary className="developer-tools-title">Alat simulasi developer</summary>
+      <div className="developer-tools-body" aria-busy={Boolean(busy)}>
+        <p className="developer-tools-warning" role="note">
+          Simulasi ini mengubah data pesanan, stok, pembayaran, atau pengiriman yang tersimpan. Gunakan hanya untuk pengujian terkontrol.
+        </p>
+        <dl className="developer-tools-context">
+          <div><dt>Status saat ini</dt><dd>{fulfillmentState}</dd></div>
+          <div><dt>Penanda masalah</dt><dd>{issueOrder ? "Aktif" : "Tidak aktif"}</dd></div>
+        </dl>
 
-      <div className="developer-tools-row">
-        <form onSubmit={handleSimulate} className="developer-status-form">
-          <label className="field">
-            <span>Paksa atau simulasi status</span>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-            >
+        <div className="developer-tools-row">
+          <form onSubmit={handleSimulate} className="developer-status-form">
+            <label className="field">
+              <span>Paksa atau simulasi status</span>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+              >
               <optgroup label="Status Pesanan (Fulfillment State)">
                 <option value="awaiting_processing">Perlu Diproses (Awaiting Processing)</option>
                 <option value="processing">Sedang Diproses (Processing)</option>
@@ -121,36 +129,37 @@ export function AdminOrderStatusMock({
                 <option value="issue_true">Tandai sebagai Bermasalah (Issue = true)</option>
                 <option value="issue_false">Cabut Status Bermasalah (Issue = false)</option>
               </optgroup>
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="button button-dark button-compact"
-            disabled={!!busy}
-          >
-            <RefreshCw size={14} className={busy === "simulate" ? "animate-spin" : ""} />
-            {busy === "simulate" ? "Mensimulasikan…" : "Kirim simulasi"}
-          </button>
-        </form>
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="button button-dark button-compact"
+              disabled={!!busy}
+            >
+              <RefreshCw size={14} className={busy === "simulate" ? "animate-spin" : ""} />
+              {busy === "simulate" ? "Mensimulasikan…" : "Kirim simulasi"}
+            </button>
+          </form>
 
-        <div className="developer-duplicate-action">
-          <button
-            type="button"
-            className="button button-light button-compact"
-            onClick={handleDuplicate}
-            disabled={!!busy}
-          >
-            <Copy size={14} />
-            {busy === "duplicate" ? "Menduplikasi…" : "Duplikasi pesanan mock"}
-          </button>
+          <div className="developer-duplicate-action">
+            <button
+              type="button"
+              className="button button-light button-compact"
+              onClick={handleDuplicate}
+              disabled={!!busy}
+            >
+              <Copy size={14} />
+              {busy === "duplicate" ? "Menduplikasi…" : "Duplikasi pesanan mock"}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {message && (
-        <p role="status" className={`action-message ${message.includes("berhasil") ? "success" : "error"}`}>
-          {message}
-        </p>
-      )}
-    </div>
+        {message && (
+          <p role={message.includes("berhasil") ? "status" : "alert"} className={`action-message ${message.includes("berhasil") ? "success" : "error"}`}>
+            {message}
+          </p>
+        )}
+      </div>
+    </details>
   );
 }

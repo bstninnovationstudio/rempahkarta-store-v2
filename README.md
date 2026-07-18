@@ -6,6 +6,8 @@ Toko online D2C ringan untuk satu usaha/brand. Pelanggan memilih variasi, checko
 
 Antarmuka memakai design system REMPAHKARTA yang terdokumentasi di `DESIGN.md`. Sistem visual mencakup token warna, tipografi, spacing, rasio media 1:1, status semantik, pola storefront dan admin, responsivitas, aksesibilitas, serta matriks state yang wajib diaudit. Aset demo menggunakan media rempah yang tersedia di proyek dan tidak memengaruhi data produk production.
 
+Panel admin memakai canvas putih dengan shell desktop mulai 1024 px dan drawer pada tablet/mobile. Detail page serta form editor turun ke satu kolom sampai 1023 px; tabel memiliki region scroll terlokalisasi, caption semantik, dan target sentuh minimum 44 px pada perangkat sentuh. Form produk mempertahankan endpoint dan payload lama, tetapi ditata menjadi informasi dasar/media, konfigurasi penjualan, matriks varian, tautan marketplace, dan action bar bawah. Pemetaan 17 route UI admin serta hasil audit rinci tersedia di `docs/ui-audit.md`.
+
 ## Arsitektur
 
 - Next.js App Router + React + TypeScript.

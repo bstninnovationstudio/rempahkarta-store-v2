@@ -166,92 +166,272 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "Produk gagal disimpan"); setBusy(false); }
   }
 
-  return <form className="admin-content" onSubmit={submit} noValidate>
-    <div className="admin-page-head"><div><Link href="/admin/products" className="eyebrow admin-back"><ChevronLeft size={13}/> Kembali ke produk</Link><h1>{isEdit ? "Edit produk" : "Tambah produk"}</h1><p>Kelola informasi, media, dan kombinasi penjualan produk.</p></div><button className="button button-dark" disabled={busy || uploading || activeVariants.length === 0}><Save size={15}/> {busy ? "Menyimpan…" : "Simpan produk"}</button></div>
-    {message && <p role="alert" className="panel form-message">{message}</p>}
-    <div className="admin-detail-grid product-editor-grid"><div>
-      <section className="admin-section"><h2>Informasi dasar</h2><div className="field-grid">
-        <div className="field full"><label>Nama produk</label><input value={name} onChange={event => setName(event.target.value)} required minLength={3} maxLength={180} placeholder="Contoh: Kayu Manis Batang Premium"/></div>
-        <div className="field"><label>Kategori</label><select value={categoryId} onChange={event => setCategoryId(event.target.value)}><option value="">Tanpa kategori</option>{categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
-        <div className="field"><label>Status</label><select value={status} onChange={event => setStatus(event.target.value as typeof status)}><option value="draft">Draft</option><option value="active">Aktif</option><option value="archived">Diarsipkan</option></select></div>
-        <div className="field"><label>Rating (Maks 5.0)</label><input type="number" min="0" max="5" step="0.1" value={rating} onChange={event => setRating(event.target.value)} required placeholder="Contoh: 4.9"/></div>
-        <div className="field"><label>Jumlah Terjual</label><input type="number" min="0" step="1" value={sold} onChange={event => setSold(event.target.value)} required placeholder="Contoh: 1250"/></div>
-        <div className="field full"><label>Deskripsi</label><textarea value={description} onChange={event => setDescription(event.target.value)} required minLength={10} maxLength={20000} placeholder="Asal, aroma, kualitas, cara penggunaan, dan informasi produk…"/></div>
-      </div></section>
-      <section className="admin-section"><div className="section-inline-head"><div><h2>Media lokal</h2><p>Maksimal 10 gambar. Gambar pertama menjadi gambar utama.</p></div><label className="button button-light"><ImagePlus size={16}/> {uploading ? "Mengunggah…" : "Tambah gambar"}<input hidden type="file" multiple disabled={uploading || images.length >= 10} accept="image/jpeg,image/png,image/webp" onChange={event => uploadFiles(event.target.files)}/></label></div>
-        {images.length ? <div className="local-media-grid">{images.map((path, index) => <div key={path} className="local-media-item"><Image unoptimized src={path} alt={`${name || "Produk"} ${index + 1}`} fill/><span>{index === 0 ? "Utama" : index + 1}</span><button type="button" aria-label="Hapus gambar" onClick={() => setImages(current => current.filter(item => item !== path))}><Trash2 size={14}/></button></div>)}</div> : <p className="empty-hint">Belum ada gambar. JPG, PNG, atau WebP maksimal 5 MB per file.</p>}
+  const mediaDisabled = uploading || images.length >= 10;
+  const saveDisabled = busy || uploading || activeVariants.length === 0;
+
+  return (
+    <form className="admin-content product-editor" onSubmit={submit} noValidate aria-busy={busy || uploading}>
+      <div className="admin-page-head">
+        <div>
+          <Link href="/admin/products" className="eyebrow admin-back"><ChevronLeft size={13}/> Kembali ke produk</Link>
+          <h1>{isEdit ? "Edit produk" : "Tambah produk"}</h1>
+          <p>Kelola informasi, media, variasi, harga, dan ketersediaan produk.</p>
+        </div>
+      </div>
+
+      {message && <p id="product-form-message" role="alert" className="panel form-message" tabIndex={-1}>{message}</p>}
+
+      <div className="admin-detail-grid product-editor-grid">
+        <div className="product-editor-main">
+          <section className="admin-section" aria-labelledby="product-basic-title">
+            <h2 id="product-basic-title">Informasi dasar</h2>
+            <div className="field-grid">
+              <div className="field full">
+                <label htmlFor="product-name">Nama produk</label>
+                <input id="product-name" value={name} onChange={event => setName(event.target.value)} required minLength={3} maxLength={180} placeholder="Contoh: Kayu Manis Batang Premium"/>
+              </div>
+              <div className="field">
+                <label htmlFor="product-category">Kategori</label>
+                <select id="product-category" value={categoryId} onChange={event => setCategoryId(event.target.value)}>
+                  <option value="">Tanpa kategori</option>
+                  {categories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="product-status">Status publikasi</label>
+                <select id="product-status" value={status} onChange={event => setStatus(event.target.value as typeof status)}>
+                  <option value="draft">Draft</option>
+                  <option value="active">Aktif</option>
+                  <option value="archived">Diarsipkan</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="product-rating">Rating aktual (maks. 5,0)</label>
+                <input id="product-rating" type="number" min="0" max="5" step="0.1" value={rating} onChange={event => setRating(event.target.value)} required placeholder="Contoh: 4.9"/>
+                <small>Isi hanya dengan data rating yang benar-benar tercatat.</small>
+              </div>
+              <div className="field">
+                <label htmlFor="product-sold">Jumlah terjual aktual</label>
+                <input id="product-sold" type="number" min="0" step="1" value={sold} onChange={event => setSold(event.target.value)} required placeholder="Contoh: 1250"/>
+                <small>Gunakan jumlah penjualan yang dapat diverifikasi.</small>
+              </div>
+              <div className="field full">
+                <label htmlFor="product-description">Deskripsi</label>
+                <textarea id="product-description" value={description} onChange={event => setDescription(event.target.value)} required minLength={10} maxLength={20000} placeholder="Asal, aroma, kualitas, cara penggunaan, dan informasi produk…"/>
+                <small>{description.length.toLocaleString("id-ID")} / 20.000 karakter</small>
+              </div>
+            </div>
+          </section>
+
+          <section className="admin-section" aria-labelledby="product-media-title">
+            <div className="section-inline-head">
+              <div>
+                <h2 id="product-media-title">Media produk</h2>
+                <p>Gambar pertama menjadi gambar utama. Format JPG, PNG, atau WebP; maksimal 5 MB per file.</p>
+              </div>
+              <div className="media-upload-actions">
+                <span className="media-count" aria-live="polite">{images.length} / 10 gambar</span>
+                <label className={`button button-light${mediaDisabled ? " disabled" : ""}`} aria-disabled={mediaDisabled}>
+                  <ImagePlus size={16}/> {uploading ? "Mengunggah…" : images.length >= 10 ? "Batas gambar tercapai" : "Tambah gambar"}
+                  <input aria-label="Pilih gambar produk" hidden type="file" multiple disabled={mediaDisabled} accept="image/jpeg,image/png,image/webp" onChange={event => uploadFiles(event.target.files)}/>
+                </label>
+              </div>
+            </div>
+            {images.length ? (
+              <div className="local-media-grid">
+                {images.map((path, index) => (
+                  <div key={path} className="local-media-item">
+                    <Image unoptimized src={path} alt={`${name || "Produk"}, gambar ${index + 1}${index === 0 ? ", gambar utama" : ""}`} fill/>
+                    <span>{index === 0 ? "Utama" : index + 1}</span>
+                    <button type="button" className="media-remove-button" aria-label={`Hapus gambar ${index + 1}${index === 0 ? " yang menjadi gambar utama" : ""}`} title="Hapus gambar" onClick={() => setImages(current => current.filter(item => item !== path))}><Trash2 size={14}/></button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-hint">Belum ada gambar produk. Tambahkan gambar agar produk mudah dikenali.</p>
+            )}
+          </section>
+        </div>
+
+        <aside className="product-editor-rail" aria-label="Konfigurasi penjualan">
+          <section className="admin-section" aria-labelledby="product-sales-title">
+            <div className="section-inline-head">
+              <div>
+                <h2 id="product-sales-title">Informasi penjualan</h2>
+                <p>Pilih produk tunggal atau maksimal dua tingkat variasi.</p>
+              </div>
+              <label className="switch-control" htmlFor="product-has-variants">
+                <input id="product-has-variants" type="checkbox" checked={hasVariants} onChange={event => toggleVariants(event.target.checked)}/>
+                <span aria-hidden="true"/>Dengan varian
+              </label>
+            </div>
+
+            {hasVariants && (
+              <div className="variant-levels">
+                <div className="variant-level">
+                  <div className="field">
+                    <label htmlFor="product-option-1-name">Nama tingkat I</label>
+                    <input id="product-option-1-name" value={option1Name} onChange={event => setOption1Name(event.target.value)} required placeholder="Contoh: Jenis"/>
+                  </div>
+                  <div className="field option-add-field">
+                    <label htmlFor="product-option-1-value">Tambah nilai tingkat I</label>
+                    <div className="option-add">
+                      <input id="product-option-1-value" value={newOption1} onChange={event => setNewOption1(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addOption(1); } }} placeholder="Contoh: Bubuk"/>
+                      <button type="button" aria-label="Tambahkan nilai tingkat I" title="Tambahkan nilai" onClick={() => addOption(1)}><Plus size={14}/></button>
+                    </div>
+                  </div>
+                  <div className="option-chips" aria-label="Nilai tingkat I">
+                    {option1Values.map(value => <span key={value}>{value}<button type="button" aria-label={`Hapus nilai ${value} dari tingkat I`} onClick={() => removeOption(1, value)}>×</button></span>)}
+                  </div>
+                </div>
+
+                <div className="variant-level">
+                  <label className="switch-control compact" htmlFor="product-level-2-enabled">
+                    <input id="product-level-2-enabled" type="checkbox" checked={level2Enabled} onChange={event => { const enabled = event.target.checked; setOption2Name(enabled ? "Berat Bersih" : ""); if (enabled) { const values = option2Values.length ? option2Values : ["100 g"]; setOption2Values(values); rebuild(option1Values, values, true, true); } else { rebuild(option1Values, [], true, false); } }}/>
+                    <span aria-hidden="true"/>Aktifkan tingkat II
+                  </label>
+                  {level2Enabled && (
+                    <>
+                      <div className="field">
+                        <label htmlFor="product-option-2-name">Nama tingkat II</label>
+                        <input id="product-option-2-name" value={option2Name} onChange={event => setOption2Name(event.target.value)} required placeholder="Contoh: Berat bersih"/>
+                      </div>
+                      <div className="field option-add-field">
+                        <label htmlFor="product-option-2-value">Tambah nilai tingkat II</label>
+                        <div className="option-add">
+                          <input id="product-option-2-value" value={newOption2} onChange={event => setNewOption2(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addOption(2); } }} placeholder="Contoh: 100 g"/>
+                          <button type="button" aria-label="Tambahkan nilai tingkat II" title="Tambahkan nilai" onClick={() => addOption(2)}><Plus size={14}/></button>
+                        </div>
+                      </div>
+                      <div className="option-chips" aria-label="Nilai tingkat II">
+                        {option2Values.map(value => <span key={value}>{value}<button type="button" aria-label={`Hapus nilai ${value} dari tingkat II`} onClick={() => removeOption(2, value)}>×</button></span>)}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        </aside>
+      </div>
+
+      <section className="admin-section product-variant-section" aria-labelledby="variant-table-title">
+        <div className="section-inline-head">
+          <div>
+            <h2 id="variant-table-title">Daftar detail {hasVariants ? "variasi" : "produk"}</h2>
+            <p id="variant-table-help">Dimensi paket P × L × T bersifat opsional; bila dipakai harus diisi lengkap dalam sentimeter.</p>
+          </div>
+          <span className="count-badge" aria-label={`${activeVariants.length} dari ${variants.length} kombinasi aktif`}>{activeVariants.length} / {variants.length} aktif</span>
+        </div>
+        <p className="table-scroll-hint">Geser tabel ke samping untuk melihat dan mengedit seluruh kolom.</p>
+        <div className="admin-table-wrap variant-table-region" role="region" aria-labelledby="variant-table-title" aria-describedby="variant-table-help" tabIndex={0}>
+          <table className="admin-table variant-table">
+            <caption className="table-caption">Rincian SKU, harga, stok, ukuran paket, dan status setiap {hasVariants ? "variasi" : "produk"}.</caption>
+            <thead>
+              <tr>
+                {hasVariants && <th scope="col">Variasi</th>}
+                <th scope="col">Foto</th>
+                <th scope="col">SKU</th>
+                <th scope="col">Harga</th>
+                <th scope="col">Stok fisik</th>
+                <th scope="col">Berat (g)</th>
+                <th scope="col">P × L × T (cm)</th>
+                <th scope="col">Batas stok menipis</th>
+                <th scope="col">Aktif</th>
+              </tr>
+            </thead>
+            <tbody>
+              {variants.map((variant, index) => {
+                const variantLabel = [variant.option1Value, variant.option2Value].filter(Boolean).join(" / ") || "produk tunggal";
+                return (
+                  <tr key={`${variant.id ?? "new"}-${variant.option1Value}-${variant.option2Value}`}>
+                    {hasVariants && <th scope="row" className="variant-row-heading"><strong>{variantLabel}</strong></th>}
+                    <td>
+                      <div className="variant-photo-cell">
+                        {variant.imageKey ? (
+                          <div className="variant-photo-thumb">
+                            <Image unoptimized src={variant.imageKey} alt={`Foto ${variantLabel}`} fill />
+                            <button type="button" className="variant-photo-remove" aria-label={`Hapus foto ${variantLabel}`} onClick={() => updateVariant(index, { imageKey: null })}>×</button>
+                          </div>
+                        ) : (
+                          <label className="button button-light variant-photo-upload" aria-label={`Tambah foto ${variantLabel}`}>
+                            <ImagePlus size={12}/><span aria-hidden="true">+</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              hidden
+                              aria-label={`Pilih foto ${variantLabel}`}
+                              onChange={async (event) => {
+                                const files = event.target.files;
+                                if (!files?.length) return;
+                                const file = files[0];
+                                const form = new FormData();
+                                form.set("scope", "products");
+                                form.set("file", file);
+                                try {
+                                  const response = await fetch("/api/admin/media/upload-url", { method: "POST", body: form });
+                                  const result = await jsonResponse(response);
+                                  if (!response.ok || typeof result.path !== "string") {
+                                    throw new Error(typeof result.error === "string" ? result.error : "Gagal mengunggah foto varian");
+                                  }
+                                  updateVariant(index, { imageKey: result.path });
+                                } catch (err) {
+                                  setMessage(err instanceof Error ? err.message : "Gagal mengunggah foto varian");
+                                }
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </td>
+                    <td><input required aria-label={`SKU ${variantLabel}`} value={variant.sku} maxLength={80} onChange={event => updateVariant(index, { sku: event.target.value })}/></td>
+                    <td><input required aria-label={`Harga ${variantLabel}`} inputMode="numeric" type="number" min="1" step="1" value={variant.price || ""} onChange={event => updateVariant(index, { price: safeNumber(event.target.value) })}/></td>
+                    <td><input required aria-label={`Stok fisik ${variantLabel}`} inputMode="numeric" type="number" min={variant.reserved} step="1" value={variant.stock} onChange={event => updateVariant(index, { stock: safeNumber(event.target.value) })}/>{variant.reserved > 0 && <small>{variant.reserved} unit direservasi</small>}</td>
+                    <td><input required aria-label={`Berat ${variantLabel} dalam gram`} inputMode="numeric" type="number" min="1" step="1" value={variant.weight || ""} onChange={event => updateVariant(index, { weight: safeNumber(event.target.value) })}/></td>
+                    <td>
+                      <div className="dimension-inputs">
+                        {(["length", "width", "height"] as const).map(field => {
+                          const fieldLabel = field === "length" ? "Panjang" : field === "width" ? "Lebar" : "Tinggi";
+                          return <input key={field} aria-label={`${fieldLabel} paket ${variantLabel} dalam sentimeter`} inputMode="numeric" type="number" min="1" step="1" value={variant[field] ?? ""} onChange={event => updateVariant(index, { [field]: event.target.value === "" ? null : safeNumber(event.target.value) })}/>;
+                        })}
+                      </div>
+                    </td>
+                    <td><input required aria-label={`Batas stok menipis ${variantLabel}`} inputMode="numeric" type="number" min="0" step="1" value={variant.lowStockThreshold} onChange={event => updateVariant(index, { lowStockThreshold: safeNumber(event.target.value) })}/></td>
+                    <td><input type="checkbox" aria-label={`Aktifkan ${variantLabel}`} checked={variant.active} onChange={event => updateVariant(index, { active: event.target.checked })}/></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {activeVariants.length === 0 && <p className="form-error" role="alert">Aktifkan minimal satu detail produk sebelum menyimpan.</p>}
       </section>
-      <section className="admin-section">
-        <h2>Link Toko Online</h2>
+
+      <section className="admin-section product-marketplace-section" aria-labelledby="product-marketplace-title">
+        <h2 id="product-marketplace-title">Tautan toko online</h2>
+        <p className="section-description">Opsional. Tambahkan tautan langsung ke halaman produk pada marketplace.</p>
         <div className="field-grid">
           <div className="field full">
-            <label>Shopee Link</label>
-            <input type="url" value={shopeeLink} onChange={event => setShopeeLink(event.target.value)} placeholder="https://shopee.co.id/..."/>
+            <label htmlFor="product-shopee-link">Tautan Shopee</label>
+            <input id="product-shopee-link" type="url" value={shopeeLink} onChange={event => setShopeeLink(event.target.value)} placeholder="https://shopee.co.id/..."/>
           </div>
           <div className="field full">
-            <label>TikTok Link</label>
-            <input type="url" value={tiktokLink} onChange={event => setTiktokLink(event.target.value)} placeholder="https://www.tiktok.com/..."/>
+            <label htmlFor="product-tiktok-link">Tautan TikTok</label>
+            <input id="product-tiktok-link" type="url" value={tiktokLink} onChange={event => setTiktokLink(event.target.value)} placeholder="https://www.tiktok.com/..."/>
           </div>
           <div className="field full">
-            <label>Tokopedia Link</label>
-            <input type="url" value={tokopediaLink} onChange={event => setTokopediaLink(event.target.value)} placeholder="https://www.tokopedia.com/..."/>
+            <label htmlFor="product-tokopedia-link">Tautan Tokopedia</label>
+            <input id="product-tokopedia-link" type="url" value={tokopediaLink} onChange={event => setTokopediaLink(event.target.value)} placeholder="https://www.tokopedia.com/..."/>
           </div>
         </div>
       </section>
-    </div><aside><section className="admin-section"><div className="section-inline-head"><div><h2>Informasi penjualan</h2><p>Pilih produk tunggal atau maksimal dua tingkat variasi.</p></div><label className="switch-control"><input type="checkbox" checked={hasVariants} onChange={event => toggleVariants(event.target.checked)}/><span/>Dengan varian</label></div>
-      {hasVariants && <div className="variant-levels"><div className="variant-level"><div className="field"><label>Nama Tingkat I</label><input value={option1Name} onChange={event => setOption1Name(event.target.value)} required placeholder="Contoh: Jenis"/></div><div className="option-add"><input value={newOption1} onChange={event => setNewOption1(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addOption(1); } }} placeholder="Tambah nilai"/><button type="button" aria-label="Tambah nilai tingkat pertama" onClick={() => addOption(1)}><Plus size={14}/></button></div><div className="option-chips">{option1Values.map(value => <span key={value}>{value}<button type="button" aria-label={`Hapus nilai ${value}`} onClick={() => removeOption(1, value)}>×</button></span>)}</div></div>
-        <div className="variant-level"><label className="switch-control compact"><input type="checkbox" checked={level2Enabled} onChange={event => { const enabled = event.target.checked; setOption2Name(enabled ? "Berat Bersih" : ""); if (enabled) { const values = option2Values.length ? option2Values : ["100 g"]; setOption2Values(values); rebuild(option1Values, values, true, true); } else { rebuild(option1Values, [], true, false); } }}/><span/>Aktifkan Tingkat II</label>{level2Enabled && <><div className="field"><label>Nama Tingkat II</label><input value={option2Name} onChange={event => setOption2Name(event.target.value)} required placeholder="Contoh: Berat bersih"/></div><div className="option-add"><input value={newOption2} onChange={event => setNewOption2(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addOption(2); } }} placeholder="Tambah nilai"/><button type="button" aria-label="Tambah nilai tingkat kedua" onClick={() => addOption(2)}><Plus size={14}/></button></div><div className="option-chips">{option2Values.map(value => <span key={value}>{value}<button type="button" aria-label={`Hapus nilai ${value}`} onClick={() => removeOption(2, value)}>×</button></span>)}</div></>}</div>
-      </div>}
-    </section></aside></div>
-    <section className="admin-section"><div className="section-inline-head"><div><h2>Daftar detail {hasVariants ? "variasi" : "produk"}</h2><p>Dimensi paket P × L × T bersifat opsional; bila dipakai harus diisi lengkap dalam sentimeter.</p></div><span className="status-pill">{variants.length} kombinasi</span></div>
-      <div className="admin-table-wrap"><table className="admin-table variant-table"><thead><tr>{hasVariants && <th>Variasi</th>}<th>Foto</th><th>SKU</th><th>Harga</th><th>Stok fisik</th><th>Berat (g)</th><th>P × L × T (cm)</th><th>Stok menipis</th><th>Aktif</th></tr></thead><tbody>{variants.map((variant, index) => <tr key={`${variant.id ?? "new"}-${variant.option1Value}-${variant.option2Value}`}>
-        {hasVariants && <td><strong>{[variant.option1Value, variant.option2Value].filter(Boolean).join(" / ")}</strong></td>}
-        <td>
-          <div className="variant-photo-cell">
-            {variant.imageKey ? (
-              <div className="variant-photo-thumb">
-                <Image unoptimized src={variant.imageKey} alt="Foto varian" fill />
-                <button type="button" className="variant-photo-remove" aria-label="Hapus foto varian" onClick={() => updateVariant(index, { imageKey: null })}>×</button>
-              </div>
-            ) : (
-              <label className="button button-light variant-photo-upload">
-                <ImagePlus size={12} />
-                <span>+</span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  hidden
-                  onChange={async (event) => {
-                    const files = event.target.files;
-                    if (!files?.length) return;
-                    const file = files[0];
-                    const form = new FormData();
-                    form.set("scope", "products");
-                    form.set("file", file);
-                    try {
-                      const response = await fetch("/api/admin/media/upload-url", { method: "POST", body: form });
-                      const result = await jsonResponse(response);
-                      if (!response.ok || typeof result.path !== "string") {
-                        throw new Error(typeof result.error === "string" ? result.error : "Gagal mengunggah foto varian");
-                      }
-                      updateVariant(index, { imageKey: result.path });
-                    } catch (err) {
-                      setMessage(err instanceof Error ? err.message : "Gagal mengunggah foto varian");
-                    }
-                  }}
-                />
-              </label>
-            )}
-          </div>
-        </td>
-        <td><input required value={variant.sku} maxLength={80} onChange={event => updateVariant(index, { sku: event.target.value })}/></td>
-        <td><input required type="number" min="1" step="1" value={variant.price || ""} onChange={event => updateVariant(index, { price: safeNumber(event.target.value) })}/></td>
-        <td><input required type="number" min={variant.reserved} step="1" value={variant.stock} onChange={event => updateVariant(index, { stock: safeNumber(event.target.value) })}/>{variant.reserved > 0 && <small>{variant.reserved} direservasi</small>}</td>
-        <td><input required type="number" min="1" step="1" value={variant.weight || ""} onChange={event => updateVariant(index, { weight: safeNumber(event.target.value) })}/></td>
-        <td><div className="dimension-inputs">{(["length", "width", "height"] as const).map(field => <input key={field} aria-label={field} type="number" min="1" step="1" value={variant[field] ?? ""} onChange={event => updateVariant(index, { [field]: event.target.value === "" ? null : safeNumber(event.target.value) })}/>)}</div></td>
-        <td><input required type="number" min="0" step="1" value={variant.lowStockThreshold} onChange={event => updateVariant(index, { lowStockThreshold: safeNumber(event.target.value) })}/></td>
-        <td><input type="checkbox" checked={variant.active} onChange={event => updateVariant(index, { active: event.target.checked })}/></td>
-      </tr>)}</tbody></table></div>
-    </section>
-  </form>;
+
+      <div className="form-footer-actions product-editor-actions">
+        <p>{activeVariants.length} detail aktif siap disimpan.</p>
+        <button type="submit" className="button button-dark" disabled={saveDisabled}>
+          <Save size={15}/> {busy ? "Menyimpan…" : uploading ? "Menunggu unggahan…" : "Simpan produk"}
+        </button>
+      </div>
+    </form>
+  );
 }

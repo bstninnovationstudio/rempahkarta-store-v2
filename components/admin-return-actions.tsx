@@ -1,6 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+
+const returnStateLabels: Record<string, string> = {
+  approved: "disetujui",
+  awaiting_handover: "menunggu serah terima",
+  in_transit: "dalam pengiriman retur",
+  received: "barang diterima",
+  inspection_passed: "pemeriksaan lolos",
+  inspection_failed: "pemeriksaan gagal",
+  refunded: "sudah direfund",
+  closed: "ditutup",
+  waiting_waybill: "menunggu resi",
+  processing_return: "memproses retur",
+  return_complete: "retur selesai",
+  cancelled: "dibatalkan",
+  finished: "selesai",
+  rejected: "ditolak",
+};
 
 export function AdminReturnActions({
   id,
@@ -20,6 +37,10 @@ export function AdminReturnActions({
   const [proof, setProof] = useState<File | null>(null);
   const [inputRefundAmount, setInputRefundAmount] = useState(refundAmount);
   const [rejectReason, setRejectReason] = useState("");
+  const rejectReasonId = useId();
+  const refundAmountId = useId();
+  const refundProofId = useId();
+  const messageIsSuccess = message.includes("berhasil");
 
   async function post(action: string, path: string, payload: unknown) {
     setBusy(action);
@@ -73,34 +94,39 @@ export function AdminReturnActions({
   const isIssue = source === "issue";
 
   return (
-    <div className="admin-actions-stack">
+    <div className="admin-actions-stack" aria-busy={Boolean(busy)}>
+      {items.length > 0 && <p className="action-context action-summary">Pengajuan ini mencakup {items.length} item terdampak.</p>}
       {/* 1. Issue Order resolution flows */}
       {isIssue && (
         <>
           {state === "awaiting_approval" && (
             <div className="action-subsection">
               <button
+                type="button"
                 className="button button-dark"
                 disabled={!!busy}
                 onClick={() => post("approve", "decision", { decision: "approved", reason: "Persetujuan resolusi pesanan bermasalah", refundAmount })}
               >
-                Setujui Resolusi
+                {busy === "approve" ? "Menyetujui…" : "Setujui resolusi"}
               </button>
               <div className="action-subsection bordered-top">
-                <label className="field">
-                  <span>Alasan Penolakan Resolusi</span>
+                <label className="field" htmlFor={rejectReasonId}>
+                  <span>Alasan penolakan resolusi</span>
                   <textarea
-                    placeholder="Masukkan alasan penolakan..."
+                    id={rejectReasonId}
+                    placeholder="Masukkan alasan penolakan…"
                     value={rejectReason}
                     onChange={e => setRejectReason(e.target.value)}
                   />
+                  <small>Alasan wajib diisi sebelum pengajuan ditolak.</small>
                 </label>
                 <button
+                  type="button"
                   className="button button-light"
                   disabled={!!busy || !rejectReason.trim()}
                   onClick={() => post("reject", "decision", { decision: "rejected", reason: rejectReason })}
                 >
-                  Tolak Resolusi
+                  {busy === "reject" ? "Menolak…" : "Tolak resolusi"}
                 </button>
               </div>
             </div>
@@ -108,19 +134,23 @@ export function AdminReturnActions({
 
           {(state === "processing_refund" || state === "refund_pending") && (
             <div className="action-subsection">
-              <label className="field">
-                <span>Nominal Refund</span>
+              <label className="field" htmlFor={refundAmountId}>
+                <span>Nominal refund</span>
                 <input
+                  id={refundAmountId}
                   type="number"
+                  inputMode="numeric"
                   value={inputRefundAmount}
                   onChange={e => setInputRefundAmount(Number(e.target.value))}
                 />
+                <small>Masukkan nominal dalam rupiah, tanpa titik atau koma.</small>
               </label>
-              <label className="field">
+              <label className="field" htmlFor={refundProofId}>
                 <span>Bukti transfer refund</span>
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setProof(e.target.files?.[0] || null)} />
+                <input id={refundProofId} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setProof(e.target.files?.[0] || null)} />
+                <small>{proof ? `File dipilih: ${proof.name}` : "Pilih JPG, PNG, atau WebP sebagai bukti transfer."}</small>
               </label>
-              <button className="button button-dark" disabled={!!busy || !proof} onClick={refund}>
+              <button type="button" className="button button-dark" disabled={!!busy || !proof} onClick={refund}>
                 {busy === "refund" ? "Menyimpan…" : "Catat Refund Selesai"}
               </button>
             </div>
@@ -134,27 +164,31 @@ export function AdminReturnActions({
           {["requested", "under_review"].includes(state) && (
             <div className="action-subsection">
               <button
+                type="button"
                 className="button button-dark"
                 disabled={!!busy}
                 onClick={() => post("approve", "decision", { decision: "approved", reason: "Bukti dan permintaan diterima", refundAmount })}
               >
-                Setujui refund
+                {busy === "approve" ? "Menyetujui…" : "Setujui refund"}
               </button>
               <div className="action-subsection bordered-top">
-                <label className="field">
-                  <span>Alasan Penolakan Refund</span>
+                <label className="field" htmlFor={rejectReasonId}>
+                  <span>Alasan penolakan refund</span>
                   <textarea
-                    placeholder="Masukkan alasan penolakan..."
+                    id={rejectReasonId}
+                    placeholder="Masukkan alasan penolakan…"
                     value={rejectReason}
                     onChange={e => setRejectReason(e.target.value)}
                   />
+                  <small>Alasan wajib diisi sebelum pengajuan ditolak.</small>
                 </label>
                 <button
+                  type="button"
                   className="button button-light"
                   disabled={!!busy || !rejectReason.trim()}
                   onClick={() => post("reject", "decision", { decision: "rejected", reason: rejectReason })}
                 >
-                  Tolak pengajuan
+                  {busy === "reject" ? "Menolak…" : "Tolak pengajuan"}
                 </button>
               </div>
             </div>
@@ -162,19 +196,23 @@ export function AdminReturnActions({
 
           {state === "refund_pending" && (
             <div className="action-subsection">
-              <label className="field">
-                <span>Nominal Refund</span>
+              <label className="field" htmlFor={refundAmountId}>
+                <span>Nominal refund</span>
                 <input
+                  id={refundAmountId}
                   type="number"
+                  inputMode="numeric"
                   value={inputRefundAmount}
                   onChange={e => setInputRefundAmount(Number(e.target.value))}
                 />
+                <small>Masukkan nominal dalam rupiah, tanpa titik atau koma.</small>
               </label>
-              <label className="field">
+              <label className="field" htmlFor={refundProofId}>
                 <span>Bukti transfer refund</span>
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setProof(e.target.files?.[0] || null)} />
+                <input id={refundProofId} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setProof(e.target.files?.[0] || null)} />
+                <small>{proof ? `File dipilih: ${proof.name}` : "Pilih JPG, PNG, atau WebP sebagai bukti transfer."}</small>
               </label>
-              <button className="button button-dark" disabled={!!busy || !proof} onClick={refund}>
+              <button type="button" className="button button-dark" disabled={!!busy || !proof} onClick={refund}>
                 {busy === "refund" ? "Menyimpan…" : "Catat refund manual selesai"}
               </button>
             </div>
@@ -184,11 +222,11 @@ export function AdminReturnActions({
 
       {/* 3. Finished/Cancelled/Rejected states label */}
       {!["requested", "under_review", "refund_pending", "awaiting_approval", "processing_refund"].includes(state) && (
-        <p>Tidak ada aksi manual untuk status <strong>{state}</strong>.</p>
+        <p className="action-context">Tidak ada aksi manual untuk status <strong>{returnStateLabels[state] || state}</strong>.</p>
       )}
 
       {message && (
-        <p role="status" className={`action-message ${message.includes("berhasil") ? "success" : "error"}`}>
+        <p role={messageIsSuccess ? "status" : "alert"} className={`action-message ${messageIsSuccess ? "success" : "error"}`}>
           {message}
         </p>
       )}

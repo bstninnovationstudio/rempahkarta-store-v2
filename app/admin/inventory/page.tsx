@@ -1,5 +1,90 @@
-import { AlertTriangle, Download } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { InventoryAdjustButton } from "@/components/inventory-adjust-button";
 import { getInventoryRows } from "@/lib/admin-data";
 
-export default async function InventoryPage(){const rows=await getInventoryRows();const onHand=rows.reduce((sum,row)=>sum+row.onHand,0);const reserved=rows.reduce((sum,row)=>sum+row.reserved,0);const available=rows.reduce((sum,row)=>sum+Math.max(0,row.onHand-row.reserved-row.safety),0);const low=rows.filter(row=>row.onHand-row.reserved-row.safety<=row.lowStockThreshold).length;return <div className="admin-content"><div className="admin-page-head"><div><p className="eyebrow">Inventory ledger</p><h1>Inventori</h1><p>Stok fisik, reservasi, buffer kanal, dan histori mutasi.</p></div><button className="button button-light"><Download size={15}/> Export stok</button></div><section className="metrics-grid"><article className="metric-card"><div className="metric-card-head"><span>Total on hand</span></div><strong>{onHand}</strong><span className="metric-trend">{rows.length} SKU</span></article><article className="metric-card"><div className="metric-card-head"><span>Reserved</span></div><strong>{reserved}</strong><span className="metric-trend">Unit dalam pesanan</span></article><article className="metric-card"><div className="metric-card-head"><span>Available to sell</span></div><strong>{available}</strong><span className="metric-trend">Setelah safety stock</span></article><article className="metric-card"><div className="metric-card-head"><span>Stok menipis</span><AlertTriangle size={15}/></div><strong>{low}</strong><span className="metric-trend tone-danger">Di bawah batas per SKU</span></article></section><section className="table-card"><div className="table-toolbar"><input placeholder="Cari SKU atau nama produk"/><select><option>Semua gudang</option><option>Gudang Utama</option></select></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>SKU / Produk</th><th>On hand</th><th>Reserved</th><th>Safety stock</th><th>Available</th><th>Status</th><th/></tr></thead><tbody>{rows.map(row=>{const available=Math.max(0,row.onHand-row.reserved-row.safety);const isLow=available<=row.lowStockThreshold;return <tr key={row.id}><td><strong>{row.sku}</strong><span className="sub">{row.name} · {row.color}</span></td><td><span className="inventory-number">{row.onHand}</span></td><td>{row.reserved}</td><td>{row.safety}</td><td><strong>{available}</strong></td><td><span className={`status-pill ${isLow?"status-refund_pending":"status-paid"}`}>{available===0?"Stok habis":isLow?"Stok menipis":"Aman"}</span></td><td><InventoryAdjustButton id={row.id} reserved={row.reserved}/></td></tr>})}{rows.length===0&&<tr><td className="table-empty-state" colSpan={7}>Belum ada data inventori.</td></tr>}</tbody></table></div></section></div>}
+export default async function InventoryPage() {
+  const rows = await getInventoryRows();
+  const onHand = rows.reduce((sum, row) => sum + row.onHand, 0);
+  const reserved = rows.reduce((sum, row) => sum + row.reserved, 0);
+  const available = rows.reduce((sum, row) => sum + Math.max(0, row.onHand - row.reserved - row.safety), 0);
+  const low = rows.filter(row => row.onHand - row.reserved - row.safety <= row.lowStockThreshold).length;
+
+  return (
+    <div className="admin-content admin-inventory-page">
+      <div className="admin-page-head">
+        <div>
+          <p className="eyebrow">Buku stok</p>
+          <h1>Inventori</h1>
+          <p>Stok fisik, reservasi, stok pengaman, dan ketersediaan setiap SKU.</p>
+        </div>
+      </div>
+
+      <section className="metrics-grid" aria-label="Ringkasan inventori">
+        <article className="metric-card">
+          <div className="metric-card-head"><span>Total stok fisik</span></div>
+          <strong className="admin-numeric">{onHand}</strong>
+          <span className="metric-trend">{rows.length} SKU</span>
+        </article>
+        <article className="metric-card">
+          <div className="metric-card-head"><span>Direservasi</span></div>
+          <strong className="admin-numeric">{reserved}</strong>
+          <span className="metric-trend">Unit dalam pesanan</span>
+        </article>
+        <article className="metric-card">
+          <div className="metric-card-head"><span>Siap dijual</span></div>
+          <strong className="admin-numeric">{available}</strong>
+          <span className="metric-trend">Setelah stok pengaman</span>
+        </article>
+        <article className="metric-card">
+          <div className="metric-card-head"><span>Stok menipis</span><AlertTriangle size={15} aria-hidden="true" /></div>
+          <strong className="admin-numeric">{low}</strong>
+          <span className="metric-trend tone-warning">Pada atau di bawah batas SKU</span>
+        </article>
+      </section>
+
+      <section className="table-card">
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <caption className="admin-table-caption">Stok dan ketersediaan per SKU</caption>
+            <thead>
+              <tr>
+                <th scope="col">SKU / Produk</th>
+                <th scope="col">Stok fisik</th>
+                <th scope="col">Direservasi</th>
+                <th scope="col">Stok pengaman</th>
+                <th scope="col">Tersedia</th>
+                <th scope="col">Status</th>
+                <th scope="col">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const rowAvailable = Math.max(0, row.onHand - row.reserved - row.safety);
+                const isLow = rowAvailable <= row.lowStockThreshold;
+                const statusClass = rowAvailable === 0 ? "status-cancelled" : isLow ? "status-pending" : "status-paid";
+
+                return (
+                  <tr key={row.id}>
+                    <td>
+                      <strong className="admin-data-code">{row.sku}</strong>
+                      <span className="sub">{row.name} · {row.color}</span>
+                    </td>
+                    <td><span className="inventory-number admin-numeric">{row.onHand}</span></td>
+                    <td className="admin-numeric">{row.reserved}</td>
+                    <td className="admin-numeric">{row.safety}</td>
+                    <td><strong className="admin-numeric">{rowAvailable}</strong></td>
+                    <td><span className={`status-pill ${statusClass}`}>{rowAvailable === 0 ? "Stok habis" : isLow ? "Stok menipis" : "Aman"}</span></td>
+                    <td><InventoryAdjustButton id={row.id} reserved={row.reserved} /></td>
+                  </tr>
+                );
+              })}
+              {rows.length === 0 && (
+                <tr><td className="table-empty-state" colSpan={7}>Belum ada data inventori.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}

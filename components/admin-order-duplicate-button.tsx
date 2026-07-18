@@ -37,6 +37,8 @@ export function AdminOrderDuplicateButton({ number }: { number: string }) {
       type="button"
       onClick={handleDuplicate}
       disabled={busy}
+      aria-busy={busy}
+      aria-label={busy ? `Sedang menduplikasi pesanan ${number}` : `Duplikasi pesanan ${number}`}
       title="Duplikasi pesanan (mock)"
       className="button button-quiet button-compact duplicate-order-button"
     >

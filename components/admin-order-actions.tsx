@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Box, CheckCircle2, Printer, RefreshCw, Truck, XCircle } from "lucide-react";
 
 const sellerRejectionReasons = [
@@ -24,6 +24,8 @@ export function AdminOrderActions({
   hasShipment,
   collectionMethods,
   cancellationState,
+  cancellationReason,
+  cancellationDecisionReason,
   issueOrder = false,
   issueReason = null,
 }:{
@@ -53,6 +55,9 @@ export function AdminOrderActions({
   const [directCancelReason, setDirectCancelReason] = useState(sellerDirectCancelReasons[0]);
   const [customDirectCancelReason, setCustomDirectCancelReason] = useState("");
   const [directBiteshipReason, setDirectBiteshipReason] = useState("others");
+  const directCancelId = useId();
+  const rejectionCustomId = useId();
+  const directCustomId = useId();
 
   useEffect(() => {
     // Load Biteship cancellation reasons if cancellation request is active or if order has shipment
@@ -100,19 +105,19 @@ export function AdminOrderActions({
 
   return (
     <>
-      <div className="admin-actions-stack">
+      <div className="admin-actions-stack" aria-busy={Boolean(busy)}>
         {paymentState === "pending" && (
-          <button className="button button-light" disabled={!!busy} onClick={() => post("payment-sync", `${base}/payment/sync`, {})}>
+          <button type="button" className="button button-light" disabled={!!busy} onClick={() => post("payment-sync", `${base}/payment/sync`, {})}>
             <RefreshCw size={16} /> {busy === "payment-sync" ? "Memeriksa…" : "Sinkronkan BSTN"}
           </button>
         )}
         {fulfillmentState === "awaiting_processing" && (
-          <button className="button button-dark" disabled={!!busy || paymentState !== "paid"} onClick={() => post("processing", `${base}/transition`, { state: "processing" })}>
+          <button type="button" className="button button-dark" disabled={!!busy || paymentState !== "paid"} onClick={() => post("processing", `${base}/transition`, { state: "processing" })}>
             <CheckCircle2 size={16} /> {busy === "processing" ? "Memproses…" : "Mulai proses"}
           </button>
         )}
         {fulfillmentState === "processing" && (
-          <button className="button button-dark" disabled={!!busy} onClick={() => post("packed", `${base}/transition`, { state: "packed" })}>
+          <button type="button" className="button button-dark" disabled={!!busy} onClick={() => post("packed", `${base}/transition`, { state: "packed" })}>
             <Box size={16} /> {busy === "packed" ? "Menyimpan…" : "Tandai sudah dikemas"}
           </button>
         )}
@@ -126,21 +131,28 @@ export function AdminOrderActions({
                 ))}
               </select>
             </label>
-            <button className="button button-dark" disabled={!!busy} onClick={() => post("shipment", `${base}/shipment`, { collectionMethod: method, deliveryType: "now" })}>
+            <button type="button" className="button button-dark" disabled={!!busy} onClick={() => post("shipment", `${base}/shipment`, { collectionMethod: method, deliveryType: "now" })}>
               <Truck size={16} /> {busy === "shipment" ? "Membooking…" : "Booking Biteship"}
             </button>
           </>
         )}
         {hasShipment && (
-          <button className="button button-light" disabled={!!busy} onClick={() => post("sync", `${base}/shipment/sync`, {})}>
-            <RefreshCw size={16} /> {busy === "sync" ? "Sinkronisasi…" : "Sinkronkan Biteship"}
-          </button>
+          <>
+            <a href={`/admin/orders/${encodeURIComponent(number)}/resi`} target="_blank" rel="noopener noreferrer" className="button button-dark">
+              <Printer size={16} /> Cetak Resi Thermal (A6)
+            </a>
+            <button type="button" className="button button-light" disabled={!!busy} onClick={() => post("sync", `${base}/shipment/sync`, {})}>
+              <RefreshCw size={16} /> {busy === "sync" ? "Sinkronisasi…" : "Sinkronkan Biteship"}
+            </button>
+          </>
         )}
 
         {/* Cancellation Approval / Rejection Controls */}
         {["requested", "provider_failed"].includes(cancellationState || "") && (
           <div className="action-review action-review-warning">
             <h4 className="action-review-title">Tinjau pengajuan pembatalan</h4>
+            {cancellationReason && <p className="action-context"><strong>Alasan pelanggan:</strong> {cancellationReason}</p>}
+            {cancellationDecisionReason && <p className="action-context"><strong>Catatan keputusan sebelumnya:</strong> {cancellationDecisionReason}</p>}
             
             {/* Approve Block */}
             <div className="action-subsection bordered">
@@ -152,8 +164,8 @@ export function AdminOrderActions({
                   ))}
                 </select>
               </label>
-              <button className="button button-dark" disabled={!!busy} onClick={() => post("approve", `${base}/cancellation`, { decision: "approved", reason: "Disetujui admin", cancellationReasonCode: reasonCode })}>
-                <CheckCircle2 size={15} /> {cancellationState === "provider_failed" ? "Coba pembatalan lagi" : "Setujui & batalkan pesanan"}
+              <button type="button" className="button button-dark" disabled={!!busy} onClick={() => post("approve", `${base}/cancellation`, { decision: "approved", reason: "Disetujui admin", cancellationReasonCode: reasonCode })}>
+                <CheckCircle2 size={15} /> {busy === "approve" ? "Memproses…" : cancellationState === "provider_failed" ? "Coba pembatalan lagi" : "Setujui & batalkan pesanan"}
               </button>
             </div>
 
@@ -168,23 +180,20 @@ export function AdminOrderActions({
                 </select>
               </label>
               {rejectionReason === "Alasan lainnya" && (
-                <input
-                  type="text"
-                  placeholder="Tulis alasan penolakan..."
-                  value={customRejectionReason}
-                  onChange={e => setCustomRejectionReason(e.target.value)}
-                  className="action-input"
-                />
+                <label className="field" htmlFor={rejectionCustomId}>
+                  <span>Alasan penolakan lainnya</span>
+                  <input id={rejectionCustomId} type="text" placeholder="Tulis alasan penolakan…" value={customRejectionReason} onChange={e => setCustomRejectionReason(e.target.value)} className="action-input"/>
+                </label>
               )}
-              <button className="button button-light" disabled={!!busy} onClick={() => {
+              <button type="button" className="button button-light" disabled={!!busy} onClick={() => {
                 const selectedRejection = rejectionReason === "Alasan lainnya" ? customRejectionReason.trim() : rejectionReason;
                 if (rejectionReason === "Alasan lainnya" && selectedRejection.length < 3) {
-                  alert("Silakan masukkan alasan penolakan minimal 3 karakter.");
+                  setMessage("Silakan masukkan alasan penolakan minimal 3 karakter.");
                   return;
                 }
                 post("reject", `${base}/cancellation`, { decision: "rejected", reason: selectedRejection });
               }}>
-                <XCircle size={15} /> Tolak pengajuan
+                <XCircle size={15} /> {busy === "reject" ? "Menolak…" : "Tolak pengajuan"}
               </button>
             </div>
           </div>
@@ -192,14 +201,15 @@ export function AdminOrderActions({
 
         {/* Direct Admin Cancellation Controls */}
         {!["cancelled", "completed", "shipment_booked", "handed_over"].includes(fulfillmentState) && paymentState !== "pending" && !["requested", "provider_failed"].includes(cancellationState || "") && !issueOrder && (
-          <div>
+          <div className="direct-cancel-disclosure">
             {!showDirectCancel ? (
-              <button className="button button-danger" onClick={() => setShowDirectCancel(true)}>
+              <button type="button" className="button button-danger" aria-expanded="false" aria-controls={directCancelId} onClick={() => setShowDirectCancel(true)}>
                 <XCircle size={16} /> Batalkan pesanan langsung
               </button>
             ) : (
-              <div className="action-review action-review-danger">
+              <div id={directCancelId} className="action-review action-review-danger">
                 <h4 className="action-review-title">Batalkan pesanan langsung</h4>
+                <p className="action-context">Tindakan ini memproses pembatalan pesanan. Pastikan alasan dan status pengiriman sudah sesuai.</p>
                 
                 <label className="field">
                   <span>Alasan pembatalan admin</span>
@@ -210,13 +220,10 @@ export function AdminOrderActions({
                   </select>
                 </label>
                 {directCancelReason === "Alasan lainnya" && (
-                  <input
-                    type="text"
-                    placeholder="Tulis alasan pembatalan..."
-                    value={customDirectCancelReason}
-                    onChange={e => setCustomDirectCancelReason(e.target.value)}
-                    className="action-input"
-                  />
+                  <label className="field" htmlFor={directCustomId}>
+                    <span>Alasan pembatalan lainnya</span>
+                    <input id={directCustomId} type="text" placeholder="Tulis alasan pembatalan…" value={customDirectCancelReason} onChange={e => setCustomDirectCancelReason(e.target.value)} className="action-input"/>
+                  </label>
                 )}
 
                 {hasShipment && (
@@ -232,12 +239,13 @@ export function AdminOrderActions({
 
                 <div className="action-button-row">
                   <button
+                    type="button"
                     className="button button-danger-solid"
                     disabled={!!busy}
                     onClick={() => {
                       const selectedDirect = directCancelReason === "Alasan lainnya" ? customDirectCancelReason.trim() : directCancelReason;
                       if (directCancelReason === "Alasan lainnya" && selectedDirect.length < 3) {
-                        alert("Silakan masukkan alasan pembatalan minimal 3 karakter.");
+                        setMessage("Silakan masukkan alasan pembatalan minimal 3 karakter.");
                         return;
                       }
                       post("direct-cancel", `${base}/cancellation`, {
@@ -247,9 +255,9 @@ export function AdminOrderActions({
                       });
                     }}
                   >
-                    Proses pembatalan
+                    {busy === "direct-cancel" ? "Memproses…" : "Proses pembatalan"}
                   </button>
-                  <button className="button button-light" onClick={() => setShowDirectCancel(false)}>
+                  <button type="button" className="button button-light" disabled={Boolean(busy)} onClick={() => setShowDirectCancel(false)}>
                     Kembali
                   </button>
                 </div>
@@ -261,22 +269,23 @@ export function AdminOrderActions({
         {issueOrder && (
           <div className="action-review action-review-danger">
             <h4 className="action-review-title">Aksi resolusi</h4>
-            <button className="button button-danger-solid" disabled={!!busy} onClick={() => post("resolve-refund", `${base}/resolve`, { type: "refund" })}>
-              Proses refund
+            {issueReason && <p className="action-context"><strong>Masalah:</strong> {issueReason}</p>}
+            <button type="button" className="button button-danger-solid" disabled={!!busy} onClick={() => post("resolve-refund", `${base}/resolve`, { type: "refund" })}>
+              {busy === "resolve-refund" ? "Memproses refund…" : "Proses refund"}
             </button>
 
-            <button className="button button-light" disabled={!!busy} onClick={() => post("resolve-finish", `${base}/resolve`, { type: "finish" })}>
-              Tandai selesai
+            <button type="button" className="button button-light" disabled={!!busy} onClick={() => post("resolve-finish", `${base}/resolve`, { type: "finish" })}>
+              {busy === "resolve-finish" ? "Menyimpan…" : "Tandai selesai"}
             </button>
           </div>
         )}
 
-        <button className="button button-light" onClick={() => window.print()}>
+        <button type="button" className="button button-light" onClick={() => window.print()}>
           <Printer size={16} /> Cetak picking list
         </button>
       </div>
       {message && (
-        <p role="status" className={`action-message ${message.includes("berhasil") ? "success" : "error"}`}>
+        <p role={message.includes("berhasil") ? "status" : "alert"} className={`action-message ${message.includes("berhasil") ? "success" : "error"}`}>
           {message}
         </p>
       )}

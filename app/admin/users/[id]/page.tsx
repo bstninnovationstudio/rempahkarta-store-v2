@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, User, CreditCard, MapPin, ClipboardList } from "lucide-react";
@@ -42,11 +43,11 @@ export default async function UserDetailAdminPage({
     <div className="admin-content">
       <div className="admin-page-head">
         <div>
-          <Link href="/admin/users" className="eyebrow">
-            <ArrowLeft size={13} /> Kembali ke daftar pelanggan
+          <Link href="/admin/users" className="eyebrow admin-back">
+            <ArrowLeft size={13} aria-hidden="true" /> Kembali ke daftar pelanggan
           </Link>
-          <h1>Detail Pelanggan</h1>
-          <p>Kelola dan tinjau profil, alamat tersimpan, serta riwayat belanja.</p>
+          <h1>{user.name}</h1>
+          <p>Detail profil, alamat tersimpan, rekening refund, dan riwayat belanja.</p>
         </div>
       </div>
 
@@ -54,14 +55,17 @@ export default async function UserDetailAdminPage({
         <div>
           {/* Profile Card */}
           <div className="detail-card">
-            <h3>
-              <User size={16} /> Profil Pelanggan
-            </h3>
+            <h2 className="detail-card-heading">
+              <User size={16} aria-hidden="true" /> Profil pelanggan
+            </h2>
             <div className="admin-customer-profile">
               {user.avatarUrl ? (
-                <img
+                <Image
                   src={user.avatarUrl}
                   alt=""
+                  width={56}
+                  height={56}
+                  unoptimized
                   className="admin-customer-avatar"
                   referrerPolicy="no-referrer"
                 />
@@ -71,42 +75,42 @@ export default async function UserDetailAdminPage({
                 </span>
               )}
               <div>
-                <h2>{user.name}</h2>
-                <span>ID: {user.id}</span>
+                <strong className="admin-customer-name">{user.name}</strong>
+                <span className="admin-data-code">ID: {user.id}</span>
               </div>
             </div>
 
             <div className="profile-row">
-              <span>Alamat Email</span>
+              <span>Alamat email</span>
               <strong>{user.email}</strong>
             </div>
             <div className="profile-row">
               <span>Google Sub ID</span>
-              <strong>{user.googleId}</strong>
+              <strong className="admin-data-code">{user.googleId}</strong>
             </div>
             <div className="profile-row">
               <span>Nomor WhatsApp</span>
               <strong>{user.phone || "Belum diisi"}</strong>
             </div>
             <div className="profile-row">
-              <span>Tanggal Mendaftar</span>
+              <span>Tanggal mendaftar</span>
               <strong>{new Date(user.createdAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}</strong>
             </div>
             <div className="profile-row">
-              <span>Total Pesanan</span>
-              <strong>{user.orders.length} Pesanan</strong>
+              <span>Total pesanan</span>
+              <strong className="admin-numeric">{user.orders.length} pesanan</strong>
             </div>
             <div className="profile-row">
-              <span>Total Belanja (Berhasil)</span>
-              <strong>{rupiah(totalSpent)}</strong>
+              <span>Total belanja berhasil</span>
+              <strong className="admin-numeric">{rupiah(totalSpent)}</strong>
             </div>
           </div>
 
           {/* Refund settings card */}
           <div className="detail-card">
-            <h3>
-              <CreditCard size={16} /> Pengaturan Rekening Refund
-            </h3>
+            <h2 className="detail-card-heading">
+              <CreditCard size={16} aria-hidden="true" /> Rekening refund
+            </h2>
             {user.refundSetting ? (
               user.refundSetting.type === "bank" ? (
                 <>
@@ -115,16 +119,16 @@ export default async function UserDetailAdminPage({
                     <strong>Transfer Bank</strong>
                   </div>
                   <div className="profile-row">
-                    <span>Nama Bank</span>
+                    <span>Nama bank</span>
                     <strong>{user.refundSetting.bankName}</strong>
                   </div>
                   <div className="profile-row">
-                    <span>Atas Nama Pemilik</span>
+                    <span>Atas nama</span>
                     <strong>{user.refundSetting.bankOwnerName}</strong>
                   </div>
                   <div className="profile-row">
-                    <span>Nomor Rekening</span>
-                    <strong>{user.refundSetting.bankNumber}</strong>
+                    <span>Nomor rekening</span>
+                    <strong className="admin-data-code">{user.refundSetting.bankNumber}</strong>
                   </div>
                 </>
               ) : (
@@ -134,16 +138,16 @@ export default async function UserDetailAdminPage({
                     <strong>E-Wallet</strong>
                   </div>
                   <div className="profile-row">
-                    <span>Penyedia Layanan</span>
+                    <span>Penyedia layanan</span>
                     <strong>{user.refundSetting.ewalletName}</strong>
                   </div>
                   <div className="profile-row">
-                    <span>Nama Akun</span>
+                    <span>Nama akun</span>
                     <strong>{user.refundSetting.ewalletOwnerName}</strong>
                   </div>
                   <div className="profile-row">
-                    <span>Nomor Telepon</span>
-                    <strong>{user.refundSetting.ewalletNumber}</strong>
+                    <span>Nomor telepon</span>
+                    <strong className="admin-data-code">{user.refundSetting.ewalletNumber}</strong>
                   </div>
                 </>
               )
@@ -154,9 +158,9 @@ export default async function UserDetailAdminPage({
 
           {/* Address card */}
           <div className="detail-card">
-            <h3>
-              <MapPin size={16} /> Buku Alamat Tersimpan ({user.addresses.length}/5)
-            </h3>
+            <h2 className="detail-card-heading">
+              <MapPin size={16} aria-hidden="true" /> Alamat tersimpan ({user.addresses.length}/5)
+            </h2>
             {user.addresses.length > 0 ? (
               user.addresses.map(addr => (
                 <div key={addr.id} className="admin-address-item">
@@ -174,12 +178,12 @@ export default async function UserDetailAdminPage({
           </div>
         </div>
 
-        <div>
+        <aside>
           {/* Order history sidebar card */}
           <div className="detail-card order-history-card">
-            <h3>
-              <ClipboardList size={16} /> Riwayat Pesanan ({user.orders.length})
-            </h3>
+            <h2 className="detail-card-heading">
+              <ClipboardList size={16} aria-hidden="true" /> Riwayat pesanan ({user.orders.length})
+            </h2>
             {user.orders.length > 0 ? (
               <div className="admin-order-history">
                 {user.orders.map(order => (
@@ -189,12 +193,12 @@ export default async function UserDetailAdminPage({
                     className="admin-order-history-item"
                   >
                     <div className="admin-order-history-head">
-                      <strong>{order.publicNumber}</strong>
+                      <strong className="admin-data-code">{order.publicNumber}</strong>
                       <StatusPill status={uiStatus(order.fulfillmentState)} />
                     </div>
                     <div className="admin-order-history-meta">
                       <span>{new Date(order.createdAt).toLocaleDateString("id-ID")}</span>
-                      <strong>{rupiah(Number(order.grandTotal))}</strong>
+                      <strong className="admin-numeric">{rupiah(Number(order.grandTotal))}</strong>
                     </div>
                   </Link>
                 ))}
@@ -203,7 +207,7 @@ export default async function UserDetailAdminPage({
               <p className="detail-empty">Belum ada pesanan terdaftar.</p>
             )}
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );

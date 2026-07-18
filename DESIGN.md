@@ -6,7 +6,7 @@ Dokumen ini adalah sumber acuan visual tunggal untuk storefront, akun pelanggan,
 
 ### 1.1 Karakter visual
 
-REMPAHKARTA memakai gaya editorial yang hangat, modern, minimal, dan bersih. Foto produk menjadi fokus utama. Antarmuka memakai canvas krem muda, permukaan putih hangat, teks cokelat gelap, border tipis, serta aksen gelap #120800 dan aksen emas (#d5a63e / #caa052). Efek visual harus tenang. Ornamen yang tidak mendukung pemahaman dilarang.
+REMPAHKARTA memakai gaya editorial yang hangat, modern, minimal, dan bersih. Foto produk menjadi fokus utama. Antarmuka memakai canvas dasar putih, permukaan putih hangat atau muted hanya untuk membedakan kelompok informasi, teks cokelat gelap, border tipis, serta aksen gelap #120800 dan aksen emas (#d5a63e / #caa052). Efek visual harus tenang. Ornamen yang tidak mendukung pemahaman dilarang. Panel admin dan halaman login admin wajib mempertahankan background dasar putih; warna krem tidak boleh dipakai sebagai canvas penuh halaman.
 
 ### 1.2 Prioritas pengalaman
 
@@ -28,7 +28,7 @@ Semua warna antarmuka wajib berasal dari CSS custom properties. Hex acak di komp
 
 ```css
 :root {
-  --canvas: #f8f6f1;
+  --canvas: #ffffff;
   --surface: #fffefa;
   --surface-muted: #f1ede5;
   --surface-raised: #ffffff;
@@ -199,7 +199,11 @@ State yang wajib diperiksa: awaiting payment, paid, failed, processing, packed, 
 
 ### 8.1 Shell
 
-Desktop memakai sidebar 260 px dan topbar 70 px. Sidebar memisahkan menu operasional dan sistem. Active state memakai accent soft. Sidebar desktop wajib dapat diciutkan tanpa menutupi isi; tombol topbar membuka kembali sidebar dan mengumumkan `aria-expanded`. Mobile memakai drawer off-canvas dengan scrim, menutup setelah navigasi, dan tidak mewarisi state collapse desktop. Semua route admin harus dapat dijangkau pada mobile.
+Shell admin memakai canvas dasar putih. Permukaan sidebar, topbar, dan konten dibedakan melalui border, spacing, dan hierarki, bukan bidang krem yang menutupi seluruh halaman. Desktop dimulai pada lebar 1024 px dan memakai sidebar 260 px serta topbar 70 px. Sidebar memisahkan menu operasional dan sistem. Active state memakai accent soft. Sidebar desktop wajib dapat diciutkan tanpa menutupi isi; tombol topbar membuka kembali sidebar dan mengumumkan `aria-expanded`.
+
+Lebar 320 sampai 1023 px memakai drawer off-canvas dengan scrim, termasuk seluruh rentang tablet. Drawer menutup setelah navigasi, dapat ditutup melalui tombol eksplisit, tap pada scrim, dan tombol Escape, serta tidak mewarisi state collapse desktop. Ketika tertutup, drawer tidak boleh menerima fokus atau tetap terbaca sebagai navigasi aktif oleh teknologi bantu. Ketika terbuka, fokus dipindahkan ke drawer, scroll halaman di belakang dikunci, dan fokus kembali ke pemicu setelah drawer ditutup. Semua route admin harus dapat dijangkau pada mobile.
+
+Brand, subtitle, dan tombol tutup tidak boleh dipaksa dalam satu baris yang dapat saling menindih. Area brand memakai kolom `minmax(0, 1fr)` dan kolom aksi tetap. Tombol tutup drawer ditampilkan pada mobile dan tablet; collapse desktop dikendalikan dari topbar. Topbar tidak boleh memuat kontrol dekoratif atau kontrol yang tampak aktif tetapi tidak memiliki tindakan nyata.
 
 ### 8.2 Dashboard
 
@@ -207,11 +211,19 @@ Dashboard menampilkan metrik operasional, pesanan terbaru, dan antrean tindakan.
 
 ### 8.3 Tabel
 
-Tabel memakai header muted, row divider, hover halus, status pill, dan satu tautan detail yang jelas. Tabel lebar memakai horizontal scroll pada mobile. Kolom PII harus tetap diminimalkan. Search dan filter berada di toolbar yang dapat membungkus.
+Tabel memakai header muted, row divider, hover halus, status pill, dan satu tautan detail yang jelas. Tabel lebar tetap berupa tabel dan ditempatkan di dalam container horizontal scroll pada mobile dan tablet; body halaman tidak boleh menjadi area scroll horizontal. Kolom PII harus tetap diminimalkan. Nomor pesanan, SKU, email, resi, dan nilai panjang memakai `min-width: 0`, wrapping, atau truncation yang tetap menyediakan akses ke nilai lengkap.
+
+Search dan filter berada di toolbar yang dapat membungkus. Toolbar hanya boleh menampilkan kontrol yang benar-benar bekerja terhadap data atau navigasi yang tersedia. Input pencarian tanpa handler, filter tanpa efek, tombol ekspor tanpa hasil, tombol rekonsiliasi tanpa aksi, dan ikon notifikasi tanpa tujuan dilarang ditampilkan sebagai kontrol aktif. Fitur yang belum tersedia dihilangkan dari UI; label seperti "segera hadir" hanya boleh dipakai bila informasinya memang diperlukan dan elemen tersebut tidak menyerupai kontrol aktif.
+
+Input tabel dan varian memiliki tinggi minimal 40 px pada desktop serta 44 px pada mobile dan tablet. Checkbox, switch, tombol tambah, tombol hapus, upload media, dan tombol penyesuaian stok harus memiliki area interaksi minimal 44 kali 44 px pada perangkat sentuh. Kepadatan tabel tidak boleh dicapai dengan mengecilkan teks data di bawah 10 px atau menghilangkan indikator fokus.
 
 ### 8.4 Detail dan form
 
-Detail order memakai kolom utama dan rail aksi. Form produk mengelompokkan informasi dasar, media, variasi, harga, dimensi, stok, dan publikasi. Aksi destruktif ditempatkan terpisah dari save. Input SKU, harga, stok, berat, dan dimensi tetap mengikuti validasi domain yang ada.
+Detail order memakai kolom utama `minmax(0, 1fr)` dan rail aksi berlebar terkendali. Rail memuat ringkasan status dan aksi yang sah untuk state aktif, tidak mengulang seluruh isi kolom utama, serta boleh sticky hanya bila seluruh isinya tetap dapat dijangkau dalam viewport. Pada lebar di bawah 1024 px rail berubah menjadi alur satu kolom setelah informasi utama; tidak boleh menjadi overlay, menutupi konten, atau mempertahankan sticky desktop. Aksi berisiko ditempatkan dalam panel konfirmasi yang terpisah dari aksi operasional biasa.
+
+Form produk mempertahankan route dan logic yang ada, tetapi susunan visual wajib mengelompokkan informasi dasar, media, variasi, harga, berat dan dimensi, stok, serta publikasi dalam section yang jelas. Desktop dapat memakai kolom utama dan rail publikasi, sedangkan mobile dan tablet memakai satu kolom sesuai urutan tersebut. Save utama ditempatkan konsisten di akhir alur atau rail publikasi; aksi destruktif dipisahkan secara visual dan tidak berdampingan dengan save tanpa panel konfirmasi. Input SKU, harga, stok, berat, dan dimensi tetap mengikuti validasi domain yang ada.
+
+Editor varian selalu berada di container scroll tersendiri bila tabelnya lebih lebar dari viewport. Kolom identitas varian, SKU, harga, stok, dimensi, status, dan media tidak boleh ditumpuk secara acak atau disembunyikan hanya untuk membuat tabel muat. Header, field, helper text, error, dan aksi per baris harus tetap terhubung secara visual. Media varian dan produk memakai rasio 1:1. Tombol hapus yang hanya tersedia di atas thumbnail wajib memiliki alternatif 44 px pada perangkat sentuh.
 
 State admin yang wajib diperiksa: daftar kosong, data padat, stok aman, stok rendah, stok habis, order bermasalah, pembatalan menunggu, shipment tersedia, shipment gagal, retur menunggu keputusan, retur ditolak, refund diproses, user tanpa alamat, user tanpa rekening, dan integrasi belum siap.
 
@@ -224,8 +236,8 @@ Breakpoint kanonis adalah 640, 760, 1024, dan 1280 px. Implementasi mobile-first
 | 320 sampai 389 px | satu kolom penuh, label boleh wrap, metrik maksimal dua kolom, tombol aksi utama selebar container |
 | 390 sampai 639 px | satu kolom form, target sentuh 44 px, padding 12 sampai 16 px, katalog dua kolom |
 | 640 sampai 759 px | dua kolom produk, card ringkas, navigasi horizontal akun |
-| 760 sampai 1023 px | grid dua kolom, summary dapat tetap berdampingan bila muat, admin memakai drawer |
-| 1024 sampai 1279 px | layout desktop padat, gap diperkecil |
+| 760 sampai 1023 px | grid dua kolom bila konten benar-benar muat; panel admin tetap memakai drawer dan form/detail admin tetap satu kolom |
+| 1024 sampai 1279 px | shell admin desktop mulai aktif, sidebar 260 px dapat diciutkan, layout desktop padat, gap diperkecil |
 | 1280 px ke atas | container maksimal, whitespace diperluas |
 
 Tidak boleh ada horizontal overflow pada body. Pengecualian hanya untuk tabel admin, filter chip, progress step, dan navigasi akun yang sengaja dapat di-scroll.
@@ -243,7 +255,7 @@ Tidak boleh ada horizontal overflow pada body. Pengecualian hanya untuk tabel ad
 
 ## 10. Aksesibilitas
 
-Kontras teks normal minimal 4.5:1. Teks besar minimal 3:1. Fokus keyboard harus terlihat. Semua icon-only button wajib memiliki `aria-label`. Status tidak bergantung pada warna. Target sentuh minimal 44 kali 44 px. Heading mengikuti urutan logis. Modal dan menu harus dapat ditutup secara eksplisit.
+Kontras teks normal minimal 4.5:1. Teks besar minimal 3:1. Fokus keyboard harus terlihat. Semua icon-only button wajib memiliki `aria-label`. Status tidak bergantung pada warna. Target sentuh minimal 44 kali 44 px pada mobile dan tablet, termasuk link navigasi, switch, checkbox, icon button, tombol upload/hapus, dan kontrol di dalam tabel. Tinggi kontrol kompak desktop tidak boleh kurang dari 40 px. Heading mengikuti urutan logis. Modal, drawer, dan menu harus dapat ditutup secara eksplisit dan melalui Escape. Elemen yang disembunyikan secara visual tidak boleh tetap berada dalam urutan fokus.
 
 Animasi maksimal 220 ms. `prefers-reduced-motion` menonaktifkan animasi, transform, dan smooth scroll. Autoplay, parallax, flashing, dan countdown agresif dilarang.
 
@@ -289,6 +301,19 @@ Untuk setiap route, lakukan urutan berikut.
 5. Periksa konsistensi token, spacing, radius, dan status.
 6. Periksa bahwa perubahan hanya bersifat presentasional.
 7. Jalankan lint, test, dan build setelah iterasi visual selesai.
+
+### 14.1 Validasi perubahan tanpa akses tampilan langsung
+
+Jika halaman tidak dapat dijalankan karena membutuhkan login, database, provider, atau data produksi, perubahan dilakukan melalui audit kode menyeluruh dan bukan berdasarkan asumsi visual singkat. Untuk setiap perubahan admin wajib dilakukan hal berikut.
+
+1. Petakan route, layout, komponen, selector, kondisi render, dan seluruh breakpoint yang memengaruhi halaman sebelum mengedit.
+2. Telusuri cascade CSS akhir, termasuk selector duplikat, specificity, `!important`, media query yang tertimpa, dan class dinamis. Aturan lama yang sudah tidak efektif harus dikonsolidasikan agar tidak menjadi sumber regresi.
+3. Pertahankan kontrak API, query, payload, validasi, state machine, hak akses, kalkulasi, dan flow transaksi. Perubahan blind-code hanya boleh menyentuh hierarki presentasional, class, token, aksesibilitas, dan responsivitas.
+4. Buktikan dari kode bahwa setiap grid memakai `minmax(0, 1fr)` bila memuat teks dinamis, setiap area scroll dibatasi pada container yang tepat, sticky memiliki fallback mobile, dan tidak ada elemen fixed atau absolute yang dapat menutupi konten.
+5. Periksa secara eksplisit viewport 320, 390, 640, 760, 768, 1023, 1024, 1280, dan layar desktop lebar melalui penalaran ukuran serta aturan CSS. Batas 1023/1024 wajib diuji karena menandai perpindahan drawer ke shell desktop.
+6. Cari kontrol tanpa handler atau tujuan nyata. Kontrol palsu harus dihapus atau tidak dirender; dilarang menyamarkan ketidaktersediaan fungsi hanya dengan gaya disabled.
+7. Jalankan lint, test, TypeScript, dan production build. Warning atau error yang sudah ada dicatat terpisah; perubahan UI tidak boleh menambah warning baru.
+8. Lakukan pembacaan ulang source setelah build untuk memastikan formatter atau perbaikan cascade tidak mengubah logic dan tidak menyentuh file API.
 
 ## 15. Matriks state lintas fitur
 

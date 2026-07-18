@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { rupiah } from "@/lib/format";
@@ -33,25 +34,23 @@ export default async function UsersAdminPage() {
     <div className="admin-content">
       <div className="admin-page-head">
         <div>
-          <p className="eyebrow">Customer management</p>
+          <p className="eyebrow">Manajemen pelanggan</p>
           <h1>Pelanggan</h1>
           <p>Lihat data pelanggan terdaftar, buku alamat, dan riwayat belanja mereka.</p>
         </div>
       </div>
 
       <section className="table-card">
-        <div className="table-toolbar">
-          <input className="customer-search-input" placeholder="Cari pelanggan berdasarkan nama atau email…" />
-        </div>
         <div className="admin-table-wrap">
           <table className="admin-table">
+            <caption className="admin-table-caption">Daftar pelanggan terdaftar</caption>
             <thead>
               <tr>
-                <th>Pelanggan</th>
-                <th>Tanggal Daftar</th>
-                <th>Jumlah Pesanan</th>
-                <th>Total Belanja</th>
-                <th>Aksi</th>
+                <th scope="col">Pelanggan</th>
+                <th scope="col">Tanggal daftar</th>
+                <th scope="col">Jumlah pesanan</th>
+                <th scope="col">Total belanja</th>
+                <th scope="col">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -60,9 +59,12 @@ export default async function UsersAdminPage() {
                   <td>
                     <div className="customer-table-profile">
                       {row.avatarUrl ? (
-                        <img
+                        <Image
                           src={row.avatarUrl}
                           alt=""
+                          width={36}
+                          height={36}
+                          unoptimized
                           className="customer-table-avatar"
                           referrerPolicy="no-referrer"
                         />
@@ -72,7 +74,7 @@ export default async function UsersAdminPage() {
                         </span>
                       )}
                       <div>
-                        <strong>{row.name}</strong>
+                        <strong className="admin-table-cell-wrap">{row.name}</strong>
                         <span className="sub">
                           {row.email}
                         </span>
@@ -85,14 +87,14 @@ export default async function UsersAdminPage() {
                     })}
                   </td>
                   <td>
-                    <strong>{row.totalOrders} pesanan</strong>
+                    <strong className="admin-numeric">{row.totalOrders} pesanan</strong>
                   </td>
                   <td>
-                    <strong>{rupiah(row.totalSpent)}</strong>
+                    <strong className="admin-numeric">{rupiah(row.totalSpent)}</strong>
                   </td>
                   <td>
                     <Link href={`/admin/users/${row.id}`} className="table-link">
-                      Lihat rincian →
+                      Lihat rincian<span aria-hidden="true"> →</span>
                     </Link>
                   </td>
                 </tr>
