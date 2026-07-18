@@ -184,9 +184,11 @@ export function CartPageClient({ allProducts }: { allProducts: Product[] }) {
                     <Image unoptimized src={item.product.image} alt={item.product.name} fill />
                   </div>
                   <div className="cart-item-body">
-                    <div>
-                      <p className="eyebrow">{item.product.category}</p>
-                      <h2 className="cart-item-title">{item.product.name}</h2>
+                    <div className="cart-item-info">
+                      <div className="cart-item-title-wrapper">
+                        <p className="eyebrow">{item.product.category}</p>
+                        <h2 className="cart-item-title">{item.product.name}</h2>
+                      </div>
                       
                       {item.product.hasVariants ? (
                         <div className="cart-options">
@@ -218,41 +220,44 @@ export function CartPageClient({ allProducts }: { allProducts: Product[] }) {
                             </label>
                           )}
                         </div>
-                      ) : (
-                        <p className="cart-single-product">Produk tunggal</p>
-                      )}
-                      
-                      <strong className="cart-item-price">{rupiah(item.variant.price)}</strong>
+                      ) : null}
                     </div>
 
-                    <div className="quantity-control" aria-label={`Jumlah ${item.product.name}`}>
-                      <button
-                        type="button"
-                        className="quantity-button"
-                        aria-label="Kurangi jumlah"
-                        disabled={item.quantity <= 1}
-                        onClick={() => updateQuantity(item.variantId, -1)}
-                      >
-                        <Minus size={14}/>
-                      </button>
-                      <span className="quantity-value">{item.quantity}</span>
-                      <button
-                        type="button"
-                        className="quantity-button"
-                        aria-label="Tambah jumlah"
-                        disabled={item.quantity >= item.variant.stock}
-                        onClick={() => updateQuantity(item.variantId, 1)}
-                      >
-                        <Plus size={14}/>
-                      </button>
-                      <button
-                        type="button"
-                        className="quantity-button remove"
-                        aria-label="Hapus item"
-                        onClick={() => removeItem(item.variantId)}
-                      >
-                        <Trash2 size={14}/>
-                      </button>
+                    <div className="cart-item-actions">
+                      <div className="cart-item-price-group">
+                        <span>Harga unit</span>
+                        <strong className="cart-item-price">{rupiah(item.variant.price)}</strong>
+                      </div>
+                      
+                      <div className="quantity-control" aria-label={`Jumlah ${item.product.name}`}>
+                        <button
+                          type="button"
+                          className="quantity-button"
+                          aria-label="Kurangi jumlah"
+                          disabled={item.quantity <= 1}
+                          onClick={() => updateQuantity(item.variantId, -1)}
+                        >
+                          <Minus size={14}/>
+                        </button>
+                        <span className="quantity-value">{item.quantity}</span>
+                        <button
+                          type="button"
+                          className="quantity-button"
+                          aria-label="Tambah jumlah"
+                          disabled={item.quantity >= item.variant.stock}
+                          onClick={() => updateQuantity(item.variantId, 1)}
+                        >
+                          <Plus size={14}/>
+                        </button>
+                        <button
+                          type="button"
+                          className="quantity-button remove"
+                          aria-label="Hapus item"
+                          onClick={() => removeItem(item.variantId)}
+                        >
+                          <Trash2 size={14}/>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -272,10 +277,7 @@ export function CartPageClient({ allProducts }: { allProducts: Product[] }) {
               <span>Total Berat</span>
               <span>{formattedWeight}</span>
             </div>
-            <div className="summary-line">
-              <span>Ongkir</span>
-              <span>Dihitung saat checkout</span>
-            </div>
+
             <div className="summary-line total">
               <span>Total sementara</span>
               <span>{rupiah(subtotal)}</span>

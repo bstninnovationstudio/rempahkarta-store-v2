@@ -69,6 +69,10 @@ export default async function Home() {
       <main>
         <section className="hero">
           <div className="hero-copy">
+            <div className="mall-badges">
+              <img src="/shopee-mall.webp" alt="Shopee Mall" className="mall-badge" />
+              <img src="/tiktok-mall.webp" alt="TikTok Mall" className="mall-badge" />
+            </div>
             <p className="eyebrow">100% Rempah Asli Nusantara</p>
             <h1>
               Bagikan Kehangatan<br />

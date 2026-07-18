@@ -12,6 +12,7 @@ export function StoreHeader() {
   const [loading, setLoading] = useState(true);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const closeMenuButtonRef = useRef<HTMLButtonElement>(null);
 

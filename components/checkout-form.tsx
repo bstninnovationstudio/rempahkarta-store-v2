@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
-import { LockKeyhole, Search } from "lucide-react";
+import { LockKeyhole, Search, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { rupiah } from "@/lib/format";
 import type { Product, StoreVariant } from "@/lib/types";
@@ -154,8 +154,9 @@ export function CheckoutForm({
   }
 
   function handleAddressSelect(addressId: string) {
-    setSelectedAddressId(addressId);
-    if (addressId === "custom") {
+    if (selectedAddressId === addressId) {
+      // Toggle off to custom if clicking the active one
+      setSelectedAddressId("custom");
       setNameInput(customerName);
       setPhoneInput("");
       setEmailInput(customerEmail);
@@ -165,16 +166,28 @@ export function CheckoutForm({
       setOptions([]);
       setShipping(null);
     } else {
-      const addr = savedAddresses.find(a => a.id === addressId);
-      if (addr) {
-        setNameInput(addr.contactName);
-        setPhoneInput(addr.contactPhone);
-        setEmailInput(addr.contactEmail);
-        setAddressInput(addr.address);
-        const activeArea = { id: addr.areaId, label: `Kode Pos ${addr.postalCode}`, postalCode: addr.postalCode };
-        setArea(activeArea);
-        setAreaQuery(activeArea.label);
-        loadRates(activeArea);
+      setSelectedAddressId(addressId);
+      if (addressId === "custom") {
+        setNameInput(customerName);
+        setPhoneInput("");
+        setEmailInput(customerEmail);
+        setAddressInput("");
+        setArea(null);
+        setAreaQuery("");
+        setOptions([]);
+        setShipping(null);
+      } else {
+        const addr = savedAddresses.find(a => a.id === addressId);
+        if (addr) {
+          setNameInput(addr.contactName);
+          setPhoneInput(addr.contactPhone);
+          setEmailInput(addr.contactEmail);
+          setAddressInput(addr.address);
+          const activeArea = { id: addr.areaId, label: `Kode Pos ${addr.postalCode}`, postalCode: addr.postalCode };
+          setArea(activeArea);
+          setAreaQuery(activeArea.label);
+          loadRates(activeArea);
+        }
       }
     }
   }
@@ -231,110 +244,127 @@ export function CheckoutForm({
       <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" />
       <form className="checkout-layout" onSubmit={submit}>
         <div>
-          {savedAddresses.length > 0 && (
-            <section className="form-section">
-              <div className="form-section-head">
-                <span className="step-number">A</span>
-                <h2>Alamat tersimpan</h2>
+          <section className="form-section">
+            <div className="form-section-head">
+              <span className="step-number">A</span>
+              <h2>Alamat tersimpan</h2>
+            </div>
+            <div className="address-cards-grid">
+              {savedAddresses.map(addr => (
+                <button
+                  type="button"
+                  key={addr.id}
+                  className={`address-card ${selectedAddressId === addr.id ? "active" : ""}`}
+                  onClick={() => handleAddressSelect(addr.id)}
+                >
+                  <div className="address-card-label">{addr.label}</div>
+                  <div className="address-card-name">{addr.contactName}</div>
+                  <div className="address-card-phone">{addr.contactPhone}</div>
+                  <div className="address-card-detail">{addr.address}</div>
+                  <div className="address-card-postal">Kode Pos: {addr.postalCode}</div>
+                </button>
+              ))}
+              
+              <button
+                type="button"
+                className={`address-card ${selectedAddressId === "custom" ? "active" : ""}`}
+                onClick={() => handleAddressSelect("custom")}
+              >
+                <div className="address-card-label">Alamat Kustom</div>
+                <div className="address-card-name">Gunakan alamat kustom baru</div>
+                <div className="address-card-detail">Masukkan nama, kontak, dan alamat pengiriman baru di bawah ini.</div>
+              </button>
+            </div>
+
+            {savedAddresses.length < 5 ? (
+              <div className="saved-address-note">
+                <Link href="/user/addresses?action=new&redirect=/checkout">
+                  + Simpan alamat baru di pengaturan (slot {savedAddresses.length}/5)
+                </Link>
               </div>
+            ) : (
+              <div className="saved-address-note muted">
+                Limit alamat tersimpan (5/5) penuh. Kelola di <Link href="/user/addresses">pengaturan alamat</Link>.
+              </div>
+            )}
+          </section>
+
+          <section className="form-section">
+            <div className="form-section-head">
+              <span className="step-number">B</span>
+              <h2>Detail Pengiriman</h2>
+            </div>
+            
+            <div className="form-sub-section">
+              <h3 className="form-sub-title">Kontak Penerima</h3>
+              <div className="field-grid mb-6">
+                <div className="field">
+                  <label htmlFor="name">Nama lengkap</label>
+                  <input id="name" name="name" required minLength={2} maxLength={160} autoComplete="name" placeholder="Budi Santoso" value={nameInput} onChange={e => setNameInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                </div>
+                <div className="field">
+                  <label htmlFor="phone">Nomor WhatsApp</label>
+                  <input id="phone" name="phone" required minLength={8} maxLength={20} inputMode="tel" autoComplete="tel" pattern="[0-9+() -]{8,20}" placeholder="0812 3456 7890" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                </div>
+                <div className="field full">
+                  <label htmlFor="email">Email</label>
+                  <input id="email" name="email" type="email" required maxLength={200} autoComplete="email" placeholder="budi@email.com" value={emailInput} onChange={e => setEmailInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                  <small>Email dipakai untuk konfirmasi dan melacak pesanan.</small>
+                </div>
+              </div>
+            </div>
+
+            <div className="form-sub-section">
+              <h3 className="form-sub-title">Alamat Pengiriman</h3>
               <div className="field-grid">
                 <div className="field full">
-                  <label htmlFor="select-saved-address">Pilih alamat pengiriman</label>
-                  <select
-                    id="select-saved-address"
-                    className="saved-address-select"
-                    value={selectedAddressId}
-                    onChange={e => handleAddressSelect(e.target.value)}
-                  >
-                    <option value="custom">Gunakan alamat kustom baru</option>
-                    {savedAddresses.map(addr => (
-                      <option key={addr.id} value={addr.id}>
-                        [{addr.label}] {addr.contactName} — {addr.address} ({addr.postalCode})
-                      </option>
-                    ))}
-                  </select>
-                  {savedAddresses.length < 5 ? (
-                    <div className="saved-address-note">
-                      <Link href="/user/addresses?action=new&redirect=/checkout">
-                        + Simpan alamat baru di pengaturan (slot {savedAddresses.length}/5)
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="saved-address-note muted">
-                      Limit alamat tersimpan (5/5) penuh. Kelola di <Link href="/user/addresses">pengaturan alamat</Link>.
+                  <label htmlFor="area">Kecamatan atau kode pos</label>
+                  <div className="search-field">
+                    <input id="area" required minLength={3} maxLength={120} value={areaQuery} onChange={event => { setAreaQuery(event.target.value); setArea(null); setAreaResults([]); setOptions([]); setShipping(null); }} autoComplete="off" placeholder="Tulis kecamatan atau kode pos" disabled={selectedAddressId !== "custom"} />
+                    <button className="button button-light" type="button" disabled={searchingArea || selectedAddressId !== "custom"} onClick={searchArea}>
+                      <Search size={15} /> {searchingArea ? "Mencari…" : "Cari"}
+                    </button>
+                  </div>
+                  {areaResults.length > 0 && (
+                    <div className="area-results static">
+                      {areaResults.map(result => (
+                        <button type="button" key={result.id} onClick={() => { const selected = { id: result.id, label: `${result.name} — ${result.postal_code}`, postalCode: String(result.postal_code) }; setArea(selected); setAreaQuery(selected.label); setAreaResults([]); setOptions([]); setShipping(null); }}>
+                          {result.name} · {result.postal_code}
+                        </button>
+                      ))}
                     </div>
                   )}
+                  {area && <small className="selected-hint">Lokasi terpilih: {area.label}</small>}
                 </div>
-              </div>
-            </section>
-          )}
-
-          <section className="form-section">
-            <div className="form-section-head">
-              <span className="step-number">1</span>
-              <h2>Kontak penerima</h2>
-            </div>
-            <div className="field-grid">
-              <div className="field">
-                <label htmlFor="name">Nama lengkap</label>
-                <input id="name" name="name" required minLength={2} maxLength={160} autoComplete="name" placeholder="Budi Santoso" value={nameInput} onChange={e => setNameInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
-              </div>
-              <div className="field">
-                <label htmlFor="phone">Nomor WhatsApp</label>
-                <input id="phone" name="phone" required minLength={8} maxLength={20} inputMode="tel" autoComplete="tel" pattern="[0-9+() -]{8,20}" placeholder="0812 3456 7890" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
-              </div>
-              <div className="field full">
-                <label htmlFor="email">Email</label>
-                <input id="email" name="email" type="email" required maxLength={200} autoComplete="email" placeholder="budi@email.com" value={emailInput} onChange={e => setEmailInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
-                <small>Email dipakai untuk konfirmasi dan melacak pesanan.</small>
+                <div className="field full">
+                  <label htmlFor="address">Alamat lengkap</label>
+                  <textarea id="address" name="address" required minLength={10} maxLength={1000} autoComplete="street-address" placeholder="Nama jalan, nomor rumah, RT/RW, patokan" value={addressInput} onChange={e => setAddressInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                </div>
               </div>
             </div>
           </section>
 
           <section className="form-section">
             <div className="form-section-head">
-              <span className="step-number">2</span>
-              <h2>Alamat pengiriman</h2>
-            </div>
-            <div className="field-grid">
-              <div className="field full">
-                <label htmlFor="area">Kecamatan atau kode pos</label>
-                <div className="search-field">
-                  <input id="area" required minLength={3} maxLength={120} value={areaQuery} onChange={event => { setAreaQuery(event.target.value); setArea(null); setAreaResults([]); setOptions([]); setShipping(null); }} autoComplete="off" placeholder="Tulis kecamatan atau kode pos" disabled={selectedAddressId !== "custom"} />
-                  <button className="button button-light" type="button" disabled={searchingArea || selectedAddressId !== "custom"} onClick={searchArea}>
-                    <Search size={15} /> {searchingArea ? "Mencari…" : "Cari"}
-                  </button>
-                </div>
-                {areaResults.length > 0 && (
-                  <div className="area-results static">
-                    {areaResults.map(result => (
-                      <button type="button" key={result.id} onClick={() => { const selected = { id: result.id, label: `${result.name} — ${result.postal_code}`, postalCode: String(result.postal_code) }; setArea(selected); setAreaQuery(selected.label); setAreaResults([]); setOptions([]); setShipping(null); }}>
-                        {result.name} · {result.postal_code}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {area && <small className="selected-hint">Lokasi terpilih: {area.label}</small>}
-              </div>
-              <div className="field full">
-                <label htmlFor="address">Alamat lengkap</label>
-                <textarea id="address" name="address" required minLength={10} maxLength={1000} autoComplete="street-address" placeholder="Nama jalan, nomor rumah, RT/RW, patokan" value={addressInput} onChange={e => setAddressInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
-              </div>
-            </div>
-          </section>
-
-          <section className="form-section">
-            <div className="form-section-head">
-              <span className="step-number">3</span>
-              <h2>Pilih pengiriman</h2>
+              <span className="step-number">C</span>
+              <h2>Pilih Jasa Pengiriman</h2>
             </div>
             {!area ? (
               <div className="shipping-placeholder">Pilih kecamatan atau kode pos yang valid terlebih dahulu.</div>
             ) : (
               <>
-                <button type="button" className="button button-light" disabled={loadingRates} onClick={() => loadRates()}>
-                  {loadingRates ? "Menghitung ongkir…" : options.length ? "Perbarui ongkir" : "Cek ongkir"}
-                </button>
+                {selectedAddressId === "custom" ? (
+                  <button type="button" className="button button-light button-block" disabled={loadingRates} onClick={() => loadRates()}>
+                    {loadingRates ? "Menghitung ongkir…" : options.length ? "Perbarui ongkir" : "Cek ongkir"}
+                  </button>
+                ) : (
+                  loadingRates && (
+                    <div className="shipping-loading">
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Menghitung ongkir…</span>
+                    </div>
+                  )
+                )}
                 <div className="shipping-options-list">
                   {options.map(option => (
                     <button type="button" key={option.id} className={`shipping-option ${shipping?.id === option.id ? "active" : ""}`} onClick={() => setShipping(option)}>
@@ -417,8 +447,8 @@ export function CheckoutForm({
             {busy ? "Membuat QRIS…" : "Bayar dengan QRIS"}
           </button>
 
-          <p className="summary-note">
-            <LockKeyhole size={15} /> Permintaan checkout, pencarian lokasi, dan ongkir dilindungi verifikasi keamanan di server.
+          <p className="summary-note secure-checkout-note">
+            <LockKeyhole size={15} /> Pembayaran Terlindungi
           </p>
           <div ref={containerRef} className="turnstile-container" aria-live="polite" />
         </aside>

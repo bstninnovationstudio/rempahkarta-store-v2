@@ -53,7 +53,11 @@ export async function getCatalogProducts(): Promise<Product[]> {
       sold: product.sold,
       description: product.description,
       material: "Lihat deskripsi produk",
-      care: ["Simpan sesuai petunjuk pada kemasan"],
+      care: [
+        "Simpan dalam suhu ruangan atau suhu dingin/lemari es",
+        "Jangan terpapar sinar matahari secara langsung dalam jangka waktu yang cukup lama",
+        "Simpan dan tutup rapat (jika sudah terbuka) dan tempatkan pada posisi yang aman"
+      ],
       sizes: [...new Set(variants.map(item => item.option1Value).filter((item): item is string => Boolean(item)))],
       stock: variants.reduce((sum, item) => sum + item.stock, 0),
       hasVariants: product.hasVariants,

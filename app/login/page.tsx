@@ -2,6 +2,7 @@
 
 import React, { useState, Suspense } from "react";
 import Script from "next/script";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { StoreHeader } from "@/components/store-header";
 import { errorMessage } from "@/lib/error-message";
@@ -23,10 +24,6 @@ function googleIdentity() {
 function LoginContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  // States for simulated demo login
-  const [demoName, setDemoName] = useState("Budi Santoso");
-  const [demoEmail, setDemoEmail] = useState("budi.santoso@gmail.com");
 
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect") || "/user";
@@ -52,7 +49,7 @@ function LoginContent() {
           {
             theme: "outline",
             size: "large",
-            width: 320,
+            width: typeof window !== "undefined" ? Math.min(320, Math.max(200, window.innerWidth - 80)) : 320,
             text: "continue_with",
             shape: "rectangular",
           }
@@ -84,34 +81,7 @@ function LoginContent() {
     }
   };
 
-  // Process Simulated Login for Dev/Testing
-  const handleSimulatedLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!demoName.trim() || !demoEmail.trim()) {
-      setError("Nama dan Email simulasi wajib diisi.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const simulatedCredential = `mock_:${demoEmail.trim()}:${demoName.trim()}`;
-      const res = await fetch("/api/auth/google", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential: simulatedCredential }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Gagal melakukan login simulasi");
-      }
-      localStorage.setItem("cart_needs_merge", "true");
-      window.location.href = redirectUrl;
-    } catch (e: unknown) {
-      setError(errorMessage(e, "Gagal login simulasi."));
-      setLoading(false);
-    }
-  };
-
+  // Google Sign-In is used as the primary authentication method
   return (
     <>
       <Script
@@ -125,8 +95,12 @@ function LoginContent() {
 
       <main className="login-container">
         <div className="login-card">
-          <div className="login-logo">REMPAHKARTA</div>
-          <h1>Selamat datang</h1>
+          <header className="login-header">
+            <div className="login-logo-circle">
+              <Image src="/main-logo.webp" alt="REMPAHKARTA Logo" width={52} height={52} className="login-logo-img" unoptimized />
+            </div>
+            <h1 className="login-logo-text">Selamat datang</h1>
+          </header>
           <p>
             Masuk satu pintu menggunakan akun Google Anda untuk mengelola alamat, 
             melacak pesanan, dan menikmati proses checkout yang cepat.
@@ -140,49 +114,13 @@ function LoginContent() {
             </div>
           ) : (
             <div className="login-error">
-              <strong>Info Pengembang:</strong> Client ID Google belum terkonfigurasi. 
-              Gunakan panel simulasi di bawah untuk masuk.
+              <strong>Info Pengembang:</strong> Client ID Google belum terkonfigurasi di env. 
+              Silakan konfigurasikan NEXT_PUBLIC_GOOGLE_CLIENT_ID terlebih dahulu.
             </div>
           )}
 
-          {(!googleClientId || process.env.NODE_ENV === "development" || true) && (
-            <>
-              <div className="divider">
-                <span>Mode Simulasi</span>
-              </div>
-
-              <form className="demo-box" onSubmit={handleSimulatedLogin}>
-                <h3>Masuk Tanpa Google Client ID</h3>
-                <div className="demo-field">
-                  <label htmlFor="demo-name">Nama Lengkap</label>
-                  <input
-                    id="demo-name"
-                    type="text"
-                    required
-                    value={demoName}
-                    onChange={e => setDemoName(e.target.value)}
-                  />
-                </div>
-                <div className="demo-field">
-                  <label htmlFor="demo-email">Alamat Email</label>
-                  <input
-                    id="demo-email"
-                    type="email"
-                    required
-                    value={demoEmail}
-                    onChange={e => setDemoEmail(e.target.value)}
-                  />
-                </div>
-                <button type="submit" className="demo-submit" disabled={loading}>
-                  {loading ? "Memproses..." : "Masuk / Daftar Simulasi"}
-                </button>
-              </form>
-            </>
-          )}
-
-          <div className="security-note">
-            Dengan masuk, Anda menyetujui kebijakan privasi REMPAHKARTA. Sesi Anda dilindungi 
-            oleh sistem enkripsi token JWT yang aman.
+          <div className="login-policy-note">
+            Dengan masuk atau mendaftar, Anda menyetujui <a href="/pages/shipping">Ketentuan Layanan</a> serta <a href="/pages/returns">Kebijakan Privasi & Retur</a> kami. Sesi Anda terenkripsi dan dilindungi secara aman.
           </div>
         </div>
       </main>
