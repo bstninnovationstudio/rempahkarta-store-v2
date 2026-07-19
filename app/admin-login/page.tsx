@@ -1,12 +1,17 @@
 "use client";
 
 import Image from "next/image";
+import Script from "next/script";
 import { LockKeyhole } from "lucide-react";
 import { useState } from "react";
+import { useTurnstile } from "@/components/use-turnstile";
+
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NODE_ENV !== "production" ? "1x00000000000000000000BB" : "");
 
 export default function AdminLogin() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { containerRef, token: getTurnstileToken } = useTurnstile(turnstileSiteKey);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -15,10 +20,11 @@ export default function AdminLogin() {
 
     try {
       const data = new FormData(event.currentTarget);
+      const turnstileToken = await getTurnstileToken("admin_login");
       const response = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: data.get("email"), password: data.get("password") }),
+        body: JSON.stringify({ email: data.get("email"), password: data.get("password"), turnstileToken }),
       });
 
       if (response.ok) {
@@ -35,8 +41,10 @@ export default function AdminLogin() {
   }
 
   return (
-    <main className="simple-page admin-login-page">
-      <form className="panel admin-login-card" onSubmit={submit} aria-busy={busy}>
+    <>
+      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" />
+      <main className="simple-page admin-login-page">
+        <form className="panel admin-login-card" onSubmit={submit} aria-busy={busy}>
         <div className="admin-login-brand">
           <Image src="/main-logo.webp" alt="" width={42} height={42} priority />
           <div>
@@ -78,13 +86,15 @@ export default function AdminLogin() {
           />
         </div>
 
-        {error && <p id="admin-login-error" className="form-error" role="alert">{error}</p>}
+          {error && <p id="admin-login-error" className="form-error" role="alert">{error}</p>}
 
-        <button type="submit" className="button button-dark" disabled={busy}>
-          {busy ? "Memeriksa akses…" : "Masuk ke dashboard"}
-        </button>
-        <p className="admin-login-note">Akses ini khusus pengelola REMPAHKARTA. Jangan membagikan kredensial admin.</p>
-      </form>
-    </main>
+          <button type="submit" className="button button-dark" disabled={busy}>
+            {busy ? "Memeriksa akses…" : "Masuk ke dashboard"}
+          </button>
+          <div ref={containerRef} className="turnstile-container" aria-live="polite" />
+          <p className="admin-login-note">Akses ini khusus pengelola REMPAHKARTA. Jangan membagikan kredensial admin.</p>
+        </form>
+      </main>
+    </>
   );
 }

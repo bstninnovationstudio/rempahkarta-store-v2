@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { CreditCard, Award, Save } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Save, ShieldCheck, WalletCards } from "lucide-react";
 import { errorMessage } from "@/lib/error-message";
+import { useTurnstile } from "@/components/use-turnstile";
+import { useRouter } from "next/navigation";
 
 interface RefundSetting {
   id?: string;
@@ -17,10 +19,25 @@ interface RefundSetting {
 
 interface UserPaymentClientProps {
   initialSetting: RefundSetting | null;
+  turnstileSiteKey: string;
+  embedded?: boolean;
+  isComplete?: boolean;
 }
 
-export function UserPaymentClient({ initialSetting }: UserPaymentClientProps) {
+function maskedAccountNumber(value: string | null | undefined) {
+  if (!value) return "—";
+  return value.length <= 4 ? value : `•••• ${value.slice(-4)}`;
+}
+
+export function UserPaymentClient({
+  initialSetting,
+  turnstileSiteKey,
+  embedded = false,
+  isComplete = false,
+}: UserPaymentClientProps) {
+  const router = useRouter();
   const [setting, setSetting] = useState<RefundSetting | null>(initialSetting);
+  const [isEditing, setIsEditing] = useState(!initialSetting);
   const [type, setType] = useState<"bank" | "ewallet">(initialSetting?.type || "bank");
 
   // Form states
@@ -35,6 +52,7 @@ export function UserPaymentClient({ initialSetting }: UserPaymentClientProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const { containerRef, token } = useTurnstile(turnstileSiteKey);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,10 +75,11 @@ export function UserPaymentClient({ initialSetting }: UserPaymentClientProps) {
         };
 
     try {
+      const turnstileToken = await token("user_payment");
       const res = await fetch("/api/user/payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, turnstileToken }),
       });
 
       const data = await res.json();
@@ -68,6 +87,8 @@ export function UserPaymentClient({ initialSetting }: UserPaymentClientProps) {
 
       setSetting(data.setting);
       setSuccess("Pengaturan rekening refund berhasil disimpan.");
+      setIsEditing(false);
+      router.refresh();
     } catch (e: unknown) {
       setError(errorMessage(e, "Gagal menyimpan data."));
     } finally {
@@ -76,18 +97,35 @@ export function UserPaymentClient({ initialSetting }: UserPaymentClientProps) {
   };
 
   return (
-    <div>
-      <div className="user-content-header">
-        <h1>Pengaturan Refund</h1>
-        <p>Atur rekening bank atau e-wallet Anda untuk menerima pengembalian dana jika terjadi pembatalan/retur pesanan.</p>
+    <section id="payment" className={embedded ? "account-settings-section" : undefined} aria-labelledby="payment-settings-title">
+      <div className={embedded ? "account-settings-section-head" : "user-content-header"}>
+        {embedded && <span className="account-settings-icon"><WalletCards size={19} aria-hidden="true" /></span>}
+        <div>
+          <div className={embedded ? "account-settings-title-row" : undefined}>
+            {embedded ? <h2 id="payment-settings-title">Rekening pengembalian dana</h2> : <h1 id="payment-settings-title">Pengaturan Refund</h1>}
+            {embedded && (
+              <span className={`completion-chip ${isComplete ? "complete" : "incomplete"}`}>
+                {isComplete && <CheckCircle2 size={13} aria-hidden="true" />}
+                {isComplete ? "Lengkap" : "Wajib diisi"}
+              </span>
+            )}
+          </div>
+          <p>Rekening ini akan digunakan untuk proses pengembalian dana. Mohon isi data dengan benar untuk menghindari kesalahan pengiriman dana.</p>
+        </div>
       </div>
 
-      {success && <div className="form-banner success">{success}</div>}
-      {error && <div className="login-error">{error}</div>}
+      {success && <div className="form-banner success" role="status">{success}</div>}
+      {error && <div className="form-banner error" role="alert">{error}</div>}
 
-      {setting && (
+      {setting && !isEditing ? (
         <div className="payment-info-box">
-          <h3>Rekening Refund Saat Ini</h3>
+          <div className="payment-info-heading">
+            <div>
+              <span>Rekening aktif</span>
+              <h3>Tujuan refund saat ini</h3>
+            </div>
+            <ShieldCheck size={18} aria-label="Data rekening tersimpan dengan aman" />
+          </div>
           <div className="payment-info-grid">
             {setting.type === "bank" ? (
               <>
@@ -105,7 +143,7 @@ export function UserPaymentClient({ initialSetting }: UserPaymentClientProps) {
                 </div>
                 <div className="payment-info-row">
                   <span>Nomor Rekening</span>
-                  <strong>{setting.bankNumber}</strong>
+                  <strong>{maskedAccountNumber(setting.bankNumber)}</strong>
                 </div>
               </>
             ) : (
@@ -124,112 +162,153 @@ export function UserPaymentClient({ initialSetting }: UserPaymentClientProps) {
                 </div>
                 <div className="payment-info-row">
                   <span>Nomor Handphone</span>
-                  <strong>{setting.ewalletNumber}</strong>
+                  <strong>{maskedAccountNumber(setting.ewalletNumber)}</strong>
                 </div>
               </>
             )}
           </div>
+          <div className="refund-edit-actions-row">
+            <button
+              type="button"
+              className="button button-dark refund-edit-btn"
+              onClick={() => setIsEditing(true)}
+            >
+              Edit Rekening
+            </button>
+          </div>
         </div>
+      ) : null}
+
+      {isEditing && (
+        <form onSubmit={handleSubmit} className="refund-setting-form">
+          {setting && (
+            <button
+              type="button"
+              className="address-form-head"
+              onClick={() => {
+                setType(setting.type);
+                setBankName(setting.bankName || "");
+                setBankOwnerName(setting.bankOwnerName || "");
+                setBankNumber(setting.bankNumber || "");
+                setEwalletName(setting.ewalletName || "");
+                setEwalletOwnerName(setting.ewalletOwnerName || "");
+                setEwalletNumber(setting.ewalletNumber || "");
+                setIsEditing(false);
+              }}
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+              Kembali ke rekening aktif
+            </button>
+          )}
+
+          <div className="account-settings-fields">
+            <div className="field">
+              <label htmlFor="refund-type">Jenis Rekening</label>
+              <select
+                id="refund-type"
+                value={type}
+                onChange={e => setType(e.target.value as "bank" | "ewallet")}
+              >
+                <option value="bank">Transfer Bank</option>
+                <option value="ewallet">E-Wallet</option>
+              </select>
+            </div>
+
+            {type === "bank" ? (
+              <>
+                <div className="field">
+                  <label htmlFor="bankName">Nama Bank (misal: BCA, Mandiri, BNI)</label>
+                  <input
+                    id="bankName"
+                    type="text"
+                    required
+                    placeholder="BCA"
+                    value={bankName}
+                    onChange={e => setBankName(e.target.value)}
+                    autoComplete="organization"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="bankOwnerName">Nama Pemilik Rekening</label>
+                  <input
+                    id="bankOwnerName"
+                    type="text"
+                    required
+                    placeholder="Budi Santoso"
+                    value={bankOwnerName}
+                    onChange={e => setBankOwnerName(e.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="bankNumber">Nomor Rekening Bank</label>
+                  <input
+                    id="bankNumber"
+                    type="text"
+                    required
+                    minLength={5}
+                    maxLength={80}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="1234567890"
+                    value={bankNumber}
+                    onChange={e => setBankNumber(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="field">
+                  <label htmlFor="ewalletName">Nama E-Wallet (misal: GoPay, OVO, Dana)</label>
+                  <input
+                    id="ewalletName"
+                    type="text"
+                    required
+                    placeholder="GoPay"
+                    value={ewalletName}
+                    onChange={e => setEwalletName(e.target.value)}
+                    autoComplete="organization"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ewalletOwnerName">Nama Pemilik Akun E-Wallet</label>
+                  <input
+                    id="ewalletOwnerName"
+                    type="text"
+                    required
+                    placeholder="Budi Santoso"
+                    value={ewalletOwnerName}
+                    onChange={e => setEwalletOwnerName(e.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="ewalletNumber">Nomor Telepon Terdaftar E-Wallet</label>
+                  <input
+                    id="ewalletNumber"
+                    type="text"
+                    required
+                    minLength={5}
+                    maxLength={80}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="081234567890"
+                    value={ewalletNumber}
+                    onChange={e => setEwalletNumber(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="refund-setting-actions-row">
+            <button type="submit" className="button button-dark refund-setting-submit" disabled={busy}>
+              <Save size={15} /> {busy ? "Menyimpan…" : "Simpan pengaturan"}
+            </button>
+          </div>
+        </form>
       )}
-
-      <form onSubmit={handleSubmit} className="refund-setting-form">
-        <h3>{setting ? "Ubah pengaturan rekening" : "Atur rekening baru"}</h3>
-        
-        <div className="type-selector">
-          <button
-            type="button"
-            className={`type-btn ${type === "bank" ? "active" : ""}`}
-            onClick={() => setType("bank")}
-          >
-            <CreditCard size={16} /> Transfer Bank
-          </button>
-          <button
-            type="button"
-            className={`type-btn ${type === "ewallet" ? "active" : ""}`}
-            onClick={() => setType("ewallet")}
-          >
-            <Award size={16} /> E-Wallet
-          </button>
-        </div>
-
-        {type === "bank" ? (
-          <div className="refund-field-group">
-            <div className="field">
-              <label htmlFor="bankName">Nama Bank (misal: BCA, Mandiri, BNI)</label>
-              <input
-                id="bankName"
-                type="text"
-                required
-                placeholder="BCA"
-                value={bankName}
-                onChange={e => setBankName(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="bankOwnerName">Nama Pemilik Rekening</label>
-              <input
-                id="bankOwnerName"
-                type="text"
-                required
-                placeholder="Budi Santoso"
-                value={bankOwnerName}
-                onChange={e => setBankOwnerName(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="bankNumber">Nomor Rekening Bank</label>
-              <input
-                id="bankNumber"
-                type="text"
-                required
-                placeholder="1234567890"
-                value={bankNumber}
-                onChange={e => setBankNumber(e.target.value)}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="refund-field-group">
-            <div className="field">
-              <label htmlFor="ewalletName">Nama E-Wallet (misal: GoPay, OVO, Dana)</label>
-              <input
-                id="ewalletName"
-                type="text"
-                required
-                placeholder="GoPay"
-                value={ewalletName}
-                onChange={e => setEwalletName(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="ewalletOwnerName">Nama Pemilik Akun E-Wallet</label>
-              <input
-                id="ewalletOwnerName"
-                type="text"
-                required
-                placeholder="Budi Santoso"
-                value={ewalletOwnerName}
-                onChange={e => setEwalletOwnerName(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="ewalletNumber">Nomor Telepon Terdaftar E-Wallet</label>
-              <input
-                id="ewalletNumber"
-                type="text"
-                required
-                placeholder="081234567890"
-                value={ewalletNumber}
-                onChange={e => setEwalletNumber(e.target.value)}
-              />
-            </div>
-          </div>
-        )}
-
-        <button type="submit" className="button button-dark refund-setting-submit" disabled={busy}>
-          <Save size={15} /> {busy ? "Menyimpan…" : "Simpan pengaturan"}
-        </button>
-      </form>
-    </div>
+      <div className="turnstile-hidden" ref={containerRef} />
+    </section>
   );
 }

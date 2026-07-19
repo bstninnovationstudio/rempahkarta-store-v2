@@ -3,10 +3,11 @@ import { MockPaymentActions } from "@/components/mock-payment-actions";
 import { prisma } from "@/lib/db";
 import { rupiah } from "@/lib/format";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { isPaymentMock } from "@/lib/env";
 
-export default async function MockPaymentPage({ params, searchParams }: { params: Promise<{ number: string }>; searchParams: Promise<{ token?: string }> }) {
-  if (process.env.PAYMENT_MOCK !== "true") notFound();
-  const [{ number }, { token = "" }] = await Promise.all([params, searchParams]);
+export default async function MockPaymentPage({ params }: { params: Promise<{ number: string }> }) {
+  if (!isPaymentMock()) notFound();
+  const { number } = await params;
   const customer = await customerFromRequest();
   if (!customer) {
     redirect(`/login?redirect=/orders/${number}/mock-payment`);
@@ -27,7 +28,7 @@ export default async function MockPaymentPage({ params, searchParams }: { params
           <div><span>Status</span><strong>{order.paymentState}</strong></div>
         </div>
         {order.paymentState === "pending"
-          ? <MockPaymentActions number={number} token={token} />
+          ? <MockPaymentActions number={number} />
           : <p className="form-banner">Pembayaran mock sudah berstatus <strong>{order.paymentState}</strong>.</p>}
       </section>
     </main>

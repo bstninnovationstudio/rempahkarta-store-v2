@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sha256 } from "@/lib/security";
 import { customerFromRequest } from "@/lib/customer-auth";
 
 export async function GET(
@@ -30,7 +29,7 @@ export async function GET(
 
   const isOwner = order.userId === customer.id || (order.userId === null && order.guestEmail.toLowerCase() === customer.email.toLowerCase());
   if (!isOwner) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Pesanan tidak ditemukan" }, { status: 404 });
   }
 
   const payment = order.payments[0];

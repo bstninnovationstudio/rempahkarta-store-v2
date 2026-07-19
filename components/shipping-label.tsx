@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Barcode from "react-barcode";
 import styles from "./shipping-label.module.css";
 
@@ -47,9 +48,12 @@ function Logo({ src, alt, fallback, className }: LogoProps) {
   }
 
   return (
-    <img
+    <Image
       src={src}
       alt={alt}
+      width={160}
+      height={60}
+      unoptimized
       className={className}
       onError={() => setFailed(true)}
     />

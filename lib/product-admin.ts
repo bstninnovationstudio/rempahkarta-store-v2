@@ -2,6 +2,18 @@ import { z } from "zod";
 
 const optionalDimension = z.number().int().positive().max(1000).nullable();
 
+function marketplaceUrl(hosts: string[], label: string) {
+  return z.string().trim().max(500).url(`${label} harus berupa URL valid`).refine(value => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:"
+        && hosts.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`));
+    } catch {
+      return false;
+    }
+  }, `${label} wajib menggunakan HTTPS dan domain marketplace yang sesuai`).nullable().optional();
+}
+
 export const productVariantInputSchema = z.object({
   id: z.string().min(1).optional(),
   sku: z.string().trim().min(2).max(80).regex(/^[A-Za-z0-9._/-]+$/, "SKU hanya boleh berisi huruf, angka, titik, garis miring, garis bawah, atau tanda minus"),
@@ -33,9 +45,9 @@ export const productInputSchema = z.object({
   option1Name: z.string().trim().min(1).max(80).nullable(),
   option2Name: z.string().trim().min(1).max(80).nullable(),
   images: z.array(z.string().regex(/^\/uploads\/products\/[a-zA-Z0-9.-]+$/)).max(10),
-  shopeeLink: z.string().trim().nullable().optional(),
-  tiktokLink: z.string().trim().nullable().optional(),
-  tokopediaLink: z.string().trim().nullable().optional(),
+  shopeeLink: marketplaceUrl(["shopee.co.id", "shopee.com"], "Tautan Shopee"),
+  tiktokLink: marketplaceUrl(["tiktok.com"], "Tautan TikTok"),
+  tokopediaLink: marketplaceUrl(["tokopedia.com"], "Tautan Tokopedia"),
   rating: z.number().min(0).max(5).default(0),
   sold: z.number().int().nonnegative().default(0),
   variants: z.array(productVariantInputSchema).min(1).max(100),

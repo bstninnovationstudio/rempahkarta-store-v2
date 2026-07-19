@@ -4,13 +4,16 @@
 
 ## Ruang lingkup
 
-Aplikasi UMKM single-brand, single-tenant, dan guest checkout. Pertahankan arsitektur ringan: Next.js full-stack, Prisma, dan MySQL. Jangan menambahkan Redis, queue/worker terpisah, S3/R2, layanan email, D1/Drizzle, atau runtime Cloudflare tanpa permintaan eksplisit pemilik. Turnstile adalah verifikasi keamanan HTTP, bukan runtime aplikasi.
+Aplikasi UMKM single-brand dan single-tenant. Checkout wajib memakai customer session; detail pesanan juga wajib login dan lolos ownership check. Pertahankan arsitektur ringan: Next.js full-stack, Prisma, dan MySQL. Jangan menambahkan Redis, queue/worker terpisah, S3/R2, layanan email, D1/Drizzle, atau runtime Cloudflare tanpa permintaan eksplisit pemilik. Turnstile adalah verifikasi keamanan HTTP, bukan runtime aplikasi.
 
 ## Perintah standar
 
 - Instalasi: `npm install`.
 - Development: `npm run dev`.
-- Database awal/perubahan schema: `npm run setup`.
+- Database baru/perubahan schema: `npm run setup` (generate + migrate deploy, tanpa seed).
+- Database lama: verifikasi kesesuaian struktur schema, jalankan `npm run db:baseline:existing` tepat satu kali, lalu `npm run db:migrate`; jangan baseline database kosong.
+- Seed/demo hanya untuk database disposable melalui perintah demo eksplisit; jangan seed atau `db push` database production.
+- Fixture/bypass demo membutuhkan `DEMO_MODE=true` dan `ALLOW_INSECURE_DEMO=true` sekaligus di non-production. Jangan aktifkan pada preview/staging publik atau database nyata.
 - Validasi: `npm run lint`, `npm test`, `npm run build`.
 
 ## Invariant katalog
@@ -34,12 +37,29 @@ Aplikasi UMKM single-brand, single-tenant, dan guest checkout. Pertahankan arsit
 
 ## Checkout dan keamanan
 
+- Login pelanggan memakai Google ID token yang signature, issuer, audience, expiry, dan email verified-nya divalidasi server-side sebelum aplikasi menerbitkan JWT sendiri.
+- JWT customer/admin wajib berbeda audience dan token-use; cookie HttpOnly, SameSite, dan Secure pada production.
+- JWT secret production minimal 32 karakter dan tidak boleh berupa placeholder; hasil `openssl rand -base64 48` yang berbeda dianjurkan untuk admin/customer.
+- Password admin production wajib memakai `ADMIN_PASSWORD_SCRYPT` yang dibuat lewat `npm run auth:hash-password`; SHA-256 legacy hanya untuk kompatibilitas development.
+- Customer yang belum memiliki nama, email, telepon, minimal satu alamat, dan rekening refund tidak boleh membuat order. Gate UI tidak menggantikan gate API.
+- Detail, payment, cancellation, media, dan return order wajib memeriksa session dan ownership. Nomor order atau query token bukan kredensial.
+- Mutasi API browser wajib lolos exact Origin check terhadap `APP_URL`; webhook dikecualikan dan memakai autentikasi provider sendiri.
 - Location search hanya setelah tombol user, bukan per-keystroke.
 - Rate baru diminta setelah area Biteship dipilih; tidak ada ongkir fallback produksi.
-- Checkout, location search, dan quote wajib lolos Siteverify Turnstile di server. Widget client saja tidak cukup.
-- Token Turnstile maksimum 2048 karakter, single-use, dan action harus cocok bila provider mengembalikannya.
+- Checkout, location search, quote, login admin, perubahan profil/alamat/rekening, dan sync payment wajib lolos Siteverify Turnstile di server. Widget client saja tidak cukup.
+- Token Turnstile maksimum 2048 karakter, single-use, action wajib exact, dan hostname production wajib sama dengan `APP_URL`; test key production ditolak.
 - Semua body divalidasi Zod; provider/API failure harus tetap menghasilkan JSON yang dapat dibaca client.
 - Persetujuan kebijakan wajib literal `true` di API.
+- Seluruh API memakai limit global sederhana; route mahal memiliki limit scope tambahan. Jangan menganggap limiter in-memory sebagai limit global multi-instance.
+
+## Query, pagination, dan cache
+
+- List transaksi/user/shipment/return/refund/audit wajib memakai page/pageSize dengan batas server dan urutan deterministik.
+- Statistik memakai endpoint/query agregat terpisah; jangan memuat seluruh list untuk menghitung card dashboard.
+- Relasi pada list dibatasi dengan `select`/`take`; detail unik boleh memuat histori yang relevan.
+- Katalog storefront boleh di-cache server 30 menit, tetapi checkout selalu membaca harga, stok, dan ongkir authoritative.
+- Perubahan produk, kategori, inventory, reserve, commit, release, dan restock harus menginvalidasi tag katalog.
+- Editor category saat ini replacement penuh; jangan paginasi sebelum tersedia endpoint assign/unassign delta.
 
 ## BSTN
 
@@ -64,13 +84,15 @@ Aplikasi UMKM single-brand, single-tenant, dan guest checkout. Pertahankan arsit
 ## Media dan data sensitif
 
 - Validasi MIME dan signature bytes JPG/PNG/WebP, maksimal 5 MB, nama acak, mode file terbatas.
-- Backup `public/uploads` bersama MySQL.
+- Media produk publik berada di `public/uploads/products`; bukti retur/refund privat berada di `storage/private/{returns,refunds}/{ownerId}` dan hanya disajikan lewat route owner/admin dengan `Cache-Control: private, no-store`.
+- Backup `public/uploads` dan `storage/private` bersama MySQL.
+- Migrasi media legacy harus dry-run dahulu; mode apply mempertahankan original di `storage/private-migration-backup`. Jangan menebak relasi refund tanpa `returnRequestId` atau menghapus backup sebelum verifikasi.
 - API key hanya di environment server; tidak boleh ada di source, fixture, screenshot, log, atau arsip.
-- Token order disimpan sebagai SHA-256 hash. List admin meminimalkan PII.
+- Field hash token order lama dipertahankan untuk kompatibilitas data, tetapi tidak boleh dipakai sebagai kredensial akses baru. List admin meminimalkan PII.
 
 ## Definition of done
 
 - TypeScript, lint, test, dan production build lulus.
 - Create/edit produk, kombinasi varian, kategori, multi-image, stok, checkout, payment, shipment, cancellation, return, dan refund memiliki jalur validasi/error yang jelas.
 - State penting menghasilkan audit dan operasi berulang tidak menggandakan stok.
-- README, schema, env example, seed, arsitektur, dan UI konsisten.
+- README, system map, security audit, schema, migration, env example, seed, arsitektur, dan UI konsisten.

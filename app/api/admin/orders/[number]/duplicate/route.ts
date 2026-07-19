@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomToken, sha256 } from "@/lib/security";
+import { isDemo } from "@/lib/env";
+import { invalidateCatalogCache } from "@/lib/catalog";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ number: string }> }
 ) {
+  if (!isDemo()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const admin = await adminFromRequest();
   if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -147,7 +150,7 @@ export async function POST(
               status: "paid",
               paidAt: new Date(),
               raw: { duplicatedFrom: sourceOrder.publicNumber },
-              paymentPageUrl: `/orders/${newPublicNumber}?token=${token}`,
+              paymentPageUrl: `/orders/${newPublicNumber}`,
             },
           },
         },
@@ -181,11 +184,11 @@ export async function POST(
 
       return newOrder;
     });
+    invalidateCatalogCache();
 
     return NextResponse.json({
       success: true,
       order_number: duplicatedOrder.publicNumber,
-      token: token,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal melakukan duplikasi order";

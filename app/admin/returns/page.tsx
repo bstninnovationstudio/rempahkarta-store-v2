@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Check, Clock3, RotateCcw } from "lucide-react";
-import { getReturnRows } from "@/lib/admin-data";
+import { AdminPagination } from "@/components/admin-pagination";
+import { getReturnRowsPage } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
 
 const labels: Record<string, string> = {
@@ -35,12 +36,9 @@ function stateClass(state: string) {
   return "status-pending";
 }
 
-export default async function Returns() {
-  const rows = await getReturnRows();
-  const review = rows.filter(row => ["requested", "under_review", "awaiting_approval"].includes(row.state)).length;
-  const transit = rows.filter(row => ["approved", "awaiting_handover", "in_transit", "waiting_waybill", "processing_return"].includes(row.state)).length;
-  const inspection = rows.filter(row => ["received", "return_complete"].includes(row.state)).length;
-  const refund = rows.filter(row => row.state === "refund_pending" || row.state === "processing_refund").length;
+export default async function Returns({ searchParams }: { searchParams: Promise<{ page?: string; pageSize?: string }> }) {
+  const query = await searchParams;
+  const { rows, stats, pagination } = await getReturnRowsPage({ page: Number(query.page), pageSize: Number(query.pageSize) });
 
   return (
     <div className="admin-content">
@@ -58,7 +56,7 @@ export default async function Returns() {
             <span>Perlu ditinjau</span>
             <Clock3 size={15} />
           </div>
-          <strong className="admin-numeric">{review}</strong>
+          <strong className="admin-numeric">{stats.review}</strong>
           <span className="metric-trend tone-warning">Urutkan yang tertua</span>
         </article>
         <article className="metric-card">
@@ -66,14 +64,14 @@ export default async function Returns() {
             <span>Menunggu retur</span>
             <RotateCcw size={15} />
           </div>
-          <strong className="admin-numeric">{transit}</strong>
+          <strong className="admin-numeric">{stats.transit}</strong>
           <span className="metric-trend">Kurir aktif</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head">
             <span>Perlu inspeksi</span>
           </div>
-          <strong className="admin-numeric">{inspection}</strong>
+          <strong className="admin-numeric">{stats.inspection}</strong>
           <span className="metric-trend">Barang tiba</span>
         </article>
         <article className="metric-card">
@@ -81,7 +79,7 @@ export default async function Returns() {
             <span>Refund manual</span>
             <Check size={15} />
           </div>
-          <strong className="admin-numeric">{refund}</strong>
+          <strong className="admin-numeric">{stats.refund}</strong>
           <span className="metric-trend tone-danger">Menunggu finance</span>
         </article>
       </section>
@@ -146,6 +144,7 @@ export default async function Returns() {
             </tbody>
           </table>
         </div>
+        <AdminPagination data={pagination} basePath="/admin/returns" query={{ pageSize: pagination.pageSize === 20 ? undefined : String(pagination.pageSize) }} itemLabel="kasus" />
       </section>
     </div>
   );

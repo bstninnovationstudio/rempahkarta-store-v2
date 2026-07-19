@@ -2,6 +2,7 @@ import { adminOrders, products } from "@/lib/demo-data";
 import { isDemo } from "@/lib/env";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { getBiteshipStatusDetail } from "@/lib/shipping-state";
+import type { Prisma } from "@prisma/client";
 
 function fulfillmentForUi(value:string):OrderStatus{
   if(["packed","shipment_booked"].includes(value))return "processing";
@@ -14,42 +15,340 @@ function paymentForUi(value:string):AdminOrder["payment"]{return value==="paid"?
 function maskName(value:string){const parts=value.split(" ");return `${parts[0]} ${parts.slice(1).map(part=>`${part[0]||""}••••`).join(" ")}`.trim();}
 function hasFulfillmentState(value:unknown,state:string){return typeof value==="object"&&value!==null&&"fulfillmentState" in value&&(value as {fulfillmentState?:unknown}).fulfillmentState===state;}
 
-export async function getAdminOrders():Promise<AdminOrder[]>{
-  if(isDemo())return adminOrders;
-  const {prisma}=await import("@/lib/db");
-  const rows=await prisma.order.findMany({orderBy:{createdAt:"desc"},take:100,include:{items:{take:1},shipments:{take:1}}});
-  return rows.map((order,index)=>({number:order.publicNumber,customer:maskName(order.guestName),createdAt:new Intl.DateTimeFormat("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jakarta"}).format(order.createdAt),total:Number(order.grandTotal),payment:paymentForUi(order.paymentState),fulfillment:fulfillmentForUi(order.fulfillmentState),courier:order.shipments[0]?`${order.shipments[0].courierCompany.toUpperCase()} ${order.shipments[0].courierType}`:"—",sla:order.fulfillmentState==="awaiting_processing"?"Perlu diproses":"Terpantau",item:order.items[0]?.nameSnapshot||"Produk AMK",image:products[index%products.length].image,issueOrder:order.issueOrder}));
+const DEFAULT_ADMIN_PAGE_SIZE = 20;
+const MAX_ADMIN_PAGE_SIZE = 50;
+
+export type AdminPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  from: number;
+  to: number;
+};
+
+export type AdminOrderFilter = "processing" | "active" | "pickup" | "intransit" | "issue";
+
+function safePage(value: number | undefined) {
+  return Number.isSafeInteger(value) && Number(value) > 0 ? Math.min(Number(value), 100_000) : 1;
 }
 
-export async function getInventoryRows(){
-  if(isDemo())return products.map((product,index)=>({id:product.id,sku:`AMK-${index%3===0?"SHN":"NWS"}-${String(index+1).padStart(3,"0")}`,name:product.name,color:product.color,onHand:product.stock,reserved:index%3,safety:index===2?5:3,lowStockThreshold:5}));
-  const {prisma}=await import("@/lib/db");
-  const rows=await prisma.inventoryLevel.findMany({include:{variant:{include:{product:true}}},orderBy:{variant:{sku:"asc"}}});
-  return rows.map(row=>({id:row.id,sku:row.variant.sku,name:row.variant.product.name,color:[row.variant.option1Value,row.variant.option2Value].filter(Boolean).join(" / ")||"Produk tunggal",onHand:row.onHand,reserved:row.reserved,safety:row.safetyStock,lowStockThreshold:row.variant.lowStockThreshold}));
+function safePageSize(value: number | undefined) {
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) return DEFAULT_ADMIN_PAGE_SIZE;
+  return Math.min(Number(value), MAX_ADMIN_PAGE_SIZE);
 }
 
-export async function getProductRows(){
-  if(isDemo())return products.map((product,index)=>({id:product.id,name:product.name,category:product.category,color:product.color,sku:`AMK-${index%3===0?"SHN":"NWS"}-${String(index+1).padStart(3,"0")}`,price:product.price,stock:product.stock,status:"active",image:product.image,isLow:product.stock<=5}));
-  const {prisma}=await import("@/lib/db");
-  const rows=await prisma.product.findMany({include:{category:true,images:{orderBy:{position:"asc"},take:1},variants:{where:{active:true},include:{inventory:true},orderBy:{position:"asc"}}},orderBy:{updatedAt:"desc"}});
-  return rows.map((product,index)=>{const variant=product.variants[0];const stock=product.variants.reduce((total,item)=>total+item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved-level.safetyStock),0),0);const isLow=product.variants.some(item=>item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved-level.safetyStock),0)<=item.lowStockThreshold);return{id:product.id,name:product.name,category:product.category?.name||product.legacyCategory||"Tanpa kategori",color:product.hasVariants?`${product.variants.length} varian`:"Produk tunggal",sku:variant?.sku||"Belum ada detail",price:Number(variant?.price||0),stock,status:product.status,image:product.images[0]?.objectKey||products[index%products.length].image,isLow}});
+function pagination(page: number, pageSize: number, total: number): AdminPagination {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const normalizedPage = Math.min(page, totalPages);
+  return {
+    page: normalizedPage,
+    pageSize,
+    total,
+    totalPages,
+    from: total === 0 ? 0 : (normalizedPage - 1) * pageSize + 1,
+    to: total === 0 ? 0 : Math.min(normalizedPage * pageSize, total),
+  };
 }
 
-export async function getShipmentRows(){
-  if(isDemo())return adminOrders.slice(0,4).map((order,index)=>({number:order.number,courier:order.courier,waybill:index<2?`AMK12873219${8+index}`:"Belum tersedia",method:index%2?"Drop-off":"Pickup",status:order.fulfillment,updatedAt:order.createdAt}));
-  const {prisma}=await import("@/lib/db");
-  const rows=await prisma.shipment.findMany({include:{order:true},orderBy:{updatedAt:"desc"},take:100});
-  return rows.map(row=>({number:row.order.publicNumber,courier:`${row.courierCompany.toUpperCase()} ${row.courierType}`,waybill:row.waybillId||row.trackingId||"Belum tersedia",method:row.collectionMethod==="drop_off"?"Drop-off":"Pickup",status:fulfillmentForUi(row.order.fulfillmentState),updatedAt:new Intl.DateTimeFormat("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jakarta"}).format(row.updatedAt)}));
+function adminDate(value: Date) {
+  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(value);
 }
 
-export async function getReturnRows(){
-  if(isDemo())return [
-    {id:"demo-return-1",number:"RET-260713-004",orderNumber:"ORD-20260712-7C1J",reason:"Produk rusak",cause:"damaged",state:"requested",refund:"refund_pending",amount:179000,createdAt:"13 Jul, 08.54",source:"buyer",type:"return"},
-    {id:"demo-return-2",number:"RET-260712-003",orderNumber:"ORD-20260710-1B9R",reason:"Varian tidak sesuai",cause:"wrong",state:"in_transit",refund:"pending",amount:239000,createdAt:"12 Jul, 14.21",source:"buyer",type:"return"},
-  ];
-  const {prisma}=await import("@/lib/db");
-  const rows=await prisma.returnRequest.findMany({include:{order:true,refunds:{orderBy:{createdAt:"desc"},take:1}},orderBy:{createdAt:"desc"},take:100});
-  return rows.map(row=>({id:row.id,number:row.publicNumber,orderNumber:row.order.publicNumber,reason:row.reason,cause:row.cause,state:row.state,refund:row.refunds[0]?.status||row.state,amount:Number(row.refundAmount||0),createdAt:new Intl.DateTimeFormat("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jakarta"}).format(row.createdAt),source:row.source,type:row.reason}));
+function adminOrderWhere(filter?: string): Prisma.OrderWhereInput {
+  if (filter === "processing") return { fulfillmentState: "awaiting_processing" };
+  if (filter === "active") return { fulfillmentState: { in: ["processing", "packed", "shipment_booked"] } };
+  if (filter === "pickup") return { fulfillmentState: "handover_pending" };
+  if (filter === "intransit") return { fulfillmentState: { in: ["handed_over", "return_in_transit"] } };
+  if (filter === "issue") return { issueOrder: true };
+  return {};
+}
+
+function mapAdminOrder(order: {
+  publicNumber: string;
+  guestName: string;
+  createdAt: Date;
+  grandTotal: bigint;
+  paymentState: string;
+  fulfillmentState: string;
+  issueOrder: boolean;
+  items: Array<{ nameSnapshot: string }>;
+  shipments: Array<{ courierCompany: string; courierType: string }>;
+}, index: number): AdminOrder {
+  return {
+    number: order.publicNumber,
+    customer: maskName(order.guestName),
+    createdAt: adminDate(order.createdAt),
+    total: Number(order.grandTotal),
+    payment: paymentForUi(order.paymentState),
+    fulfillment: fulfillmentForUi(order.fulfillmentState),
+    courier: order.shipments[0] ? `${order.shipments[0].courierCompany.toUpperCase()} ${order.shipments[0].courierType}` : "—",
+    sla: order.fulfillmentState === "awaiting_processing" ? "Perlu diproses" : "Terpantau",
+    item: order.items[0]?.nameSnapshot || "Produk REMPAHKARTA",
+    image: products[index % products.length]?.image || "/main-logo.webp",
+    issueOrder: order.issueOrder,
+  };
+}
+
+export async function getAdminDashboardData() {
+  if (isDemo()) {
+    const latestOrders = adminOrders.slice(0, 4);
+    return {
+      latestOrders,
+      stats: {
+        totalOrders: adminOrders.length,
+        paidSales: adminOrders.filter(order => order.payment === "paid").reduce((sum, order) => sum + order.total, 0),
+        needProcess: adminOrders.filter(order => order.fulfillment === "awaiting_processing").length,
+        pickup: adminOrders.filter(order => order.fulfillment === "handover_pending").length,
+      },
+    };
+  }
+  const { prisma } = await import("@/lib/db");
+  const [rows, totalOrders, paidSales, needProcess, pickup] = await prisma.$transaction([
+    prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 4, include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 } } }),
+    prisma.order.count(),
+    prisma.order.aggregate({ where: { paymentState: "paid" }, _sum: { grandTotal: true } }),
+    prisma.order.count({ where: { fulfillmentState: "awaiting_processing" } }),
+    prisma.order.count({ where: { fulfillmentState: "handover_pending" } }),
+  ]);
+  return {
+    latestOrders: rows.map(mapAdminOrder),
+    stats: { totalOrders, paidSales: Number(paidSales._sum.grandTotal || 0), needProcess, pickup },
+  };
+}
+
+export async function getAdminOrdersPage(options: { page?: number; pageSize?: number; filter?: string } = {}) {
+  const requestedPage = safePage(options.page);
+  const pageSize = safePageSize(options.pageSize);
+  const where = adminOrderWhere(options.filter);
+  const validFilter = ["processing", "active", "pickup", "intransit", "issue"].includes(options.filter || "")
+    ? options.filter as AdminOrderFilter
+    : undefined;
+
+  if (isDemo()) {
+    const filtered = adminOrders.filter(order => {
+      if (validFilter === "processing") return order.fulfillment === "awaiting_processing";
+      if (validFilter === "active") return order.fulfillment === "processing";
+      if (validFilter === "pickup") return order.fulfillment === "handover_pending";
+      if (validFilter === "intransit") return order.fulfillment === "in_transit";
+      if (validFilter === "issue") return Boolean(order.issueOrder);
+      return true;
+    });
+    const pageInfo = pagination(requestedPage, pageSize, filtered.length);
+    return {
+      rows: filtered.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize),
+      pagination: pageInfo,
+      counts: {
+        all: adminOrders.length,
+        processing: adminOrders.filter(order => order.fulfillment === "awaiting_processing").length,
+        active: adminOrders.filter(order => order.fulfillment === "processing").length,
+        pickup: adminOrders.filter(order => order.fulfillment === "handover_pending").length,
+        intransit: adminOrders.filter(order => order.fulfillment === "in_transit").length,
+        issue: adminOrders.filter(order => order.issueOrder).length,
+      },
+      filter: validFilter,
+    };
+  }
+
+  const { prisma } = await import("@/lib/db");
+  const [total, fulfillmentGroups, issue] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.groupBy({ by: ["fulfillmentState"], orderBy: { fulfillmentState: "asc" }, _count: { id: true } }),
+    prisma.order.count({ where: { issueOrder: true } }),
+  ]);
+  const pageInfo = pagination(requestedPage, pageSize, total);
+  const rows = await prisma.order.findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: (pageInfo.page - 1) * pageSize,
+    take: pageSize,
+    include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+  const countFor = (...states: string[]) => fulfillmentGroups
+    .filter(group => states.includes(group.fulfillmentState))
+    .reduce((sum, group) => sum + group._count.id, 0);
+  const all = fulfillmentGroups.reduce((sum, group) => sum + group._count.id, 0);
+  return {
+    rows: rows.map(mapAdminOrder),
+    pagination: pageInfo,
+    counts: {
+      all,
+      processing: countFor("awaiting_processing"),
+      active: countFor("processing", "packed", "shipment_booked"),
+      pickup: countFor("handover_pending"),
+      intransit: countFor("handed_over", "return_in_transit"),
+      issue,
+    },
+    filter: validFilter,
+  };
+}
+
+export async function getInventoryPage(options: { page?: number; pageSize?: number } = {}) {
+  const requestedPage = safePage(options.page);
+  const pageSize = safePageSize(options.pageSize);
+  if (isDemo()) {
+    const allRows = products.map((product,index)=>({id:product.id,sku:`AMK-${index%3===0?"SHN":"NWS"}-${String(index+1).padStart(3,"0")}`,name:product.name,color:product.color,onHand:product.stock,reserved:index%3,safety:index===2?5:3,lowStockThreshold:5}));
+    const pageInfo = pagination(requestedPage, pageSize, allRows.length);
+    return {
+      rows: allRows.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize),
+      pagination: pageInfo,
+      stats: {
+        onHand: allRows.reduce((sum, row) => sum + row.onHand, 0),
+        reserved: allRows.reduce((sum, row) => sum + row.reserved, 0),
+        available: allRows.reduce((sum, row) => sum + Math.max(0, row.onHand - row.reserved - row.safety), 0),
+        low: allRows.filter(row => row.onHand - row.reserved - row.safety <= row.lowStockThreshold).length,
+      },
+    };
+  }
+  const { prisma } = await import("@/lib/db");
+  const [total, sums, availabilityResult] = await Promise.all([
+    prisma.inventoryLevel.count(),
+    prisma.inventoryLevel.aggregate({ _sum: { onHand: true, reserved: true, safetyStock: true } }),
+    prisma.$queryRaw<Array<{ available: bigint; low: bigint }>>`
+      SELECT
+        COALESCE(SUM(GREATEST(0, inventory.onHand - inventory.reserved - inventory.safetyStock)), 0) AS available,
+        SUM(CASE WHEN inventory.onHand - inventory.reserved - inventory.safetyStock <= variant.lowStockThreshold THEN 1 ELSE 0 END) AS low
+      FROM InventoryLevel inventory
+      INNER JOIN ProductVariant variant ON variant.id = inventory.variantId
+    `,
+  ]);
+  const pageInfo = pagination(requestedPage, pageSize, total);
+  const rows = await prisma.inventoryLevel.findMany({
+    skip: (pageInfo.page - 1) * pageSize,
+    take: pageSize,
+    include: { variant: { include: { product: true } } },
+    orderBy: { variant: { sku: "asc" } },
+  });
+  const onHand = sums._sum.onHand || 0;
+  const reserved = sums._sum.reserved || 0;
+  return {
+    rows: rows.map(row=>({id:row.id,sku:row.variant.sku,name:row.variant.product.name,color:[row.variant.option1Value,row.variant.option2Value].filter(Boolean).join(" / ")||"Produk tunggal",onHand:row.onHand,reserved:row.reserved,safety:row.safetyStock,lowStockThreshold:row.variant.lowStockThreshold})),
+    pagination: pageInfo,
+    stats: { onHand, reserved, available: Number(availabilityResult[0]?.available || 0), low: Number(availabilityResult[0]?.low || 0) },
+  };
+}
+
+export async function getProductRowsPage(options: { page?: number; pageSize?: number } = {}) {
+  const requestedPage = safePage(options.page);
+  const pageSize = safePageSize(options.pageSize);
+  if (isDemo()) {
+    const allRows = products.map((product,index)=>({id:product.id,name:product.name,category:product.category,color:product.color,sku:`AMK-${index%3===0?"SHN":"NWS"}-${String(index+1).padStart(3,"0")}`,price:product.price,stock:product.stock,status:"active",image:product.image,isLow:product.stock<=5}));
+    const pageInfo = pagination(requestedPage, pageSize, allRows.length);
+    return { rows: allRows.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize), pagination: pageInfo };
+  }
+  const { prisma } = await import("@/lib/db");
+  const total = await prisma.product.count();
+  const pageInfo = pagination(requestedPage, pageSize, total);
+  const rows = await prisma.product.findMany({skip:(pageInfo.page-1)*pageSize,take:pageSize,include:{category:true,images:{orderBy:{position:"asc"},take:1},variants:{where:{active:true},include:{inventory:true},orderBy:{position:"asc"}}},orderBy:[{updatedAt:"desc"},{id:"desc"}]});
+  return {
+    rows: rows.map((product,index)=>{const variant=product.variants[0];const stock=product.variants.reduce((total,item)=>total+item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved-level.safetyStock),0),0);const isLow=product.variants.some(item=>item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved-level.safetyStock),0)<=item.lowStockThreshold);return{id:product.id,name:product.name,category:product.category?.name||product.legacyCategory||"Tanpa kategori",color:product.hasVariants?`${product.variants.length} varian`:"Produk tunggal",sku:variant?.sku||"Belum ada detail",price:Number(variant?.price||0),stock,status:product.status,image:product.images[0]?.objectKey||products[index%products.length]?.image||"/main-logo.webp",isLow}}),
+    pagination: pageInfo,
+  };
+}
+
+export async function getShipmentRowsPage(options: { page?: number; pageSize?: number } = {}) {
+  const requestedPage = safePage(options.page);
+  const pageSize = safePageSize(options.pageSize);
+  if (isDemo()) {
+    const allRows = adminOrders.slice(0,4).map((order,index)=>({number:order.number,courier:order.courier,waybill:index<2?`AMK12873219${8+index}`:"Belum tersedia",method:index%2?"Drop-off":"Pickup",status:order.fulfillment,updatedAt:order.createdAt}));
+    const pageInfo = pagination(requestedPage, pageSize, allRows.length);
+    return { rows: allRows.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize), pagination: pageInfo, stats: { total: allRows.length, awaitingPickup: allRows.filter(row => row.status === "handover_pending").length, inTransit: allRows.filter(row => row.status === "in_transit").length, issue: 0 } };
+  }
+  const { prisma } = await import("@/lib/db");
+  const issueStatuses = ["cancelled", "rejected", "courier_not_found", "disposed"];
+  const [total, awaitingPickup, inTransit, issue] = await prisma.$transaction([
+    prisma.shipment.count(),
+    prisma.shipment.count({ where: { order: { fulfillmentState: "handover_pending" } } }),
+    prisma.shipment.count({ where: { order: { fulfillmentState: { in: ["handed_over", "return_in_transit"] } } } }),
+    prisma.shipment.count({ where: { status: { in: issueStatuses } } }),
+  ]);
+  const pageInfo = pagination(requestedPage, pageSize, total);
+  const rows=await prisma.shipment.findMany({skip:(pageInfo.page-1)*pageSize,take:pageSize,include:{order:true},orderBy:[{updatedAt:"desc"},{id:"desc"}]});
+  return { rows:rows.map(row=>({number:row.order.publicNumber,courier:`${row.courierCompany.toUpperCase()} ${row.courierType}`,waybill:row.waybillId||row.trackingId||"Belum tersedia",method:row.collectionMethod==="drop_off"?"Drop-off":"Pickup",status:fulfillmentForUi(row.order.fulfillmentState),updatedAt:adminDate(row.updatedAt)})), pagination: pageInfo, stats: { total, awaitingPickup, inTransit, issue } };
+}
+
+const demoReturns = [
+  {id:"demo-return-1",number:"RET-260713-004",orderNumber:"ORD-20260712-7C1J",reason:"Produk rusak",cause:"damaged",state:"requested",refund:"refund_pending",amount:179000,createdAt:"13 Jul, 08.54",source:"buyer",type:"return"},
+  {id:"demo-return-2",number:"RET-260712-003",orderNumber:"ORD-20260710-1B9R",reason:"Varian tidak sesuai",cause:"wrong",state:"in_transit",refund:"pending",amount:239000,createdAt:"12 Jul, 14.21",source:"buyer",type:"return"},
+];
+
+export async function getReturnRowsPage(options: { page?: number; pageSize?: number } = {}) {
+  const requestedPage = safePage(options.page);
+  const pageSize = safePageSize(options.pageSize);
+  if (isDemo()) {
+    const pageInfo = pagination(requestedPage, pageSize, demoReturns.length);
+    return { rows: demoReturns.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize), pagination: pageInfo, stats: { review: 1, transit: 1, inspection: 0, refund: 0 } };
+  }
+  const { prisma } = await import("@/lib/db");
+  const [total, groups] = await Promise.all([
+    prisma.returnRequest.count(),
+    prisma.returnRequest.groupBy({ by: ["state"], orderBy: { state: "asc" }, _count: { id: true } }),
+  ]);
+  const pageInfo = pagination(requestedPage, pageSize, total);
+  const rows=await prisma.returnRequest.findMany({skip:(pageInfo.page-1)*pageSize,take:pageSize,include:{order:{select:{publicNumber:true}},refunds:{orderBy:{createdAt:"desc"},take:1}},orderBy:[{createdAt:"desc"},{id:"desc"}]});
+  const countFor = (...states: string[]) => groups.filter(group => states.includes(group.state)).reduce((sum, group) => sum + group._count.id, 0);
+  return {
+    rows:rows.map(row=>({id:row.id,number:row.publicNumber,orderNumber:row.order.publicNumber,reason:row.reason,cause:row.cause,state:row.state,refund:row.refunds[0]?.status||row.state,amount:Number(row.refundAmount||0),createdAt:adminDate(row.createdAt),source:row.source,type:row.reason})),
+    pagination: pageInfo,
+    stats: { review: countFor("requested", "under_review", "awaiting_approval"), transit: countFor("approved", "awaiting_handover", "in_transit", "waiting_waybill", "processing_return"), inspection: countFor("received", "return_complete"), refund: countFor("refund_pending", "processing_refund") },
+  };
+}
+
+export async function getAdminUsersPage(options: { page?: number; pageSize?: number } = {}) {
+  const requestedPage = safePage(options.page);
+  const pageSize = safePageSize(options.pageSize);
+  const { prisma } = await import("@/lib/db");
+  const total = await prisma.user.count();
+  const pageInfo = pagination(requestedPage, pageSize, total);
+  const users = await prisma.user.findMany({
+    skip: (pageInfo.page - 1) * pageSize,
+    take: pageSize,
+    select: { id: true, name: true, email: true, avatarUrl: true, createdAt: true, _count: { select: { orders: true } } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  const totals = users.length ? await prisma.order.groupBy({
+    by: ["userId"],
+    where: { userId: { in: users.map(user => user.id) }, OR: [{ paymentState: "paid" }, { fulfillmentState: "completed" }] },
+    _sum: { grandTotal: true },
+  }) : [];
+  const spentByUser = new Map(totals.map(item => [item.userId, Number(item._sum.grandTotal || 0)]));
+  return {
+    rows: users.map(user => ({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl, createdAt: user.createdAt, totalOrders: user._count.orders, totalSpent: spentByUser.get(user.id) || 0 })),
+    pagination: pageInfo,
+  };
+}
+
+export async function getAuditLogPage(options: { page?: number; pageSize?: number; filter?: string } = {}) {
+  const requestedPage = safePage(options.page);
+  const pageSize = safePageSize(options.pageSize);
+  const filter = ["order", "inventory", "catalog", "shipping", "returns"].includes(options.filter || "") ? options.filter : undefined;
+  const entityTypes = filter === "catalog" ? ["product", "category"]
+    : filter === "shipping" ? ["shipment"]
+      : filter === "returns" ? ["return", "refund", "return_request"]
+        : filter ? [filter] : [];
+  const where: Prisma.AuditLogWhereInput = entityTypes.length ? { entityType: { in: entityTypes } } : {};
+  const { prisma } = await import("@/lib/db");
+  const total = await prisma.auditLog.count({ where });
+  const pageInfo = pagination(requestedPage, pageSize, total);
+  const rows = await prisma.auditLog.findMany({
+    where,
+    skip: (pageInfo.page - 1) * pageSize,
+    take: pageSize,
+    select: { id: true, createdAt: true, actorType: true, actorId: true, action: true, entityType: true, entityId: true, before: true, after: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  return {
+    rows: rows.map(row => ({
+      id: row.id,
+      createdAt: new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(row.createdAt),
+      actor: row.actorId ? `${row.actorType} · ${row.actorId}` : row.actorType,
+      action: row.action,
+      entity: `${row.entityType} · ${row.entityId}`,
+      summary: row.before && row.after ? "Nilai sebelum dan sesudah direkam" : row.after ? "Nilai baru direkam" : row.before ? "Nilai sebelumnya direkam" : "Aktivitas direkam",
+    })),
+    pagination: pageInfo,
+    filter,
+  };
 }
 
 export async function getAdminOrderDetail(number:string){

@@ -2,16 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight, Banknote, Box, Clock3, ShoppingBag } from "lucide-react";
 import { StatusPill } from "@/components/status-pill";
-import { getAdminOrders } from "@/lib/admin-data";
+import { getAdminDashboardData } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
 
 export default async function AdminDashboard() {
-  const orders = await getAdminOrders();
-  const needProcess = orders.filter(order => order.fulfillment === "awaiting_processing").length;
-  const pickup = orders.filter(order => order.fulfillment === "handover_pending").length;
-  const sales = orders
-    .filter(order => order.payment === "paid")
-    .reduce((sum, order) => sum + order.total, 0);
+  const { latestOrders, stats } = await getAdminDashboardData();
 
   return (
     <div className="admin-content admin-dashboard-page">
@@ -29,22 +24,22 @@ export default async function AdminDashboard() {
       <section className="metrics-grid" aria-label="Ringkasan operasional">
         <article className="metric-card">
           <div className="metric-card-head"><span>Pesanan terbaru</span><ShoppingBag size={16} aria-hidden="true" /></div>
-          <strong className="admin-numeric">{orders.length}</strong>
-          <span className="metric-trend">Data pesanan yang ditampilkan</span>
+          <strong className="admin-numeric">{stats.totalOrders}</strong>
+          <span className="metric-trend">Seluruh pesanan tercatat</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Penjualan terdata</span><Banknote size={16} aria-hidden="true" /></div>
-          <strong className="admin-numeric admin-metric-money">{rupiah(sales)}</strong>
-          <span className="metric-trend">Dari pesanan lunas pada daftar terbaru</span>
+          <strong className="admin-numeric admin-metric-money">{rupiah(stats.paidSales)}</strong>
+          <span className="metric-trend">Akumulasi pesanan lunas</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Perlu diproses</span><Clock3 size={16} aria-hidden="true" /></div>
-          <strong className="admin-numeric">{needProcess}</strong>
+          <strong className="admin-numeric">{stats.needProcess}</strong>
           <span className="metric-trend tone-warning">Perlu menjaga SLA pemrosesan</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Menunggu pickup</span><Box size={16} aria-hidden="true" /></div>
-          <strong className="admin-numeric">{pickup}</strong>
+          <strong className="admin-numeric">{stats.pickup}</strong>
           <span className="metric-trend">Resi sudah dibuat</span>
         </article>
       </section>
@@ -56,7 +51,7 @@ export default async function AdminDashboard() {
             <Link href="/admin/orders">Lihat semua <ArrowUpRight size={12} aria-hidden="true" /></Link>
           </div>
           <div className="order-list">
-            {orders.slice(0, 4).map(order => (
+            {latestOrders.map(order => (
               <Link href={`/admin/orders/${order.number}`} className="order-list-item" key={order.number}>
                 <div className="order-thumb">
                   <Image unoptimized src={order.image} alt="" fill />
@@ -72,7 +67,7 @@ export default async function AdminDashboard() {
                 <StatusPill status={order.fulfillment} />
               </Link>
             ))}
-            {orders.length === 0 && (
+            {latestOrders.length === 0 && (
               <div className="empty-state admin-list-empty">
                 <ShoppingBag size={24} aria-hidden="true" />
                 <strong>Belum ada pesanan</strong>
@@ -87,11 +82,11 @@ export default async function AdminDashboard() {
           <div className="quick-queue">
             <Link href="/admin/orders?filter=processing" className="queue-item">
               <div><strong>Perlu diproses</strong><span>Pesanan lunas baru</span></div>
-              <span className="queue-count admin-numeric">{needProcess}</span>
+              <span className="queue-count admin-numeric">{stats.needProcess}</span>
             </Link>
             <Link href="/admin/orders?filter=pickup" className="queue-item">
               <div><strong>Menunggu pickup</strong><span>Resi sudah dibuat</span></div>
-              <span className="queue-count admin-numeric">{pickup}</span>
+              <span className="queue-count admin-numeric">{stats.pickup}</span>
             </Link>
             <Link href="/admin/returns" className="queue-item">
               <div><strong>Retur dan refund</strong><span>Tinjau antrean pengajuan</span></div>

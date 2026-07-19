@@ -72,6 +72,7 @@ export function AdminReturnActions({
     try {
       const form = new FormData();
       form.set("scope", "refunds");
+      form.set("entityId", id);
       form.set("file", proof);
       const uploaded = await fetch("/api/admin/media/upload-url", {
         method: "POST",

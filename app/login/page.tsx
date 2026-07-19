@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
+import React, { useRef, useState, Suspense } from "react";
 import Script from "next/script";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { StoreHeader } from "@/components/store-header";
 import { errorMessage } from "@/lib/error-message";
+import { safeInternalPath } from "@/lib/safe-redirect";
+import { LoaderCircle } from "lucide-react";
 
 type GoogleCredentialResponse = { credential: string };
 type GoogleIdentityService = {
@@ -24,9 +26,11 @@ function googleIdentity() {
 function LoginContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const googleInitializedRef = useRef(false);
+  const authInFlightRef = useRef(false);
 
   const searchParams = useSearchParams();
-  const redirectUrl = searchParams.get("redirect") || "/user";
+  const redirectUrl = safeInternalPath(searchParams.get("redirect"), "/user");
 
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
@@ -38,14 +42,16 @@ function LoginContent() {
 
     try {
       const g = googleIdentity();
-      if (g) {
+      const buttonSlot = document.getElementById("google-signin-btn");
+      if (g && buttonSlot && !googleInitializedRef.current) {
+        googleInitializedRef.current = true;
         g.accounts.id.initialize({
           client_id: googleClientId,
           callback: handleCredentialResponse,
         });
 
         g.accounts.id.renderButton(
-          document.getElementById("google-signin-btn"),
+          buttonSlot,
           {
             theme: "outline",
             size: "large",
@@ -56,11 +62,14 @@ function LoginContent() {
         );
       }
     } catch (e) {
+      googleInitializedRef.current = false;
       console.error("Gagal menginisialisasi Google Sign-In:", e);
     }
   };
 
   const handleCredentialResponse = async (response: GoogleCredentialResponse) => {
+    if (authInFlightRef.current) return;
+    authInFlightRef.current = true;
     setLoading(true);
     setError("");
     try {
@@ -74,9 +83,12 @@ function LoginContent() {
         throw new Error(data.error || "Gagal melakukan autentikasi");
       }
       localStorage.setItem("cart_needs_merge", "true");
-      window.location.href = redirectUrl;
+      window.location.href = data.completion?.isComplete
+        ? redirectUrl
+        : `/user/settings?onboarding=1&redirect=${encodeURIComponent(redirectUrl)}`;
     } catch (e: unknown) {
       setError(errorMessage(e, "Gagal login dengan akun Google."));
+      authInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -106,14 +118,19 @@ function LoginContent() {
             melacak pesanan, dan menikmati proses checkout yang cepat.
           </p>
 
-          {error && <div className="login-error">{error}</div>}
+          {error && <div className="login-error" role="alert">{error}</div>}
 
           {googleClientId ? (
-            <div className="btn-wrapper">
+            <div className={`btn-wrapper login-button-wrapper${loading ? " is-loading" : ""}`} aria-busy={loading}>
               <div id="google-signin-btn" className="google-signin-slot"></div>
+              {loading && (
+                <div className="login-auth-progress" role="status" aria-live="polite">
+                  <LoaderCircle size={18} aria-hidden="true" /> Memverifikasi akun…
+                </div>
+              )}
             </div>
           ) : (
-            <div className="login-error">
+            <div className="login-error" role="alert">
               <strong>Info Pengembang:</strong> Client ID Google belum terkonfigurasi di env. 
               Silakan konfigurasikan NEXT_PUBLIC_GOOGLE_CLIENT_ID terlebih dahulu.
             </div>

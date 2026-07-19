@@ -1,18 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { sha256 } from "@/lib/security";
 import { PaymentPageClient } from "./payment-page-client";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { turnstileSiteKey } from "@/lib/turnstile";
 
 export default async function PaymentPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ number: string }>;
-  searchParams: Promise<{ token?: string }>;
 }) {
-  const [{ number }, query] = await Promise.all([params, searchParams]);
-  const token = query.token || "";
+  const { number } = await params;
 
   const customer = await customerFromRequest();
   if (!customer) {
@@ -50,7 +47,6 @@ export default async function PaymentPage({
   return (
     <PaymentPageClient
       number={number}
-      token={token}
       grandTotal={Number(order.grandTotal)}
       payableAmount={Number(payment.payableAmount || order.grandTotal)}
       feeAmount={Number(payment.feeAmount || 0)}
@@ -58,6 +54,7 @@ export default async function PaymentPage({
       qrisImageUrl={qrisDetails?.image_data_url || null}
       qrisString={qrisDetails?.qris_string || null}
       initialStatus={payment.status}
+      turnstileSiteKey={turnstileSiteKey()}
     />
   );
 }

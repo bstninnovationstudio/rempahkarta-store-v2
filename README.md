@@ -1,38 +1,105 @@
-# AMK Store / REMPAHKARTA v1.2.0
+# AMK Store / REMPAHKARTA v1.3.0
 
-**CATATAN TEKNIS:** *SELALU CATAT PERUBAHAN / LAKUKAN PENYESUAIAN BAGIAN TERKAIT DALAM README INI BERKAITAN YANG TERJADI PADA SISTEM SEHINGGA README SELALU VALID DAN UPDATED!!! (tidak harus selalu, jika dibutukan saja!)*
+Toko online D2C single-brand berbasis Next.js, Prisma, dan MySQL. Versi 1.3.0 mewajibkan pelanggan masuk dengan Google, melengkapi data akun, lalu checkout dengan identitas yang terikat ke session. Panel admin tetap mempertahankan flow transaksi yang ada, tetapi daftar besar, statistik, autentikasi, rate limit, dan akses detail pesanan telah dipisahkan dengan batas yang lebih aman untuk produksi.
 
-Toko online D2C ringan untuk satu usaha/brand. Pelanggan memilih variasi, checkout tanpa akun, membayar melalui BSTN Dynamic QRIS, lalu memantau pesanan dan tracking Biteship dari tautan bertoken. Admin mengelola produk, kategori, stok, pesanan, pengiriman, pembatalan, retur, inspeksi, dan refund manual.
+Dokumentasi aktif:
 
-Antarmuka memakai design system REMPAHKARTA yang terdokumentasi di `DESIGN.md`. Sistem visual mencakup token warna, tipografi, spacing, rasio media 1:1, status semantik, pola storefront dan admin, responsivitas, aksesibilitas, serta matriks state yang wajib diaudit. Aset demo menggunakan media rempah yang tersedia di proyek dan tidak memengaruhi data produk production.
+- `DESIGN.md`: kontrak visual, responsivitas, dan aksesibilitas.
+- `docs/system-map.md`: peta lengkap 34 page route, 50 API route, model, dan modul.
+- `docs/architecture.md`: boundary aplikasi, query, cache, dan state flow.
+- `docs/security-api-audit.md`: kontrol keamanan/API, batas operasional, dan risiko tersisa.
+- `docs/ui-audit.md`: audit UI berbasis source; bukan hasil screenshot atau runtime database.
+- `docs/test-report.md`: hasil verifikasi terakhir yang benar-benar dijalankan.
 
-Panel admin memakai canvas putih dengan shell desktop mulai 1024 px dan drawer pada tablet/mobile. Detail page serta form editor turun ke satu kolom sampai 1023 px; tabel memiliki region scroll terlokalisasi, caption semantik, dan target sentuh minimum 44 px pada perangkat sentuh. Form produk mempertahankan endpoint dan payload lama, tetapi ditata menjadi informasi dasar/media, konfigurasi penjualan, matriks varian, tautan marketplace, dan action bar bawah. Pemetaan 17 route UI admin serta hasil audit rinci tersedia di `docs/ui-audit.md`.
+`task.md` dan `walkthrough.md` adalah catatan historis pekerjaan lama, bukan spesifikasi sistem aktif.
 
-## Arsitektur
+### Status relevansi dokumen
 
-- Next.js App Router + React + TypeScript.
-- Prisma + MySQL 8 sebagai satu-satunya database dan service stateful.
-- BSTN Payment API untuk Dynamic QRIS; tersedia payment mock untuk pengujian.
-- Biteship untuk area, ongkir, booking, tracking, perubahan harga/resi, dan pembatalan.
-- Cloudflare Turnstile hanya sebagai proteksi API publik; tidak memakai Cloudflare Worker.
-- Gambar produk serta bukti retur/refund disimpan lokal di `public/uploads`.
-- Tidak memakai Redis, BullMQ, worker terpisah, D1/Drizzle, S3/R2, Resend, atau email otomatis.
+| Dokumen/folder | Status | Cara menggunakan |
+| --- | --- | --- |
+| `README.md`, `DESIGN.md`, `AGENTS.md` | Aktif | Entry point produk, kontrak UI, dan invariant implementasi. |
+| `docs/system-map.md`, `docs/architecture.md`, `docs/security-api-audit.md`, `docs/ui-audit.md` | Aktif v1.3.0 | Peta source dan audit kondisi saat ini; wajib diperbarui saat route/contract berubah. |
+| `docs/test-report.md` | Laporan bertanggal | Hanya hasil command yang benar-benar dijalankan; bukan janji bahwa provider/live DB selalu sehat. |
+| `docs/bstn-api-docs/` | Referensi provider | Masih relevan untuk subset payment yang dipakai adapter, tetapi merupakan snapshot; verifikasi terhadap provider sebelum release. |
+| `Printable-Thermal-Shipping-Label-A6/` | Referensi komponen | Contoh sumber. Implementasi aktif berada di `components/shipping-label.*` dan route resi admin. |
+| `task.md`, `walkthrough.md` | Arsip historis | Konteks perubahan lama; tidak boleh menjadi acuan migration, keamanan, atau route aktif. |
 
-## Persyaratan dan instalasi
+## Arsitektur singkat
+
+- Next.js 16.2.10 App Router + React 19.2.6 + TypeScript menjalankan storefront, akun pelanggan, admin, API, dan webhook dalam satu aplikasi.
+- Prisma/client 6.19.3 + MySQL 8 menyimpan katalog, stok, akun, pesanan, pembayaran, pengiriman, retur, audit, dan idempotency webhook.
+- Google Identity dipakai untuk login pelanggan; aplikasi menerbitkan JWT session pelanggan sendiri setelah ID token Google diverifikasi.
+- Admin memakai kredensial server dan JWT admin terpisah.
+- BSTN menyediakan Dynamic QRIS; Biteship menyediakan area, tarif, booking, tracking, dan pembatalan pengiriman.
+- Cloudflare Turnstile divalidasi server-side pada aksi berisiko.
+- Rate limiter berjalan di memori proses; katalog memakai Next.js server Data Cache. Tidak ada Redis, queue, atau worker, sehingga tidak ada shared cache/limiter eksternal yang dikonfigurasi aplikasi.
+- Media produk publik disimpan di `public/uploads/products`; bukti retur/refund disimpan privat di `storage/private` dan hanya disajikan lewat API owner/admin dengan `private, no-store`. Keduanya harus persisten dan dibackup bersama MySQL.
+
+## Persyaratan
 
 - Node.js 20.9 atau lebih baru.
 - npm.
 - MySQL 8 atau MariaDB yang kompatibel dengan Prisma MySQL.
+- HTTPS, volume persisten untuk `public/uploads` serta `storage/private`, dan reverse proxy yang meneruskan IP client secara tepercaya untuk production.
+
+## Instalasi baru
 
 ```bash
-npm install
+npm ci
 cp .env.example .env
-# isi database, admin, gudang, Turnstile, BSTN, dan Biteship
+# isi DATABASE_URL, secret auth, Google, Turnstile, BSTN, Biteship, dan gudang
+# gunakan output berbeda
+openssl rand -base64 48 # salin ke AUTH_SECRET
+openssl rand -base64 48 # salin ke CUSTOMER_JWT_SECRET
+read -s ADMIN_PASSWORD
+printf '%s' "$ADMIN_PASSWORD" | npm run auth:hash-password
+unset ADMIN_PASSWORD
+# salin output ke ADMIN_PASSWORD_SCRYPT
 npm run setup
 npm run dev
 ```
 
-`npm run setup` menjalankan `prisma db push` lalu seed. Untuk database yang pernah dipakai versi 1.1.0, perintah yang sama menambah tabel/kolom baru dan memindahkan kategori teks lama ke tabel kategori. Backup database sebelum menjalankannya.
+`npm run setup` hanya menjalankan Prisma generate dan migration deploy. Perintah ini **tidak menjalankan seed** dan tidak menimpa produk yang sudah ada.
+
+Data demo hanya untuk database lokal/disposable:
+
+```bash
+DEMO_MODE=true ALLOW_INSECURE_DEMO=true npm run setup:demo
+```
+
+Jangan menjalankan `setup:demo`, `db:seed`, atau `prisma db push` pada database berisi data nyata. Mode demo dilarang pada preview/staging yang dapat diakses publik.
+
+### Database yang sudah berisi data sebelum migration history
+
+1. Backup dump MySQL, `public/uploads`, dan `storage/private`.
+2. Pastikan tabel, kolom, constraint, dan relasi database lama sesuai dengan schema baseline. Index query tambahan boleh belum ada karena migration berikutnya idempoten.
+3. Hanya pada database lama tersebut, tandai baseline tanpa menjalankan ulang DDL:
+
+   ```bash
+   npm run db:baseline:existing
+   ```
+
+4. Terapkan migration tambahan secara berurutan:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+Database baru cukup memakai `npm run setup`; Prisma akan menjalankan baseline dan migration tambahan. Jangan menjalankan `db:baseline:existing` pada database kosong. Migration query berikutnya menambahkan enam index secara additive/idempoten (`Product.status+updatedAt`, kombinasi order user/email+payment+date, serta `createdAt` untuk Order/User/AuditLog) dan tidak menyentuh row produk.
+
+### Migrasi bukti legacy ke private storage
+
+Jika database lama masih menyimpan path `/uploads/returns/*` atau `/uploads/refunds/*`, jalankan **setelah** migration schema dan setelah backup database/folder media:
+
+```bash
+# dry-run: hanya membaca DB/filesystem dan menampilkan rencana + warning
+npm run migrate:private-media
+
+# sesudah jumlah dan warning ditinjau
+npm run migrate:private-media -- --apply
+```
+
+Mode apply menyalin dan memverifikasi file ke `storage/private`, memperbarui path DB ke API owner/admin, lalu memindahkan original public ke `storage/private-migration-backup` yang dapat dipulihkan. Script tidak menjalankan seed dan tidak menghapus permanen. Refund legacy tanpa `returnRequestId` sengaja dilewati dan diberi warning agar relasi tidak ditebak; selesaikan record tersebut secara manual sebelum menganggap seluruh bukti privat. Pertahankan backup sampai file, path DB, dan akses owner/admin selesai diverifikasi.
 
 Build server:
 
@@ -41,95 +108,149 @@ npm run build
 npm start
 ```
 
-Panel admin: `/admin-login`.
+Panel admin tersedia di `/admin-login`.
 
-## Environment penting
+## Environment
 
-- `DATABASE_URL`: koneksi MySQL.
-- `APP_URL`: URL publik aplikasi dan callback provider.
-- `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`: akses admin. Buat hash dengan `printf 'password-ku' | sha256sum`.
-- `PAYMENT_MOCK=true`: pembayaran lokal; `PAYMENT_MOCK_AUTO_PAID=true` langsung menandai paid.
-- `BSTN_*`: base URL, project API key, dan signature secret.
-- `BITESHIP_*`: base URL, API key, serta secret autentikasi webhook.
-- `ENABLED_COURIERS`: kode kurir yang boleh ditampilkan, dipisahkan koma.
-- `WAREHOUSE_*`: alamat origin/pickup. Area ID hasil pengujian untuk Sentolo 55664 adalah `IDNP5IDNC206IDND1764IDZ55664`.
-- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` dan `TURNSTILE_SECRET_KEY`: widget client dan validasi Siteverify server.
+| Variabel | Fungsi |
+| --- | --- |
+| `DATABASE_URL` | Koneksi MySQL runtime dan migration. |
+| `APP_URL` | Origin publik callback/provider; production wajib HTTPS. |
+| `AUTH_SECRET` | Secret JWT admin minimal 32 karakter; buat dengan `openssl rand -base64 48`. Placeholder production ditolak. |
+| `CUSTOMER_JWT_SECRET` | Secret JWT pelanggan terpisah; buat output acak berbeda dengan command yang sama. Bila kosong fallback ke `AUTH_SECRET`, tetapi secret terpisah disarankan. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD_SCRYPT` | Kredensial admin production. Hash scrypt bersalt dibuat melalui stdin dengan prosedur instalasi di atas; password harus 12–256 karakter. |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Audience Google ID token. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Widget client dan Siteverify server. |
+| `BSTN_BASE_URL`, `BSTN_PROJECT_API_KEY`, `BSTN_RETURN_SIGNATURE_SECRET` | Dynamic QRIS, verifikasi webhook, dan rekonsiliasi pembayaran. |
+| `BITESHIP_BASE_URL`, `BITESHIP_API_KEY`, `BITESHIP_WEBHOOK_SHARED_SECRET` | Area, tarif, shipment, tracking, pembatalan, dan autentikasi webhook. |
+| `ENABLED_COURIERS` | Kode kurir yang boleh ditawarkan, dipisahkan koma. |
+| `WAREHOUSE_*` | Origin/pickup dan Area ID gudang. |
+| `PAYMENT_MOCK`, `PAYMENT_MOCK_AUTO_PAID` | Simulasi development; secara kode tidak aktif di production. |
+| `DEMO_MODE`, `ALLOW_INSECURE_DEMO` | Kedua-duanya harus `true` untuk fixture/bypass demo, dan hanya bekerja di non-production. Default keduanya `false`; khusus localhost/disposable. |
+| `RATE_LIMIT_TRUSTED_IP_HEADER` | Header IP yang sudah dihapus/ditulis ulang oleh reverse proxy tepercaya; hanya `cf-connecting-ip`, `x-real-ip`, atau `x-forwarded-for`. |
 
-Untuk localhost, `.env.example` memakai test key resmi Turnstile. Di production, ganti keduanya dengan key widget milik domain Anda. API checkout, pencarian area, dan ongkir menolak request tanpa token yang lolos verifikasi server.
+`.env.example` sengaja memakai placeholder secret yang gagal validasi dan test key resmi Turnstile untuk localhost. Ganti seluruhnya; production menolak marker contoh, shared webhook secret di bawah 16 karakter, test key Turnstile, action/hostname yang tidak cocok, atau JWT secret di bawah 32 karakter. Jangan masukkan `.env`, credential, dump database, atau media pelanggan ke Git/arsip distribusi.
 
-Tidak ada `REDIS_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, atau konfigurasi object storage.
+`ADMIN_PASSWORD_HASH` SHA-256 hanya didukung sebagai kompatibilitas development dan ditolak di production. Jangan memasukkan `ADMIN_PASSWORD` plaintext ke `.env`; variabel itu hanya input sementara saat menjalankan generator hash.
 
-## Produk, variasi, dan kategori
+Versi Next, Prisma/client, dan eslint-config-next dikunci ke patch yang diaudit; override PostCSS dikunci ke 8.5.19. Pada snapshot 19 Juli 2026, `npm audit --omit=dev` melaporkan 0 vulnerability. Jalankan ulang audit setiap perubahan lockfile.
 
-- Produk dapat disetel tanpa varian: satu harga, SKU, stok, berat, batas stok menipis, dan dimensi paket opsional.
-- Produk dengan varian mendukung Tingkat I dan Tingkat II maksimal. Kombinasi dibuat otomatis dan setiap kombinasi memiliki SKU, harga, stok, berat, dimensi, batas stok menipis, serta status aktif.
-- Panjang × lebar × tinggi bersifat opsional. Jika digunakan, ketiganya harus diisi dalam sentimeter. Berat dalam gram selalu wajib.
-- Maksimal 10 gambar JPG/PNG/WebP, masing-masing 5 MB. Gambar pertama menjadi gambar utama.
-- Produk boleh tanpa kategori dan hanya dapat berada dalam satu kategori. Kategori dikelola di `/admin/categories`.
-- Varian yang dihapus dari konfigurasi dinonaktifkan, bukan dihapus secara fisik, sehingga snapshot/order lama tetap aman.
+## Login, onboarding, dan hak akses pelanggan
 
-## Checkout dan stok
+1. Google ID token diverifikasi terhadap JWK Google, algoritme RS256, issuer, audience, masa berlaku, dan `email_verified`.
+2. Aplikasi membuat JWT pelanggan selama 7 hari di cookie HttpOnly, Secure pada production, SameSite Lax. JWT memiliki issuer, audience, subject, `jti`, `tokenUse`, dan `sessionId`.
+3. `currentSessionId` pada user menjadi device/session lock. Login baru mengganti session aktif sebelumnya.
+4. Pelanggan yang belum lengkap diarahkan ke `/user/settings?onboarding=1`.
+5. Akun dianggap lengkap bila memiliki nama, email, nomor telepon, minimal satu alamat, serta satu rekening refund bank atau e-wallet yang valid.
+6. Halaman checkout dan `POST /api/checkout/orders` sama-sama menolak pembuatan pesanan bila profil belum lengkap.
+7. Detail, pembayaran, pembatalan, media, dan retur pesanan hanya dapat diakses setelah login dan pemeriksaan ownership. Pesanan historis tanpa `userId` hanya diklaim oleh akun terverifikasi dengan email yang sama; nomor order saja tidak memberi akses.
 
-1. Pelanggan mengetik kecamatan/kode pos lalu menekan **Cari**. Biteship hanya dipanggil setelah aksi tersebut.
-2. Setelah memilih hasil area, pelanggan menekan **Cek ongkir**. Hanya kurir pada `ENABLED_COURIERS` yang diminta.
-3. Checkout server membaca harga, berat, dimensi, dan status varian langsung dari MySQL; data harga client tidak dipercaya.
-4. Server mengambil ulang tarif Biteship. Bila ongkir berubah, checkout berhenti dengan `SHIPPING_PRICE_CHANGED` dan total baru harus ditinjau pelanggan.
-5. Persetujuan kebijakan wajib di client dan kembali divalidasi sebagai literal `true` di API.
-6. Transaksi MySQL mereservasi stok menggunakan optimistic lock `version`. Checkout bersamaan hanya dapat mengambil unit yang masih tersedia setelah reservasi dan safety stock.
-7. Stok tersedia adalah `onHand - reserved - safetyStock`. UI membedakan aman, menipis, dan habis.
+Semua mutasi API non-webhook (`POST`/`PUT`/`PATCH`/`DELETE`) juga harus memiliki header `Origin` yang sama persis dengan origin `APP_URL`. Production fail-closed bila origin hilang/tidak cocok atau `APP_URL` tidak valid. Webhook provider dikecualikan karena memakai signature/secret sendiri.
 
-## Payment dan fulfillment
+Halaman `/user/settings` menyatukan kontak, alamat, dan rekening refund. Route lama `/user/addresses` dan `/user/payment` tetap ada sebagai redirect kompatibilitas.
+
+## Query, pagination, statistik, dan cache
+
+- Endpoint list menerima `page` dan `pageSize`, mengembalikan metadata `total`, `totalPages`, `hasPrevious`, dan `hasNext`.
+- Produk publik: default 12, maksimum 48 per halaman.
+- Pesanan pelanggan: default 10, maksimum 50 per API; UI riwayat memakai 10 per halaman.
+- List admin API: default 20, maksimum 100; page admin membatasi maksimum 50.
+- Detail pelanggan admin memakai 10 pesanan per halaman.
+- Statistik dashboard dipisahkan dari list: `/api/user/dashboard/stats` dan `/api/admin/dashboard/stats` memakai `count`, `aggregate`, atau `groupBy`, bukan memuat seluruh transaksi.
+- Dashboard hanya mengambil item terbaru yang dibutuhkan: tiga pesanan pelanggan dan empat pesanan admin.
+- Katalog storefront memakai server cache 30 menit dengan tag `storefront-catalog`. Mutasi katalog, kategori, inventori, dan lifecycle stok menginvalidasi tag. Checkout tetap membaca harga dan ketersediaan langsung dari MySQL, sehingga cache tidak menjadi sumber kebenaran transaksi.
+
+`/admin/categories/[id]` adalah pengecualian yang disengaja: editor assignment memuat daftar produk penuh karena payload saat ini mengganti seluruh `selectedProductIds`. Endpoint delta assignment diperlukan sebelum layar ini aman dipaginasi.
+
+## Rate limit sederhana
+
+Semua `/api/*` dibatasi 100 request/menit per identitas IP. Webhook provider memakai bucket terpisah 1.000/menit. Route mahal memiliki batas tambahan:
+
+| Aksi | Batas |
+| --- | ---: |
+| Login admin | 5 / 15 menit |
+| Login Google | 10 / menit |
+| Buat pesanan | 10 / menit |
+| Cari lokasi / cek ongkir | masing-masing 25 / menit |
+| Sinkronisasi pembayaran user/admin | masing-masing 15 / menit |
+| Simpan profil, alamat, rekening refund | masing-masing 20 / menit |
+| Tulis cart | 30 / menit |
+| Pembatalan pesanan / upload bukti | masing-masing 10 / menit |
+| Pengajuan retur | 5 / menit |
+| Upload media admin / keputusan retur admin | masing-masing 20 / menit |
+| Booking shipment admin | 10 / menit |
+| Keputusan pembatalan admin | 20 / menit |
+| Penyelesaian refund admin | 10 / menit |
+
+Limiter memakai fixed window, maksimal 10.000 bucket, dan header `X-RateLimit-*`/`Retry-After`. Forwarded IP hanya dipercaya bila `RATE_LIMIT_TRUSTED_IP_HEADER` diatur eksplisit; tanpa itu request memakai bucket aman bersama `unidentified`. Karena state limiter berada di memori proses, batas berlaku per instance dan reset saat restart. Gunakan satu instance atau tambahkan limit di reverse proxy/CDN bila deployment horizontal membutuhkan batas global.
+
+## Turnstile
+
+Siteverify server wajib untuk aksi berikut:
+
+- login admin: `admin_login`;
+- pencarian lokasi: `location_search`;
+- cek ongkir: `shipping_quotes`;
+- membuat pesanan: `checkout_order`;
+- simpan kontak: `user_profile`;
+- tambah/edit/hapus alamat: `user_address`;
+- simpan rekening refund: `user_payment`;
+- sinkronisasi pembayaran pelanggan: `payment_sync`;
+- sinkronisasi pembayaran admin: `admin_payment_sync`.
+
+Token dibatasi 2.048 karakter, diverifikasi dengan IP bila tersedia, menggunakan idempotency key, dan action wajib sama persis. Pada production, hostname hasil Siteverify juga wajib sama dengan hostname `APP_URL` dan official test key ditolak. Kegagalan Siteverify bersifat fail-closed.
+
+## Produk, varian, dan stok
+
+- Produk boleh tanpa kategori dan maksimal memiliki satu kategori.
+- Produk tanpa varian tetap memiliki satu `ProductVariant` aktif; produk bervarian mendukung maksimal dua tingkat opsi.
+- Varian lama dinonaktifkan, bukan dihapus, agar snapshot/order historis tetap aman.
+- Maksimal 10 gambar JPG/PNG/WebP, masing-masing 5 MB.
+- Harga, dimensi, berat, status produk, dan stok checkout selalu dibaca ulang dari database.
+- Ketersediaan adalah `onHand - reserved - safetyStock`.
+- Reservasi checkout memakai optimistic lock `version` dan transaksi MySQL.
+- `packed` mengubah reservasi menjadi pengurangan stok fisik. Release, commit, dan restock memakai `InventoryMovement.dedupeKey` agar idempoten.
+
+## Payment, fulfillment, retur
 
 ```text
 awaiting_payment → awaiting_processing → processing → packed
 → shipment_booked → handover_pending → handed_over → completed
 ```
 
-- `packed` mengubah reservasi menjadi pengurangan stok fisik.
-- Pembuatan resi belum berarti handover.
-- Biteship `picking_up` → `handover_pending`; `picked/in_transit/dropping_off` → `handed_over`; `delivered` → `completed`.
-- Status pembayaran final hanya dari webhook BSTN yang valid atau GET server-to-server, bukan redirect browser.
-- Payment terminal gagal melepas reservasi tepat sekali. Paid setelah order terlanjur cancelled menjadi `refund_pending`.
-
-## Perubahan ongkir, resi, dan pembatalan Biteship
-
-- Event `order.price` menyimpan `actualPrice` dan `priceAdjustment`; invoice pelanggan tidak berubah.
-- Event `order.waybill_id` mengganti resi aktif serta menyimpan waktu, histori, dan audit.
-- Webhook dan tombol sinkronisasi admin sama-sama memperbarui status fulfillment.
-- Status `cancelled`, `rejected`, `courier_not_found`, atau `disposed` sebelum handover memulihkan stok satu kali dan membuat refund pending bila sudah paid.
-- Kegagalan cancel ke provider disimpan sebagai `provider_failed`; order belum dibatalkan dan admin dapat mencoba kembali.
-- Setelah handover, pembatalan ditutup dan pelanggan menggunakan retur.
-
-## Retur dan refund manual & Resolusi Pesanan Bermasalah
-
-- **Retur Pelanggan:** Pelanggan mengajukan retur dari halaman pesanan dengan bukti foto. Admin menilai kasus, memesan kurir retur Biteship, melakukan inspeksi, dan mengembalikan stok jika layak jual. Refund dicatat secara manual.
-- **Pesanan Bermasalah (Issue Order):** Sistem otomatis menandai pesanan lunas yang mengalami kendala sistem/kurir dari Biteship (`cancelled`, `courier_not_found`, `rejected`, `disposed`, `return_in_transit`, `returned`) dengan flag `issueOrder = true`. Admin dapat memproses resolusi berupa:
-  - **Refund:** Membuat tiket resolusi refund langsung yang memindahkan status retur/refund ke `processing_refund` dan mengarah ke penyelesaian `finished`.
-  - **Retur:** Membuat tiket resolusi retur manual (`awaiting_approval` -> `waiting_waybill` -> `processing_return` -> `processing_refund` -> `finished`) di mana admin meregistrasikan kurir & resi retur secara manual.
-  - **Tandai Selesai:** Mengabaikan isu dan mengubah status pesanan langsung menjadi `finished` (Selesai).
+- Redirect browser tidak pernah menjadi bukti pembayaran. Status final berasal dari webhook BSTN yang valid atau GET server-to-server.
+- Webhook BSTN memverifikasi HMAC raw body, delivery ID, payment ID, reference, dan amount, lalu membaca ulang detail provider.
+- Webhook Biteship memproses status, perubahan harga, dan perubahan waybill secara idempoten.
+- Payment terminal gagal melepas reservasi satu kali. Paid setelah order dibatalkan menjadi `refund_pending`.
+- Cancel sebelum handover dapat mengembalikan stok; setelah handover pelanggan memakai alur retur.
+- Refund tetap manual dan membutuhkan rekening pelanggan, bukti, serta referensi admin.
+- Flow transaksi/admin yang ada tidak diganti; peningkatan difokuskan pada batas query, autentikasi, validasi, dan presentasi.
 
 ## Webhook
 
 - BSTN: `POST /api/webhooks/bstn`, HMAC `X-BSTN-Signature`, deduplikasi `X-BSTN-Delivery-Id`.
-- Biteship: `POST /api/webhooks/biteship` dengan header `X-Webhook-Secret` yang nilainya sama dengan `BITESHIP_WEBHOOK_SHARED_SECRET`.
+- Biteship: `POST /api/webhooks/biteship`, secret melalui `X-Webhook-Secret` atau Bearer.
 - Aktifkan event Biteship `order.status`, `order.price`, dan `order.waybill_id`.
-- Gunakan HTTPS. Semua event masuk ke `WebhookInbox` idempoten dan audit MySQL.
+- Gunakan HTTPS. Event disimpan di `WebhookInbox`; delivery yang sudah selesai dijawab sukses tanpa side effect ulang, sedangkan delivery pending/failed dapat diproses ulang secara aman.
 
-## Pengujian
+## Verifikasi dan operasi
 
 ```bash
 npm run lint
 npm test
+npx tsc --noEmit
+npx prisma validate
 npm run build
 ```
 
-Laporan rinci ada di `docs/test-report.md`. Pengujian provider memakai Biteship testing dan tidak menyimpan credential. Karena host MySQL yang diberikan tidak dapat dijangkau dari lingkungan pengembangan ini, `npm run setup` dan flow database end-to-end harus dijalankan sekali dari jaringan VS Code/server Anda.
+Jangan menyimpulkan flow database/provider sudah tervalidasi hanya dari build. Hasil aktual dan batas lingkungan dicatat di `docs/test-report.md`.
 
-## Backup
+Checklist production:
 
-- Backup dump MySQL dan `public/uploads` secara bersamaan.
-- Folder upload harus writable oleh proses Node.js dan persisten antar-deploy.
-- Gunakan HTTPS dan batasi request body reverse proxy sekitar 6 MB.
-- Jangan masukkan `.env` ke Git/arsip. Rotasi credential yang pernah dibagikan setelah pengujian.
-
-Acuan implementasi: `AGENTS.md`, `DESIGN.md`, dan `docs/architecture.md`.
+- backup dan uji restore dump MySQL + `public/uploads` + `storage/private`;
+- pakai HTTPS dan secret acak minimal 32 karakter;
+- pastikan `DEMO_MODE=false`, `ALLOW_INSECURE_DEMO=false`, dan payment mock nonaktif; jangan aktifkan demo pada preview/staging publik;
+- gunakan volume upload persisten dan batasi body reverse proxy sekitar 6 MB;
+- teruskan hanya header IP dari proxy/CDN tepercaya;
+- pantau 401/403/409/429, kegagalan webhook, dan status migration;
+- lakukan smoke test dengan MySQL, Google, Turnstile, BSTN, dan Biteship pada jaringan deployment.

@@ -106,6 +106,7 @@ model Product {
   cartItems      CartItem[]
 
   @@index([categoryId, status])
+  @@index([status, updatedAt])
 }
 
 model ProductCategory {
@@ -237,7 +238,10 @@ model Order {
   @@index([fulfillmentState, createdAt])
   @@index([guestEmail, createdAt])
   @@index([issueOrder, fulfillmentState])
+  @@index([createdAt])
   @@index([userId, createdAt])
+  @@index([userId, paymentState, createdAt])
+  @@index([guestEmail, paymentState, createdAt])
 }
 
 model OrderItem {
@@ -371,20 +375,20 @@ model ShipmentTrackingEvent {
 }
 
 model ReturnRequest {
-  id             String          @id @default(cuid())
+  id             String       @id @default(cuid())
   orderId        String
-  publicNumber   String          @unique @db.VarChar(40)
-  source         String          @default("buyer") @db.VarChar(20)
-  cause          String?         @db.VarChar(80)
-  reason         String          @db.VarChar(80)
-  description    String          @db.Text
+  publicNumber   String       @unique @db.VarChar(40)
+  source         String       @default("buyer") @db.VarChar(20)
+  cause          String?      @db.VarChar(80)
+  reason         String       @db.VarChar(80)
+  description    String       @db.Text
   evidence       Json?
-  state          ReturnState     @default(requested)
-  decisionReason String?         @db.Text
+  state          ReturnState  @default(requested)
+  decisionReason String?      @db.Text
   refundAmount   BigInt?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  order          Order           @relation(fields: [orderId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  order          Order        @relation(fields: [orderId], references: [id])
   items          ReturnItem[]
   refunds        Refund[]
 
@@ -468,6 +472,7 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId, createdAt])
+  @@index([createdAt])
 }
 
 model User {
@@ -484,19 +489,21 @@ model User {
   addresses        UserAddress[]
   refundSetting    UserRefundSetting?
   cartItems        CartItem[]
+
+  @@index([createdAt])
 }
 
 model UserAddress {
-  id           String   @id @default(cuid())
+  id           String @id @default(cuid())
   userId       String
-  label        String   @db.VarChar(80)
-  contactName  String   @db.VarChar(160)
-  contactPhone String   @db.VarChar(40)
-  contactEmail String   @db.VarChar(200)
-  address      String   @db.Text
-  postalCode   String   @db.VarChar(10)
-  areaId       String   @db.VarChar(120)
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label        String @db.VarChar(80)
+  contactName  String @db.VarChar(160)
+  contactPhone String @db.VarChar(40)
+  contactEmail String @db.VarChar(200)
+  address      String @db.Text
+  postalCode   String @db.VarChar(10)
+  areaId       String @db.VarChar(120)
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

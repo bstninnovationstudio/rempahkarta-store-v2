@@ -115,22 +115,12 @@ export function CheckoutForm({
       const token = await turnstileToken("shipping_quotes");
       const itemsPayload = fromCart
         ? cartItems.map(item => ({
-            name: item.product.name,
-            value: item.variant.price,
+            variantId: item.variantId,
             quantity: item.quantity,
-            weight: item.variant.weight,
-            length: item.variant.length,
-            width: item.variant.width,
-            height: item.variant.height
           }))
         : (product && variant ? [{
-            name: product.name,
-            value: variant.price,
+            variantId: variant.id,
             quantity: 1,
-            weight: variant.weight,
-            length: variant.length,
-            width: variant.width,
-            height: variant.height
           }] : []);
 
       const response = await fetch("/api/checkout/quotes", {

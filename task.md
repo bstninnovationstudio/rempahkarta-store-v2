@@ -1,3 +1,5 @@
+> **ARSIP HISTORIS — BUKAN SPESIFIKASI AKTIF.** Dokumen ini merekam satu rangkaian pekerjaan lama dan dapat menyebut route, query, atau langkah database yang sudah berubah. Untuk kondisi sistem saat ini gunakan `README.md`, `docs/system-map.md`, `docs/architecture.md`, dan `docs/security-api-audit.md`. Jangan menjalankan perintah database dari arsip ini tanpa verifikasi migration aktif dan backup.
+
 # Daftar Tugas: Kustomisasi Halaman Detail Pesanan Pelanggan & Aksi Admin
 
 - [x] Integrasi Pengecekan Batas Waktu Klaim 7 Hari (`app/orders/[number]/page.tsx`)

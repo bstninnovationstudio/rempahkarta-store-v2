@@ -6,10 +6,11 @@ import { AlertCircle, ArrowLeft, RefreshCw, XCircle } from "lucide-react";
 import { StoreHeader } from "@/components/store-header";
 import { rupiah } from "@/lib/format";
 import Link from "next/link";
+import Script from "next/script";
+import { useTurnstile } from "@/components/use-turnstile";
 
 interface PaymentPageClientProps {
   number: string;
-  token: string;
   grandTotal: number;
   payableAmount: number;
   feeAmount: number;
@@ -17,17 +18,18 @@ interface PaymentPageClientProps {
   qrisImageUrl: string | null;
   qrisString: string | null;
   initialStatus: string;
+  turnstileSiteKey: string;
 }
 
 export function PaymentPageClient({
   number,
-  token,
   grandTotal,
   payableAmount,
   feeAmount,
   expiresAt,
   qrisImageUrl,
   initialStatus,
+  turnstileSiteKey,
 }: PaymentPageClientProps) {
   const router = useRouter();
   const [status, setStatus] = useState<string>(initialStatus);
@@ -36,6 +38,7 @@ export function PaymentPageClient({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+  const { containerRef, token: getTurnstileToken } = useTurnstile(turnstileSiteKey);
 
   // Target expiration time ref
   const expiryTimeRef = useRef<number>(0);
@@ -83,7 +86,7 @@ export function PaymentPageClient({
     const pollStatus = async () => {
       try {
         const response = await fetch(
-          `/api/orders/${number}/payment/status?token=${encodeURIComponent(token)}`
+          `/api/orders/${encodeURIComponent(number)}/payment/status`
         );
         if (!response.ok) return;
 
@@ -91,7 +94,7 @@ export function PaymentPageClient({
         if (data.success && data.status && data.status !== status) {
           setStatus(data.status);
           if (data.status === "paid") {
-            router.push(`/orders/${number}?token=${encodeURIComponent(token)}`);
+            router.push(`/orders/${encodeURIComponent(number)}`);
           }
         }
       } catch {
@@ -101,7 +104,7 @@ export function PaymentPageClient({
 
     const pollingInterval = setInterval(pollStatus, 3000);
     return () => clearInterval(pollingInterval);
-  }, [number, token, status, router]);
+  }, [number, status, router]);
 
   // 3. Manual Sync/Refresh (calls BSTN directly and updates local database)
   const handleSync = async () => {
@@ -113,12 +116,13 @@ export function PaymentPageClient({
     setError("");
 
     try {
+      const turnstileToken = await getTurnstileToken("payment_sync");
       const response = await fetch(
         `/api/orders/${number}/payment/sync`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ turnstileToken }),
         }
       );
 
@@ -137,7 +141,7 @@ export function PaymentPageClient({
       if (data.success && data.status) {
         setStatus(data.status);
         if (data.status === "paid") {
-          router.push(`/orders/${number}?token=${encodeURIComponent(token)}`);
+          router.push(`/orders/${encodeURIComponent(number)}`);
         }
       }
     } catch (err: unknown) {
@@ -163,7 +167,7 @@ export function PaymentPageClient({
       const response = await fetch(`/api/orders/${number}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, reason: "Pembatalan oleh pelanggan" }),
+        body: JSON.stringify({ reason: "Pembatalan oleh pelanggan" }),
       });
 
       const text = await response.text();
@@ -192,9 +196,11 @@ export function PaymentPageClient({
 
   return (
     <>
+      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" />
       <StoreHeader />
       <main className="simple-page payment-page">
-        <Link href={`/orders/${number}?token=${encodeURIComponent(token)}`} className="eyebrow payment-back">
+        <div ref={containerRef} className="turnstile-hidden" aria-live="polite" />
+        <Link href={`/orders/${encodeURIComponent(number)}`} className="eyebrow payment-back">
           <ArrowLeft size={13} /> Detail pesanan
         </Link>
 
@@ -312,7 +318,7 @@ export function PaymentPageClient({
               </>
             ) : (
               <Link
-                href={`/orders/${number}?token=${encodeURIComponent(token)}`}
+                href={`/orders/${encodeURIComponent(number)}`}
                 className="button button-dark button-block"
               >
                 Kembali ke pesanan

@@ -1,3 +1,5 @@
+> **ARSIP HISTORIS — BUKAN SPESIFIKASI ATAU HASIL UJI AKTIF.** Dokumen ini menjelaskan perubahan pada satu titik waktu. Rujuk `README.md`, `docs/system-map.md`, `docs/architecture.md`, `docs/security-api-audit.md`, dan `docs/test-report.md` untuk implementasi serta verifikasi terbaru.
+
 # Walkthrough: Penggunaan Timestamp Riil dari Audit Log pada Timeline Pesanan
 
 Kami telah merombak total logika timeline agar tidak lagi menggunakan selisih waktu/offset simulasi dari pembayaran berhasil. Timeline sekarang 100% menggunakan data waktu riil (`createdAt`) saat tombol diklik atau saat data diubah yang tercatat di tabel `AuditLog`.

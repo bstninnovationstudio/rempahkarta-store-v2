@@ -1,35 +1,20 @@
 import Link from "next/link";
 import { StatusPill } from "@/components/status-pill";
-import { getAdminOrders } from "@/lib/admin-data";
+import { AdminPagination } from "@/components/admin-pagination";
+import { getAdminOrdersPage } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
 import { AdminOrderDuplicateButton } from "@/components/admin-order-duplicate-button";
+import { isDemo } from "@/lib/env";
 
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; page?: string; pageSize?: string }>;
 }) {
-  const { filter } = (await searchParams) || {};
-  const allOrders = await getAdminOrders();
-
-  const processingCount = allOrders.filter(order => order.fulfillment === "awaiting_processing").length;
-  const activeCount = allOrders.filter(order => order.fulfillment === "processing").length;
-  const pickupCount = allOrders.filter(order => order.fulfillment === "handover_pending").length;
-  const inTransitCount = allOrders.filter(order => order.fulfillment === "in_transit").length;
-  const issueCount = allOrders.filter(order => order.issueOrder).length;
-
-  let orders = allOrders;
-  if (filter === "processing") {
-    orders = allOrders.filter(order => order.fulfillment === "awaiting_processing");
-  } else if (filter === "active") {
-    orders = allOrders.filter(order => order.fulfillment === "processing");
-  } else if (filter === "pickup") {
-    orders = allOrders.filter(order => order.fulfillment === "handover_pending");
-  } else if (filter === "intransit") {
-    orders = allOrders.filter(order => order.fulfillment === "in_transit");
-  } else if (filter === "issue") {
-    orders = allOrders.filter(order => order.issueOrder);
-  }
+  const query = (await searchParams) || {};
+  const result = await getAdminOrdersPage({ filter: query.filter, page: Number(query.page), pageSize: Number(query.pageSize) });
+  const { rows: orders, counts, pagination, filter } = result;
+  const developerToolsEnabled = isDemo();
 
   return (
     <div className="admin-content">
@@ -43,26 +28,26 @@ export default async function OrdersPage({
 
       <nav className="filter-row" aria-label="Filter status pesanan">
         <Link href="/admin/orders" aria-current={!filter ? "page" : undefined} className={`filter-chip ${!filter ? "active" : ""}`}>
-          Semua <b>{allOrders.length}</b>
+          Semua <b>{counts.all}</b>
         </Link>
         <Link href="/admin/orders?filter=processing" aria-current={filter === "processing" ? "page" : undefined} className={`filter-chip ${filter === "processing" ? "active" : ""}`}>
-          Perlu diproses <b>{processingCount}</b>
+          Perlu diproses <b>{counts.processing}</b>
         </Link>
         <Link href="/admin/orders?filter=active" aria-current={filter === "active" ? "page" : undefined} className={`filter-chip ${filter === "active" ? "active" : ""}`}>
-          Sedang diproses <b>{activeCount}</b>
+          Sedang diproses <b>{counts.active}</b>
         </Link>
         <Link href="/admin/orders?filter=pickup" aria-current={filter === "pickup" ? "page" : undefined} className={`filter-chip ${filter === "pickup" ? "active" : ""}`}>
-          Menunggu pickup <b>{pickupCount}</b>
+          Menunggu pickup <b>{counts.pickup}</b>
         </Link>
         <Link href="/admin/orders?filter=intransit" aria-current={filter === "intransit" ? "page" : undefined} className={`filter-chip ${filter === "intransit" ? "active" : ""}`}>
-          Dalam perjalanan <b>{inTransitCount}</b>
+          Dalam perjalanan <b>{counts.intransit}</b>
         </Link>
         <Link
           href="/admin/orders?filter=issue"
           aria-current={filter === "issue" ? "page" : undefined}
           className={`filter-chip filter-chip-danger ${filter === "issue" ? "active" : ""}`}
         >
-          Pesanan bermasalah <b>{issueCount}</b>
+          Pesanan bermasalah <b>{counts.issue}</b>
         </Link>
       </nav>
 
@@ -107,7 +92,7 @@ export default async function OrdersPage({
                   <td>
                     <div className="table-actions">
                       <Link href={`/admin/orders/${order.number}`} className="table-link">Buka →</Link>
-                      <AdminOrderDuplicateButton number={order.number} />
+                      {developerToolsEnabled && <AdminOrderDuplicateButton number={order.number} />}
                     </div>
                   </td>
                 </tr>
@@ -126,6 +111,7 @@ export default async function OrdersPage({
             </tbody>
           </table>
         </div>
+        <AdminPagination data={pagination} basePath="/admin/orders" query={{ filter, pageSize: pagination.pageSize === 20 ? undefined : String(pagination.pageSize) }} itemLabel="pesanan" />
       </section>
     </div>
   );

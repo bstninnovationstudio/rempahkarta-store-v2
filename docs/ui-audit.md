@@ -1,132 +1,140 @@
-# Audit UI REMPAHKARTA
+# Audit UI REMPAHKARTA v1.3.0
 
-Tanggal: 18 Juli 2026, Asia/Jakarta
+Tanggal audit source: 19 Juli 2026 (Asia/Jakarta)
 
-## Ruang lingkup
+## Metode dan batas verifikasi
 
-Audit mencakup seluruh page route, komponen presentasi, conditional render, status pembayaran, status fulfillment, status pembatalan, status retur, state form, empty state, loading state, dan responsive layout. Putaran 18 Juli berfokus pada 17 route UI admin (16 route terlindungi dan satu route login), termasuk detail dinamis terdalam serta komponen aksi/form yang dipakai route tersebut. API, schema Prisma, aturan stok, state machine, payload, serta integrasi provider tidak diubah.
+Audit dilakukan dari struktur page/component, conditional render, query yang membentuk state UI, dan cascade CSS. Sesuai batas pekerjaan, audit ini tidak memakai screenshot atau mengklaim render runtime halaman yang membutuhkan Google session/MySQL. Hasil lint, TypeScript, test, build, dan validasi database hanya dicatat di `docs/test-report.md` setelah benar-benar dijalankan.
 
-## Storefront dan halaman publik
+Inventaris 34 page route berada di `docs/system-map.md`. Audit ini berfokus pada perubahan UI dan risiko layout, terutama panel pelanggan.
 
-| Route | Area yang diaudit | State utama | Verifikasi HTTP demo |
+## Temuan utama panel pelanggan sebelum penyempurnaan
+
+| Temuan struktur | Dampak | Penyempurnaan pada v1.3.0 |
+| --- | --- | --- |
+| Kontak, alamat, dan rekening berada di flow/page terpisah | User tidak memahami data mana yang wajib dan harus berpindah konteks | `/user/settings` menjadi satu halaman universal dengan tiga section, anchor, completion chip, progress, dan CTA kembali. |
+| Tidak ada gate kelengkapan yang konsisten setelah login | User dapat tiba di checkout sebelum data siap | Respons login membawa completeness; account layout mengarahkan user belum lengkap; checkout page dan API mengulang gate. |
+| Sidebar hanya berfungsi sebagai kumpulan link dan editor profil terpisah | Identitas, navigasi, dan readiness akun tidak memiliki hierarki | Sidebar dikelompokkan menjadi identity card, tiga navigasi utama, status readiness, dan logout. Tombol profil menuju section kontak settings. |
+| Dashboard mencampur data list dan statistik | Risiko load banyak transaksi dan hierarki konten lemah | Statistik memakai count/aggregate; recent order dibatasi tiga; quick action dipisah dari activity list. |
+| Riwayat order tidak dipaginasi | Halaman dan query membesar seiring transaksi | Prev/next server-rendered 10 order/page, total/range jelas, page di luar batas dinormalisasi. |
+| Card/list/form lama tidak berbagi alignment dan density | Label, CTA, status, dan isi dinamis mudah bergeser | Hero, panel, form section, status chip, empty state, toolbar, dan action row memakai pola kelas bersama. |
+| Layout akun desktop dipaksakan pada tablet | Sidebar dan konten form berpotensi terjepit | Desktop dua kolom; tablet memindahkan sidebar ke bar horizontal; mobile menjadi satu kolom. |
+| Konten dinamis seperti nomor order/email/rekening tidak selalu punya shrink/wrap boundary | Overflow atau overlap di layar sempit | Grid memakai `minmax(0, 1fr)`, nilai dinamis wrap, status/actions turun baris pada mobile. |
+
+## Arsitektur informasi akun saat ini
+
+```text
+Account layout
+├── Identity: avatar/fallback, nama, email, link settings
+├── Navigasi: Ringkasan · Pesanan · Pengaturan
+├── Readiness: lengkap / bagian yang kurang
+└── Content
+    ├── /user          statistik + tiga order terbaru + quick actions
+    ├── /user/orders   list 10/page + prev/next
+    └── /user/settings progress + kontak + alamat + rekening refund
+```
+
+Route `/user/addresses` dan `/user/payment` hanya menjadi redirect kompatibilitas menuju anchor settings. Dengan demikian, hanya ada satu tempat edit utama dan tautan lama tidak langsung rusak.
+
+## Audit per halaman akun
+
+| Route | Struktur aktif | State kode yang ditangani | Catatan audit |
 | --- | --- | --- | --- |
-| `/` | header, hero, trust strip, filter, grid, editorial, footer | katalog terisi, badge opsional, diskon, tanpa diskon | 200 |
-| `/products/[slug]` | breadcrumb, galeri, varian, stok, CTA, accordion, rekomendasi | single image, multi-image, tersedia, rendah, habis, varian satu dan dua tingkat | 200 untuk produk demo |
-| `/cart` | daftar item, varian, kuantitas, hapus, summary | loading, kosong, satu item, multi-item, batas stok | 200 |
-| `/checkout` | kontak, alamat, area, kurir, kebijakan, summary | tanpa login, alamat tersimpan, area kosong, area ditemukan, tarif kosong, tarif aktif, error, loading | redirect/login atau butuh database |
-| `/login` | Google sign-in, simulasi development, error, loading, security note | Google tersedia, client ID kosong, simulasi, request gagal | 200 |
-| `/pages/shipping` | kebijakan pengiriman | konten statis | 200 |
-| `/pages/returns` | kebijakan retur dan refund | konten statis | 200 |
+| `/login` | Card Google Identity, status busy/error, catatan keamanan | Google tersedia/tidak dikonfigurasi, credential gagal, mock lokal ber-flag ganda, redirect | Redirect hanya menerima path internal; user belum lengkap diarahkan ke onboarding. |
+| `/user` | Hero + CTA, tiga metric card, recent order, quick actions | Order kosong/tersedia, pending payment, nilai total panjang | Hanya tiga order terbaru; empty state memiliki CTA. |
+| `/user/orders` | Hero/total, range toolbar, order card, dua status pill, pagination | Kosong, satu/banyak page, seluruh enum payment/fulfillment | Status aktual tidak dipaksa menjadi “menunggu”; nomor, tanggal, total, dan aksi detail dipisah; prev/next memiliki disabled state non-interaktif. |
+| `/user/settings` | Progress tiga bagian, tiga section form, security note, CTA selesai | Belum lengkap, sebagian lengkap, lengkap, save/error/success | Kontak, alamat, dan rekening dapat diselesaikan tanpa berpindah page. |
+| `/user/addresses` | Redirect kompatibilitas | `action` dan redirect internal | Meneruskan ke `#addresses`; bukan UI paralel. |
+| `/user/payment` | Redirect kompatibilitas | — | Meneruskan ke `#payment`; bukan UI paralel. |
+| `/checkout` | Contact/address, area search, tarif, policy, summary | Session kosong, profil belum lengkap, lokasi/rate kosong/gagal, loading, price changed | Gate server dilakukan sebelum form; API tetap menjadi otoritas keamanan. |
 
-## Pesanan, pembayaran, dan pusat resolusi
+## Audit form settings
 
-| Route | Area yang diaudit | State utama | Verifikasi HTTP demo |
-| --- | --- | --- | --- |
-| `/orders/[number]` | header status, progress, timeline, item, alamat, total, bantuan | awaiting payment, paid, processing, packed, handover, in transit, completed, cancelled | 200 |
-| `/orders/[number]` | pembatalan | requested, approved, rejected, seller cancelled, provider failed | source audit |
-| `/orders/[number]` | retur dan refund | requested, rejected, refund pending, refunded, issue order, rekening belum lengkap | source audit |
-| `/orders/[number]/payment` | QRIS, nominal, countdown, sync, status | pending, expired, paid, gagal, mock | source audit dan build |
-| `/orders/[number]/mock-payment` | kontrol mock | paid, failed, busy, error | source audit dan build |
-| `/orders/[number]/return` | wizard empat langkah | item belum dipilih, bukti kosong, deskripsi pendek, konfirmasi, sukses | 200 |
+### Kontak
 
-## Akun pelanggan
+- Field nama, email, dan telepon memiliki label, autocomplete/input mode, batas panjang, error dekat form, status sukses, dan button loading.
+- Save meminta Turnstile action `user_profile`; client refresh membuat progress/completion dihitung ulang dari server.
+- Email ditampilkan read-only dan mengikuti identitas Google terverifikasi; form hanya mengubah nama dan telepon. Ini menjaga fallback ownership order legacy tidak dapat diarahkan ke email bebas.
 
-| Route | Area yang diaudit | State utama | Verifikasi |
-| --- | --- | --- | --- |
-| `/user` | profil, metrik, pesanan terbaru | profil lengkap, telepon kosong, pesanan kosong, pesanan tersedia | source audit dan build |
-| `/user/orders` | daftar pesanan dan dua status pill | daftar kosong, paid, pending, refund pending, fulfillment berbeda | source audit dan build |
-| `/user/addresses` | list dan form alamat | kosong, list, tambah, edit, hapus, cari area, error, sukses | source audit dan build |
-| `/user/payment` | rekening refund | kosong, bank, e-wallet, edit, error, sukses | source audit dan build |
+### Alamat
 
-Render runtime halaman akun memerlukan session pelanggan dan MySQL. Tidak ada bypass autentikasi yang dipertahankan dalam hasil akhir.
+- Maksimal lima alamat ditampilkan sebagai card; add/edit menggunakan satu form.
+- Pencarian area hanya berjalan setelah tombol ditekan dan minimal tiga karakter; hasil dibatasi delapan di UI.
+- Alamat membutuhkan result area yang valid, detail, kode pos, serta kontak.
+- Tambah/edit/hapus memakai Turnstile `user_address`, feedback error/success, confirmation delete, dan refresh server.
+- Form mobile menjadi satu kolom; tombol tambah turun selebar container.
+
+### Rekening refund
+
+- Bank dan e-wallet dipresentasikan sebagai pilihan eksplisit, bukan dua form sekaligus.
+- Rekening aktif ditampilkan dalam card ringkas; nomor dimasking kecuali empat digit terakhir.
+- Nama layanan, nama pemilik, dan nomor wajib; save memakai Turnstile `user_payment`.
+- Copy menjelaskan bahwa data hanya dipakai untuk refund pembatalan/retur.
+
+## Responsivitas panel pelanggan
+
+| Rentang | Struktur source | Proteksi overlap/overflow |
+| --- | --- | --- |
+| `>= 1061px` | Sidebar sticky 270 px + content `minmax(0,1fr)` | Content tidak dipaksa melebar oleh string dinamis; section memiliki max-width container. |
+| `761–1060px` | Account shell satu kolom; identity/nav/logout berada pada bar atas | Status readiness disembunyikan; badge tambahan juga disembunyikan sampai 920 px agar nav tiga kolom tidak overlap. |
+| `<= 760px` | Satu kolom, padding 14 px; identity dan nav ditumpuk | Field menjadi satu kolom, CTA/action full-width, order meta/status turun ke row baru. |
+| Layar sangat sempit | Padding turun 10 px, label nav dapat dua baris | Target nav tidak bergantung pada satu baris; dynamic text memakai wrap/min-width 0. |
+
+Sticky element hanya digunakan pada sidebar desktop. Form/settings dan order card tidak menjadi overlay. Anchor section memakai `scroll-margin-top`; grid/list yang memuat teks dinamis menggunakan shrink boundary. Body tidak seharusnya mendapat horizontal scroll dari panel akun.
 
 ## Panel admin
 
-| Route | Area yang diaudit | State utama | Verifikasi akhir |
-| --- | --- | --- | --- |
-| `/admin-login` | identitas produk, label field, status error/busy, catatan keamanan | kosong, kredensial salah, jaringan gagal, submit | source, TypeScript, lint, build |
-| `/admin` | shell, metrik, pesanan terbaru, antrean operasional | data terisi, nilai nol, nominal panjang, antrean kosong | source, TypeScript, lint, build |
-| `/admin/orders` | filter URL, issue order, tabel, status | semua, issue, payment, fulfillment, kosong, data padat | source, TypeScript, lint, build |
-| `/admin/orders/[number]` | timeline, item, shipment, alamat, ringkasan, action rail, developer disclosure | payment sync, transisi, cancel, shipment, issue resolution | source, TypeScript, lint, build |
-| `/admin/products` | daftar, stok, status, aksi | aktif, draft, diarsipkan, stok rendah, stok habis, kosong | source, TypeScript, lint, build |
-| `/admin/products/new` | form produk bersama | tanpa varian, varian tingkat I/II, media, dimensi, marketplace, publish | source, TypeScript, lint, build |
-| `/admin/products/[id]` | form produk bersama | data ada, tidak ditemukan, varian nonaktif, data panjang | source, TypeScript, lint, build |
-| `/admin/categories` | tambah, daftar, hapus | kosong, terisi, create, delete error | source, TypeScript, lint, build |
-| `/admin/categories/[id]` | informasi dan assignment produk | kategori ada, produk kosong, produk terpilih | source, TypeScript, lint, build |
-| `/admin/inventory` | metrik, tabel, disclosure adjustment | aman, rendah, habis, reserved, validation error | source, TypeScript, lint, build |
-| `/admin/shipments` | daftar dan tautan pesanan | waybill ada, belum ada, pickup/drop-off, status berbeda | source, TypeScript, lint, build |
-| `/admin/returns` | metrik, filter URL, tabel | requested, in transit, refund pending, selesai, kosong | source, TypeScript, lint, build |
-| `/admin/returns/[id]` | bukti, item, rekening, refund, action rail | buyer issue, admin issue, rejected, refund diproses | source, TypeScript, lint, build |
-| `/admin/users` | avatar, identitas, statistik pelanggan | kosong, data terisi, avatar/fallback, teks panjang | source, TypeScript, lint, build |
-| `/admin/users/[id]` | profil, alamat, rekening, order | tanpa alamat, rekening, atau order; data lengkap | source, TypeScript, lint, build |
-| `/admin/settings` | konfigurasi dan readiness | payment mock, BSTN, Biteship, MySQL siap atau kosong | source, TypeScript, lint, build |
-| `/admin/audit` | jejak perubahan | empty state jujur; tidak menampilkan log statis/fiktif | source, TypeScript, lint, build |
+Flow transaksi admin tidak diganti. Penyempurnaan UI/query yang relevan:
 
-### Masalah utama dan penyempurnaan
-
-| Temuan kode | Risiko UI/operasional | Penyempurnaan yang diterapkan |
-| --- | --- | --- |
-| Sidebar desktop masih dipakai pada lebar tablet | area konten dan rail detail terjepit | breakpoint shell dipindah ke 1024 px; tablet dan mobile memakai drawer fokus-terkelola dengan scrim, Escape, scroll lock, serta `inert` saat tertutup |
-| Cascade lama mengembalikan beberapa detail grid menjadi dua kolom | rail detail dan form dapat overlap pada 768–1023 px | override akhir menyatukan detail, produk, kategori, dan pelanggan ke satu kolom sampai 1023 px |
-| Canvas admin krem dan permukaan tidak seragam | hierarki visual berat dan berbeda dari arahan light UI | canvas utama putih, surface sekunder tipis, border/shadow/radius dikonsolidasikan dalam kontrak admin |
-| Toolbar pencarian, ekspor, rekonsiliasi, dan notifikasi tanpa handler | kontrol tampak aktif tetapi tidak bekerja | kontrol semu dihapus; hanya filter URL, link, dan action dengan handler nyata yang dipertahankan |
-| Dashboard/audit memuat angka atau baris statis | informasi operasional dapat menyesatkan | diganti dengan state kosong atau nilai tidak tersedia yang jujur |
-| Form produk panjang dengan konfigurasi tercampur | scanning lambat, tombol simpan jauh, tabel varian sulit dipakai | informasi dasar/media, rail penjualan, tabel varian penuh, marketplace, dan action bar bawah dipisahkan tanpa mengubah payload atau submit handler |
-| Tabel kurang semantik dan kontrol kecil | navigasi keyboard/screen reader lemah; risiko salah tap | caption tersembunyi, `scope`, nama aksi, region scroll fokus, label kontekstual, dan target sentuh 44 px ditambahkan |
-| Status mentah/tidak konsisten | operator sulit membaca prioritas | label Indonesia serta tone sukses/info/peringatan/bahaya dipusatkan pada status pill |
-| Developer mock terlalu dominan | berisiko terpicu dalam pekerjaan rutin | dipindah ke disclosure tertutup dengan peringatan dan konteks eksplisit |
-
-## Audit komponen lintas halaman
-
-| Komponen | Perbaikan presentasi |
+| Area | Penyempurnaan |
 | --- | --- |
-| Store header | wordmark REMPAHKARTA, hover nav, focus, akun, dropdown, mobile menu |
-| Store footer | branding, hierarchy, kontras, spacing, tautan bantuan |
-| Product card | rasio 1:1, hover terkendali, typographic hierarchy, badge |
-| Product detail | galeri 1:1, sticky layout, stock state, mobile action bar |
-| Form controls | border, focus halo, label, placeholder, disabled, error |
-| Status pill | titik dan teks, warna semantik, state tambahan |
-| Order timeline | marker, hierarchy, responsive columns, issue progress |
-| Admin shell | active state, sidebar desktop collapsible, drawer tablet/mobile, focus return, Escape, scrim, scroll lock |
-| Admin table | caption/scope, header muted, row hover, empty state jujur, overflow terlokalisasi |
-| User panel | sticky sidebar desktop, nav horizontal mobile, card consistency |
-| Login | branding, surface, form hierarchy, responsive spacing |
+| Shell | Canvas putih, sidebar desktop mulai 1024 px, drawer tablet/mobile dengan scrim, Escape, focus return, dan scroll lock. |
+| Dashboard | Empat order terbaru dan stats query terpisah; tidak memakai list penuh untuk menghitung metrik. |
+| Orders | Filter URL dipertahankan; list 20/page, relasi ringkas, pagination semantik. |
+| Products/inventory/shipments/returns/users/audit | Tabel berada dalam region overflow lokal dan memakai pagination 20/page; stats terpisah dari rows. |
+| User detail | Riwayat order 10/page, sehingga profil tidak menarik seluruh transaksi user. |
+| Category detail | Tetap full-list dengan alasan data-integrity: submit saat ini replacement penuh membership. |
+| Detail/action rail | Tablet/mobile turun satu kolom; rail tidak menjadi overlay. State machine dan endpoint transaksi tetap sama. |
+| Kontrol semu | Search/export/notifikasi tanpa handler tidak ditampilkan sebagai aksi aktif. |
 
-## Audit responsif lintas route
+API JSON list admin yang dapat dipakai UI/consumer lain juga dipaginasi dan memiliki endpoint stats tersendiri. Pemetaan kontrak berada di `docs/system-map.md`.
 
-| Viewport target | Pemeriksaan | Hasil implementasi |
+## Storefront dan pusat pesanan
+
+| Area | Pemeriksaan source | Status desain |
 | --- | --- | --- |
-| 320 px | topbar admin, judul panjang, metrik, tombol dua aksi, timeline | kolom dapat menyusut, label wrap, metrik dua kolom, aksi berubah satu kolom bila perlu |
-| 360–390 px | katalog, keranjang, return wizard, rekening refund | media 1:1, item tidak overlap, field satu kolom, target sentuh 44 px |
-| 640–760 px | account navigation, filter chip, tabel admin, sidebar | navigasi dan chip scroll terkontrol, tabel punya wrapper, admin memakai drawer |
-| 768–1023 px | detail order/admin, form produk, kategori, pelanggan | admin memakai drawer dan seluruh rail/detail turun ke satu kolom tanpa overlap |
-| mulai 1024 px | sticky gallery, summary, account sidebar, admin rail | sticky dibatasi viewport, sidebar admin dapat diciutkan, content memakai batas maksimal 1320 px |
+| Canvas | Root, panel customer, dan admin memakai background dasar putih | Sesuai arahan; surface muted hanya untuk grouping. |
+| Store header/footer | Breakpoint nav, menu akun/cart, focus, link bantuan | Struktur lama dipertahankan; bukan fokus rombak v1.3.0. |
+| Katalog/detail | Media 1:1, varian, stock state, CTA | Data berasal dari cache katalog; checkout tetap revalidasi DB. |
+| Cart | Empty/list, quantity/remove, summary | Layout client tetap; cart server sync dibatasi dan divalidasi. |
+| Detail order | Ownership, payment/fulfillment status, timeline, cancel/return/refund | Tidak lagi dapat dibuka hanya dari nomor/token URL. |
+| Payment | Pending/paid/failed/expired, sync manual | Sync customer memakai Turnstile dan rate limit. |
+| Return | Step/item/evidence/review/error/success | Order ownership dan eligibility divalidasi API. |
 
-Pengecualian overflow hanya dipakai pada tabel, filter chip, progress ringkas, dan navigasi akun. `body` memakai proteksi overflow horizontal, tetapi komponen tetap diperbaiki pada sumbernya agar konten tidak sekadar terpotong.
+## Aksesibilitas dan consistency contract
 
-## Audit state dan komponen putaran kedua
+- Heading utama hanya satu per page; section settings memakai heading level dua.
+- Status disampaikan dengan label/ikon/tone, tidak hanya warna.
+- Drawer mobile menjebak fokus, menutup lewat Escape/scrim, membuat background inert, mengunci scroll, lalu mengembalikan fokus; dropdown akun menutup lewat Escape/klik luar.
+- Error penting memakai `role=alert`, feedback sukses memakai live status.
+- Button ikon memiliki label aksesibel atau berada bersama label teks.
+- Target sentuh mobile untuk navigasi dan aksi utama minimum 44 px.
+- Putaran QA source menaikkan copy utama/hero ke 12–14 px, label/helper ke minimum 11–12 px, tombol/nav ke 11–12 px, serta status/trust/tag/bukti sosial penting ke minimum 11 px; tidak ada lagi solusi 9 px untuk memaksa layout panel user muat.
+- Disabled pagination memakai elemen non-link dengan `aria-disabled`.
+- Nilai rekening yang ditampilkan dimasking; field edit tetap eksplisit.
+- Animasi harus menghormati `prefers-reduced-motion` sesuai `DESIGN.md`.
+- Body/helper copy harus mengikuti ukuran minimum `DESIGN.md`; pengecilan font bukan solusi untuk membuat card muat.
 
-- Media kartu, galeri, hero, editorial, cart, checkout, varian, bukti retur, dan bukti refund memakai rasio 1:1.
-- Enam aset demo divalidasi sebagai PNG persegi yang dapat dibaca penuh.
-- Sidebar admin memisahkan state collapse desktop dan drawer mobile; tombol membuka kembali sidebar memiliki `aria-controls` dan `aria-expanded`.
-- Button primer, sekunder, tenang, dan destruktif memakai tinggi, alignment, padding, loading, dan disabled state yang sama.
-- Inline style statis dipindahkan ke class lintas halaman. Inline style tersisa hanya geometri slider dan background image yang dihitung atau dipilih saat runtime.
-- Timeline order tidak lagi menerima style global dari halaman; jumlah tahap, warna issue, dan garis akhir dikendalikan modifier class.
-- Return wizard memiliki progress, pilihan item, upload 1:1, review, success, error, dan action bar responsif.
-- Seluruh tabel admin, termasuk audit log, berada di wrapper scroll horizontal dan memiliki empty state jika datanya dapat kosong.
-- Login, alamat, rekening refund, profil, cart, checkout, pembayaran QRIS/mock, dan action rail admin memakai feedback yang dekat dengan pemicu.
+## Risiko visual yang masih perlu smoke test nyata
 
-## Hasil otomatis
+Audit source menurunkan risiko, tetapi tidak dapat membuktikan pixel output seluruh kombinasi data. Sebelum release, lakukan smoke test dengan data production-like pada:
 
-| Pemeriksaan | Hasil |
-| --- | --- |
-| TypeScript | lulus |
-| ESLint | lulus, exit code 0; 41 warning lama di luar file UI admin yang diubah tidak memblokir |
-| Unit/domain test | 13 dari 13 lulus |
-| Production build | lulus |
-| Validasi media | 6 dari 6 PNG demo valid dan 1:1 |
-| Perlindungan API/lib | `app/api` dan `lib` identik dengan sumber sebelum perubahan |
+- 320, 360, 390, 640, 760, 768, 1023, 1024, dan 1280 px;
+- nama/email/alamat/nomor order sangat panjang;
+- nol, satu, lima alamat; rekening bank dan e-wallet;
+- 0, 1, 10, dan lebih dari 10 order;
+- semua status payment/fulfillment/return yang aktif;
+- zoom browser 200%, keyboard-only, dan reduced motion;
+- error Turnstile/provider, 409 completeness/stock/price changed, dan 429 rate limit.
 
-## Keterbatasan
-
-Sesuai arahan pekerjaan ini, validasi visual tidak bergantung pada login/database atau screenshot runtime. Detail retur, pelanggan, dan edit produk tetap memerlukan MySQL serta autentikasi nyata; bypass autentikasi atau data palsu tidak ditambahkan. Verifikasi dilakukan berlapis melalui pembacaan source dan conditional render, audit cascade di breakpoint 320/390/760/768/1023/1024/1280 px, perbandingan area logic/API, TypeScript, lint, unit test, dan production build.
+Khusus category assignment admin, uji katalog besar karena layar sengaja belum dipaginasi. Upload lokal juga perlu diuji pada volume deployment yang persisten.

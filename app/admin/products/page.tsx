@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FolderTree, Plus } from "lucide-react";
-import { getProductRows } from "@/lib/admin-data";
+import { AdminPagination } from "@/components/admin-pagination";
+import { getProductRowsPage } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
 
 function productStatusLabel(status: string) {
@@ -18,8 +19,9 @@ function productStatusClass(status: string) {
   return "";
 }
 
-export default async function ProductsAdmin() {
-  const rows = await getProductRows();
+export default async function ProductsAdmin({ searchParams }: { searchParams: Promise<{ page?: string; pageSize?: string }> }) {
+  const query = await searchParams;
+  const { rows, pagination } = await getProductRowsPage({ page: Number(query.page), pageSize: Number(query.pageSize) });
 
   return (
     <div className="admin-content admin-products-page">
@@ -85,6 +87,7 @@ export default async function ProductsAdmin() {
             </tbody>
           </table>
         </div>
+        <AdminPagination data={pagination} basePath="/admin/products" query={{ pageSize: pagination.pageSize === 20 ? undefined : String(pagination.pageSize) }} itemLabel="produk" />
       </section>
     </div>
   );

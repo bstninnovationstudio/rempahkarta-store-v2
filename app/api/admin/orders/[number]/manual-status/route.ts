@@ -8,11 +8,10 @@ import {
   restockCommittedOrder,
 } from "@/lib/inventory";
 import { normalizeBiteshipStatus } from "@/lib/adapters/biteship";
-import {
-  fulfillmentFromBiteshipStatus,
-  getBiteshipStatusDetail,
-} from "@/lib/shipping-state";
+import { fulfillmentFromBiteshipStatus } from "@/lib/shipping-state";
 import type { FulfillmentState } from "@prisma/client";
+import { isDemo } from "@/lib/env";
+import { invalidateCatalogCache } from "@/lib/catalog";
 
 const schema = z.object({
   type: z.enum(["fulfillment", "biteship", "issue"]),
@@ -23,6 +22,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ number: string }> }
 ) {
+  if (!isDemo()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const admin = await adminFromRequest();
   if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -235,6 +235,7 @@ export async function POST(
       }
     });
 
+    invalidateCatalogCache();
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mengupdate status secara manual";

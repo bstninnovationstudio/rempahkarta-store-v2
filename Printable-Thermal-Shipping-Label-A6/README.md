@@ -1,5 +1,7 @@
 # Printable Thermal Shipping Label A6
 
+> **STATUS: REFERENSI KOMPONEN.** Implementasi yang dipakai aplikasi berada di `components/shipping-label.tsx`, `components/shipping-label.module.css`, dan route `/admin/orders/[number]/resi`. Folder ini dipertahankan sebagai contoh sumber; mengubah file di sini tidak otomatis mengubah UI production.
+
 Komponen label pengiriman React/Next.js berukuran thermal A6 (100 mm × 150 mm), lengkap dengan barcode CODE128 dan tombol cetak/simpan PDF.
 
 ## Instalasi

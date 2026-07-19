@@ -6,7 +6,7 @@ Dokumen ini adalah sumber acuan visual tunggal untuk storefront, akun pelanggan,
 
 ### 1.1 Karakter visual
 
-REMPAHKARTA memakai gaya editorial yang hangat, modern, minimal, dan bersih. Foto produk menjadi fokus utama. Antarmuka memakai canvas dasar putih, permukaan putih hangat atau muted hanya untuk membedakan kelompok informasi, teks cokelat gelap, border tipis, serta aksen gelap #120800 dan aksen emas (#d5a63e / #caa052). Efek visual harus tenang. Ornamen yang tidak mendukung pemahaman dilarang. Panel admin dan halaman login admin wajib mempertahankan background dasar putih; warna krem tidak boleh dipakai sebagai canvas penuh halaman.
+REMPAHKARTA memakai gaya editorial yang hangat, modern, minimal, dan bersih. Foto produk menjadi fokus utama. Antarmuka memakai canvas dasar putih, permukaan putih bersih atau neutral muted hanya untuk membedakan kelompok informasi, teks cokelat gelap, border tipis, serta aksen gelap #120800 dan aksen emas (#d5a63e / #caa052). Efek visual harus tenang. Ornamen yang tidak mendukung pemahaman dilarang. Panel admin dan halaman login admin wajib mempertahankan background dasar putih; warna krem tidak boleh dipakai sebagai canvas penuh halaman.
 
 ### 1.2 Prioritas pengalaman
 
@@ -20,7 +20,7 @@ REMPAHKARTA memakai gaya editorial yang hangat, modern, minimal, dan bersih. Fot
 
 ### 1.3 Batas perubahan
 
-Perubahan struktur markup diperbolehkan hanya untuk hierarki, aksesibilitas, responsivitas, dan pengelompokan visual. Tidak boleh membuat route baru. Tidak boleh mengubah query, payload, validasi, state machine, kalkulasi harga, stok, pengiriman, atau hak akses.
+Perubahan struktur markup diperbolehkan untuk hierarki, aksesibilitas, responsivitas, dan pengelompokan visual. Route atau query baru boleh ditambahkan bila diperlukan oleh arsitektur informasi yang terdokumentasi—misalnya settings universal, pagination, atau endpoint statistik—tetapi tidak boleh mengubah state machine, kalkulasi harga/stok, atau flow transaksi admin tanpa keputusan produk terpisah. Perubahan payload, validasi, dan hak akses harus disinkronkan dengan dokumentasi API serta memiliki enforcement server-side; UI tidak boleh menjadi satu-satunya guard.
 
 ## 2. Token kanonis
 
@@ -29,25 +29,25 @@ Semua warna antarmuka wajib berasal dari CSS custom properties. Hex acak di komp
 ```css
 :root {
   --canvas: #ffffff;
-  --surface: #fffefa;
-  --surface-muted: #f1ede5;
+  --surface: #ffffff;
+  --surface-muted: #f9fafb;
   --surface-raised: #ffffff;
 
   --ink: #211b17;
   --ink-soft: #4e4741;
   --ink-muted: #756d65;
 
-  --line: #e4ded4;
-  --line-strong: #cbc2b6;
+  --line: #e5e7eb;
+  --line-strong: #d1d5db;
 
   --accent: #120800;
   --accent-hover: #83402c;
-  --accent-soft: #f5e6df;
+  --accent-soft: #f3f4f6;
 
   --success: #276b4b;
   --success-soft: #e8f3ec;
   --warning: #956315;
-  --warning-soft: #f8eedc;
+  --warning-soft: #fffbeb;
   --danger: #aa4039;
   --danger-soft: #f8e9e7;
   --info: #426989;
@@ -120,7 +120,7 @@ Tinggi standar 48 px. Tinggi kompak 40 px. Target sentuh tidak boleh kurang dari
 | Tenang | `button-quiet` | aksi kecil non-primer di dalam baris data |
 | Penuh | `button-block` | card sempit, mobile, dan action rail |
 
-Outline kosong tanpa background hanya boleh dipakai pada `button-quiet`; aksi sekunder memakai permukaan krem agar tetap terlihat sebagai kontrol. Button disabled memakai opacity 48 persen, tidak bergerak saat hover, dan tetap menyampaikan label. Loading mempertahankan lebar button agar layout tidak bergeser. Button ikon wajib memiliki label aksesibel dan area 44 kali 44 px, kecuali tombol hapus yang berada tepat di atas thumbnail dapat berukuran 28 sampai 32 px selama thumbnail bukan satu-satunya cara menghapus pada mobile.
+Outline kosong tanpa background hanya boleh dipakai pada `button-quiet`; aksi sekunder memakai permukaan abu-abu muda / muted agar tetap terlihat sebagai kontrol. Button disabled memakai opacity 48 persen, tidak bergerak saat hover, dan tetap menyampaikan label. Loading mempertahankan lebar button agar layout tidak bergeser. Button ikon wajib memiliki label aksesibel dan area 44 kali 44 px, kecuali tombol hapus yang berada tepat di atas thumbnail dapat berukuran 28 sampai 32 px selama thumbnail bukan satu-satunya cara menghapus pada mobile.
 
 ### 5.2 Input
 
@@ -179,15 +179,19 @@ State yang wajib diperiksa: tersedia, stok rendah, habis, satu varian, dua tingk
 
 ### 7.5 Keranjang dan checkout
 
-Keranjang menampilkan gambar, nama, varian, harga unit, kuantitas, dan aksi hapus. Summary sticky pada desktop dan statis pada mobile. Checkout memakai urutan kontak, alamat, area, kurir, persetujuan, dan pembayaran. Hasil area hanya muncul setelah aksi pencarian. Perubahan harga ongkir harus terlihat jelas sebelum pelanggan melanjutkan.
+Keranjang menampilkan gambar, nama, varian, harga unit, kuantitas, dan aksi hapus. Summary sticky pada desktop dan statis pada mobile. Checkout hanya tersedia bagi pelanggan yang login dan telah melengkapi kontak, minimal satu alamat, serta rekening refund. Checkout memakai urutan kontak, alamat, area, kurir, persetujuan, dan pembayaran. Hasil area hanya muncul setelah aksi pencarian. Perubahan harga ongkir harus terlihat jelas sebelum pelanggan melanjutkan. Jika data belum lengkap, halaman mengarahkan pelanggan ke settings dan mempertahankan tujuan kembali yang aman.
 
 State yang wajib diperiksa: keranjang kosong, satu item, multi-item, stok maksimum, alamat tersimpan, alamat baru, area kosong, area gagal, ongkir kosong, tarif terpilih, persetujuan kosong, loading, dan error API.
 
 ### 7.6 Login dan akun
 
-Login memakai satu card fokus. Branding konsisten dengan REMPAHKARTA. Panel akun memakai sidebar sticky desktop dan navigasi horizontal mobile. Dashboard pelanggan memprioritaskan total pesanan, total belanja, pembayaran tertunda, dan pesanan terbaru.
+Login memakai satu card fokus. Branding konsisten dengan REMPAHKARTA. Setelah login, status kelengkapan menentukan apakah pelanggan menuju tujuan awal atau onboarding. Panel akun memakai sidebar sticky desktop, bar account pada tablet, dan navigasi tiga-item yang tetap terbaca pada mobile. Dashboard pelanggan memprioritaskan total pesanan, total belanja, pembayaran tertunda, tiga pesanan terbaru, dan akses cepat.
 
-State yang wajib diperiksa: belum login, login Google tersedia, mode demo development, profil belum lengkap, akun tanpa pesanan, akun dengan pesanan, alamat kosong, alamat tersimpan, rekening refund kosong, dan rekening refund tersimpan.
+Pengaturan pelanggan dipusatkan di `/user/settings` dengan urutan kontak, alamat, lalu rekening pengembalian dana. Bagian atas menampilkan progress tiga bagian dan status yang tidak bergantung pada warna. Setiap section mempunyai heading, penjelasan penggunaan data, status lengkap/belum lengkap, feedback save, dan anchor stabil. Route lama alamat/rekening boleh redirect ke anchor settings tetapi tidak boleh memelihara form paralel.
+
+User yang belum lengkap hanya boleh mengakses settings di dalam panel akun; route lain mengarah ke onboarding. Guard checkout wajib ada di page server dan API. Completion UI harus dihitung dari data yang sama dengan aturan server, bukan checklist localStorage.
+
+State yang wajib diperiksa: belum login, login Google tersedia, mode demo development, profil belum lengkap, satu/dua/tiga bagian lengkap, redirect kembali ke checkout, akun tanpa pesanan, akun dengan satu atau banyak halaman pesanan, alamat kosong/satu/lima, rekening refund kosong, bank tersimpan, e-wallet tersimpan, save berhasil, Turnstile gagal, dan rate limited.
 
 ### 7.7 Pesanan, pembayaran, dan retur
 
@@ -308,7 +312,7 @@ Jika halaman tidak dapat dijalankan karena membutuhkan login, database, provider
 
 1. Petakan route, layout, komponen, selector, kondisi render, dan seluruh breakpoint yang memengaruhi halaman sebelum mengedit.
 2. Telusuri cascade CSS akhir, termasuk selector duplikat, specificity, `!important`, media query yang tertimpa, dan class dinamis. Aturan lama yang sudah tidak efektif harus dikonsolidasikan agar tidak menjadi sumber regresi.
-3. Pertahankan kontrak API, query, payload, validasi, state machine, hak akses, kalkulasi, dan flow transaksi. Perubahan blind-code hanya boleh menyentuh hierarki presentasional, class, token, aksesibilitas, dan responsivitas.
+3. Untuk pekerjaan visual murni, pertahankan kontrak API, query, payload, validasi, state machine, hak akses, kalkulasi, dan flow transaksi. Bila scope memang mencakup API/query, dokumentasikan boundary dan tetap jangan mengubah state machine atau flow transaksi admin secara terselubung.
 4. Buktikan dari kode bahwa setiap grid memakai `minmax(0, 1fr)` bila memuat teks dinamis, setiap area scroll dibatasi pada container yang tepat, sticky memiliki fallback mobile, dan tidak ada elemen fixed atau absolute yang dapat menutupi konten.
 5. Periksa secara eksplisit viewport 320, 390, 640, 760, 768, 1023, 1024, 1280, dan layar desktop lebar melalui penalaran ukuran serta aturan CSS. Batas 1023/1024 wajib diuji karena menandai perpindahan drawer ke shell desktop.
 6. Cari kontrol tanpa handler atau tujuan nyata. Kontrol palsu harus dihapus atau tidak dirender; dilarang menyamarkan ketidaktersediaan fungsi hanya dengan gaya disabled.

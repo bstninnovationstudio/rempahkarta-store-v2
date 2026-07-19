@@ -3,6 +3,7 @@ import { z } from "zod";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { slugify } from "@/lib/product-admin";
+import { invalidateCatalogCache } from "@/lib/catalog";
 
 const schema = z.object({ name: z.string().trim().min(2).max(100), description: z.string().trim().max(255).nullable(), productIds: z.array(z.string().min(1)).max(2000) });
 
@@ -28,6 +29,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       if (parsed.data.productIds.length) await tx.product.updateMany({ where: { id: { in: parsed.data.productIds } }, data: { categoryId: id, legacyCategory: null } });
       await tx.auditLog.create({ data: { actorType: "admin", actorId: String(admin.email), action: "category.updated", entityType: "category", entityId: id, before: { name: category.name }, after: { name: parsed.data.name, productCount: parsed.data.productIds.length } } });
     });
+    invalidateCatalogCache();
     return NextResponse.json({ success: true });
   } catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "Kategori gagal diperbarui" }, { status: 500 }); }
 }
@@ -43,5 +45,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await tx.productCategory.delete({ where: { id } });
     await tx.auditLog.create({ data: { actorType: "admin", actorId: String(admin.email), action: "category.deleted", entityType: "category", entityId: id, before: { name: category.name } } });
   });
+  invalidateCatalogCache();
   return NextResponse.json({ success: true });
 }

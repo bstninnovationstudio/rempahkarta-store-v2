@@ -1,12 +1,10 @@
 # BSTN Payment API Reference
 
+> **STATUS: REFERENSI PROVIDER, BUKAN SPESIFIKASI INTERNAL APLIKASI.** REMPAHKARTA memakai subset create payment, detail/status, cancel, finish URL, dan outbound webhook melalui `lib/adapters/bstn.ts`. Cocokkan kembali contract ini dengan provider sebelum release karena isi folder adalah snapshot lokal. Bagian Messaging API ikut terbawa dari sumber upstream, tetapi tidak dipakai atau diaudit sebagai contract aplikasi ini; dokumentasi automation tidak dibundel.
+
 Production contract version: **v1** (`/api/v1`).
 
 Dokumen ini ditujukan untuk integrasi **workspace/project** dengan BSTN Payment API. Endpoint yang dibahas hanya endpoint yang relevan untuk workspace/integrator: create payment, membaca detail/status dari database BSTN, cancel payment, callback `finish_url`, dan outbound workspace webhook.
-
-Untuk panduan integrasi fitur lainnya, silakan merujuk ke dokumen berikut:
-- **Integrasi Kirim Pesan (WhatsApp & SMTP Email):** [WA_SMTP_INTEGRATION.md](WA_SMTP_INTEGRATION.md)
-- **Integrasi Antrean Otomasi (Canva, Sider, Scribd):** [TOOLS_INTEGRATION.md](TOOLS_INTEGRATION.md)
 
 Endpoint internal Payment Page (`/api/v1/payment-page/...`) dan provider webhook Midtrans (`/api/v1/webhooks/midtrans`) tidak perlu dipanggil oleh workspace.
 

@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 
-export function MockPaymentActions({ number, token }: { number: string; token: string }) {
+export function MockPaymentActions({ number }: { number: string }) {
   const [busy,setBusy]=useState("");
   const [error,setError]=useState("");
   async function finish(result:"paid"|"failed"){
     setBusy(result);setError("");
     try{
-      const response=await fetch(`/api/orders/${encodeURIComponent(number)}/mock-payment`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,result})});
+      const response=await fetch(`/api/orders/${encodeURIComponent(number)}/mock-payment`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({result})});
       const data=await response.json();if(!response.ok)throw new Error(data.error||"Simulasi gagal");
-      window.location.href=`/orders/${encodeURIComponent(number)}?token=${encodeURIComponent(token)}`;
+      window.location.href=`/orders/${encodeURIComponent(number)}`;
     }catch(cause){setError(cause instanceof Error?cause.message:"Simulasi gagal");setBusy("")}
   }
   return (

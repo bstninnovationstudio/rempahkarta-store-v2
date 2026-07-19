@@ -3,6 +3,7 @@ import { z } from "zod";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { slugify } from "@/lib/product-admin";
+import { invalidateCatalogCache } from "@/lib/catalog";
 
 const schema = z.object({ name: z.string().trim().min(2).max(100), description: z.string().trim().max(255).optional() });
 
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
       await tx.auditLog.create({ data: { actorType: "admin", actorId: String(admin.email), action: "category.created", entityType: "category", entityId: created.id, after: { name: created.name } } });
       return created;
     });
+    invalidateCatalogCache();
     return NextResponse.json({ success: true, id: category.id }, { status: 201 });
   } catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "Kategori gagal disimpan" }, { status: 500 }); }
 }

@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Script from "next/script";
-import { MapPin, Edit2, Trash2, Plus, ArrowLeft } from "lucide-react";
+import { MapPin, Edit2, Trash2, Plus, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useTurnstile } from "@/components/use-turnstile";
 import { errorMessage } from "@/lib/error-message";
+import { safeInternalPath } from "@/lib/safe-redirect";
+import { useRouter } from "next/navigation";
 
 interface Address {
   id: string;
@@ -22,6 +24,13 @@ interface UserAddressesClientProps {
   turnstileSiteKey: string;
   defaultAction?: string;
   redirectUrl?: string;
+  embedded?: boolean;
+  isComplete?: boolean;
+  defaultContact?: {
+    name: string;
+    phone: string;
+    email: string;
+  };
 }
 
 export function UserAddressesClient({
@@ -29,16 +38,20 @@ export function UserAddressesClient({
   turnstileSiteKey,
   defaultAction = "list",
   redirectUrl = "",
+  embedded = false,
+  isComplete = false,
+  defaultContact,
 }: UserAddressesClientProps) {
+  const router = useRouter();
   const [addresses, setAddresses] = useState<Address[]>(initialAddresses);
   const [mode, setMode] = useState<"list" | "add" | "edit">(defaultAction === "new" ? "add" : "list");
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
 
   // Form Fields State
   const [label, setLabel] = useState("");
-  const [contactName, setContactName] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
+  const [contactName, setContactName] = useState(defaultContact?.name || "");
+  const [contactPhone, setContactPhone] = useState(defaultContact?.phone || "");
+  const [contactEmail, setContactEmail] = useState(defaultContact?.email || "");
   const [addressDetail, setAddressDetail] = useState("");
   const [area, setArea] = useState<{ id: string; label: string; postalCode: string } | null>(null);
   
@@ -50,14 +63,28 @@ export function UserAddressesClient({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const firstFieldRef = useRef<HTMLInputElement>(null);
+  const listHeadingRef = useRef<HTMLHeadingElement>(null);
+  const restoreListFocusRef = useRef(false);
 
   const { containerRef, token: turnstileToken } = useTurnstile(turnstileSiteKey);
 
-  const resetForm = () => {
+  useEffect(() => {
+    if (mode === "add" || mode === "edit") {
+      firstFieldRef.current?.focus();
+      return;
+    }
+    if (restoreListFocusRef.current) {
+      restoreListFocusRef.current = false;
+      listHeadingRef.current?.focus();
+    }
+  }, [mode]);
+
+  const resetForm = (useContactDefaults = false) => {
     setLabel("");
-    setContactName("");
-    setContactPhone("");
-    setContactEmail("");
+    setContactName(useContactDefaults ? defaultContact?.name || "" : "");
+    setContactPhone(useContactDefaults ? defaultContact?.phone || "" : "");
+    setContactEmail(useContactDefaults ? defaultContact?.email || "" : "");
     setAddressDetail("");
     setArea(null);
     setAreaQuery("");
@@ -68,7 +95,7 @@ export function UserAddressesClient({
   };
 
   const handleStartAdd = () => {
-    resetForm();
+    resetForm(true);
     setMode("add");
   };
 
@@ -86,6 +113,11 @@ export function UserAddressesClient({
     setAreaQuery(mockArea.label);
     setAreaResults([]);
     setMode("edit");
+  };
+
+  const handleReturnToList = () => {
+    restoreListFocusRef.current = true;
+    setMode("list");
   };
 
   const handleSearchArea = async () => {
@@ -135,18 +167,19 @@ export function UserAddressesClient({
     };
 
     try {
+      const securityToken = await turnstileToken("user_address");
       let res;
       if (mode === "add") {
         res = await fetch("/api/user/addresses", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, turnstileToken: securityToken }),
         });
       } else {
         res = await fetch(`/api/user/addresses/${editingAddress?.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, turnstileToken: securityToken }),
         });
       }
 
@@ -155,19 +188,21 @@ export function UserAddressesClient({
         throw new Error(data.error || "Gagal menyimpan alamat");
       }
 
-      // Refresh list
-      const fetchList = await fetch("/api/user/addresses");
-      const listData = await fetchList.json();
-      if (listData.addresses) {
-        setAddresses(listData.addresses);
+      if (data.address) {
+        setAddresses((current) => mode === "add"
+          ? [data.address as Address, ...current]
+          : current.map((address) => address.id === data.address.id ? data.address as Address : address));
       }
+      router.refresh();
 
       setSuccess(mode === "add" ? "Alamat baru berhasil ditambahkan." : "Alamat berhasil diperbarui.");
       
-      if (redirectUrl) {
-        window.location.href = redirectUrl;
+      const safeRedirect = safeInternalPath(redirectUrl, "");
+      if (safeRedirect) {
+        window.location.href = safeRedirect;
       } else {
         setTimeout(() => {
+          restoreListFocusRef.current = true;
           setMode("list");
           resetForm();
         }, 1200);
@@ -186,8 +221,11 @@ export function UserAddressesClient({
     setSuccess("");
 
     try {
+      const securityToken = await turnstileToken("user_address");
       const res = await fetch(`/api/user/addresses/${id}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turnstileToken: securityToken }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -196,6 +234,7 @@ export function UserAddressesClient({
 
       setAddresses(current => current.filter(a => a.id !== id));
       setSuccess("Alamat berhasil dihapus.");
+      router.refresh();
     } catch (e: unknown) {
       setError(errorMessage(e, "Gagal menghapus alamat."));
     } finally {
@@ -213,80 +252,100 @@ export function UserAddressesClient({
       <div className="turnstile-hidden" ref={containerRef} />
 
       {mode === "list" && (
-        <div>
-          <div className="user-content-header">
+        <section id="addresses" className={embedded ? "account-settings-section" : undefined} aria-labelledby="address-settings-title">
+          <div className={embedded ? "account-settings-section-head account-settings-section-head-actions" : "user-content-header"}>
+            {embedded && <span className="account-settings-icon"><MapPin size={19} aria-hidden="true" /></span>}
             <div>
-              <h1>Buku Alamat</h1>
+              <div className={embedded ? "account-settings-title-row" : undefined}>
+                {embedded
+                  ? <h2 ref={listHeadingRef} tabIndex={-1} id="address-settings-title">Alamat pengiriman</h2>
+                  : <h1 ref={listHeadingRef} tabIndex={-1} id="address-settings-title">Buku Alamat</h1>}
+                {embedded && (
+                  <span className={`completion-chip ${isComplete ? "complete" : "incomplete"}`}>
+                    {isComplete && <CheckCircle2 size={13} aria-hidden="true" />}
+                    {isComplete ? "Lengkap" : "Minimal 1 alamat"}
+                  </span>
+                )}
+              </div>
               <p>Kelola hingga 5 alamat pengiriman tersimpan untuk checkout cepat.</p>
             </div>
             {addresses.length < 5 && (
-              <button onClick={handleStartAdd} className="button button-light">
+              <button type="button" onClick={handleStartAdd} className="button button-light account-section-add-button">
                 <Plus size={15} /> Tambah alamat
               </button>
             )}
           </div>
 
-          {success && <div className="form-banner success">{success}</div>}
-          {error && <div className="login-error">{error}</div>}
+          {success && <div className="form-banner success" role="status">{success}</div>}
+          {error && <div className="form-banner error" role="alert">{error}</div>}
 
           {addresses.length > 0 ? (
-            <div className="address-list-grid">
+            <div className="user-address-list-grid">
               {addresses.map(addr => (
-                <div key={addr.id} className="address-card">
-                  <span className="address-card-badge">{addr.label}</span>
-                  <div className="address-card-details">
-                    <h4>{addr.contactName}</h4>
+                <article key={addr.id} className="user-address-card">
+                  <span className="user-address-card-badge">{addr.label}</span>
+                  <div className="user-address-card-details">
+                    <h3>{addr.contactName}</h3>
                     <p>{addr.address}</p>
-                    <span>Kodepos: {addr.postalCode}</span>
-                    <span>Telp: {addr.contactPhone}</span>
-                    <span>Email: {addr.contactEmail}</span>
+                    <dl className="user-address-meta">
+                      <div><dt>Kode pos</dt><dd>{addr.postalCode}</dd></div>
+                      <div><dt>Telepon</dt><dd>{addr.contactPhone}</dd></div>
+                      <div><dt>Email</dt><dd>{addr.contactEmail}</dd></div>
+                    </dl>
                   </div>
-                  <div className="address-card-actions">
-                    <button onClick={() => handleStartEdit(addr)} className="address-action-btn">
+                  <div className="user-address-card-actions">
+                    <button type="button" onClick={() => handleStartEdit(addr)} className="user-address-action-btn">
                       <Edit2 size={13} /> Edit
                     </button>
-                    <button onClick={() => handleDelete(addr.id)} className="address-action-btn delete">
+                    <button type="button" onClick={() => handleDelete(addr.id)} className="user-address-action-btn delete" disabled={busy}>
                       <Trash2 size={13} /> Hapus
                     </button>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
           ) : (
             <div className="empty-state address-empty-state">
               <MapPin size={32} />
               <p>Belum ada alamat pengiriman yang tersimpan.</p>
-              <button onClick={handleStartAdd} className="button button-dark">Tambah alamat baru</button>
+              <button type="button" onClick={handleStartAdd} className="button button-dark">Tambah alamat baru</button>
             </div>
           )}
-        </div>
+        </section>
       )}
 
       {/* Add / Edit Form */}
       {(mode === "add" || mode === "edit") && (
-        <div>
-          <div className="address-form-head" onClick={() => setMode("list")}>
+        <section id="addresses" className={embedded ? "account-settings-section" : undefined} aria-labelledby="address-form-title">
+          <button type="button" className="address-form-head" onClick={handleReturnToList}>
             <ArrowLeft size={14} /> Kembali ke daftar alamat
-          </div>
+          </button>
 
-          <div className="user-content-header">
-            <h1>{mode === "add" ? "Tambah Alamat Baru" : "Edit Alamat"}</h1>
+          <div className={embedded ? "account-settings-section-head" : "user-content-header"}>
+            {embedded && <span className="account-settings-icon"><MapPin size={19} aria-hidden="true" /></span>}
+            <div>
+            {embedded
+              ? <h2 id="address-form-title">{mode === "add" ? "Tambah alamat baru" : "Edit alamat"}</h2>
+              : <h1 id="address-form-title">{mode === "add" ? "Tambah Alamat Baru" : "Edit Alamat"}</h1>}
             <p>Masukkan rincian lokasi penerima dengan lengkap untuk mempermudah kurir.</p>
+            </div>
           </div>
 
-          {error && <div className="login-error">{error}</div>}
-          {success && <div className="form-banner success">{success}</div>}
+          {error && <div className="form-banner error" role="alert">{error}</div>}
+          {success && <div className="form-banner success" role="status">{success}</div>}
 
           <form onSubmit={handleSubmit} className="address-form-grid">
             <div className="address-form-row">
               <div className="field">
                 <label htmlFor="label">Label Alamat (misal: Rumah, Kantor)</label>
                 <input
+                  ref={firstFieldRef}
                   id="label"
                   type="text"
                   required
                   placeholder="Rumah"
                   maxLength={80}
+                  autoComplete="off"
                   value={label}
                   onChange={e => setLabel(e.target.value)}
                 />
@@ -299,6 +358,7 @@ export function UserAddressesClient({
                   required
                   placeholder="Budi Santoso"
                   maxLength={160}
+                  autoComplete="name"
                   value={contactName}
                   onChange={e => setContactName(e.target.value)}
                 />
@@ -310,9 +370,11 @@ export function UserAddressesClient({
                 <label htmlFor="contactPhone">Nomor WhatsApp Penerima</label>
                 <input
                   id="contactPhone"
-                  type="text"
+                  type="tel"
                   required
                   pattern="[0-9+() -]{8,20}"
+                  inputMode="tel"
+                  autoComplete="tel"
                   placeholder="0812 3456 7890"
                   value={contactPhone}
                   onChange={e => setContactPhone(e.target.value)}
@@ -324,6 +386,7 @@ export function UserAddressesClient({
                   id="contactEmail"
                   type="email"
                   required
+                  autoComplete="email"
                   placeholder="budi@email.com"
                   value={contactEmail}
                   onChange={e => setContactEmail(e.target.value)}
@@ -337,8 +400,19 @@ export function UserAddressesClient({
                 <input
                   id="area-search"
                   type="text"
+                  role="combobox"
+                  inputMode="search"
+                  aria-required="true"
+                  aria-expanded={areaResults.length > 0}
+                  aria-controls="address-area-results"
+                  aria-autocomplete="list"
                   placeholder="Cari kecamatan atau kode pos"
                   value={areaQuery}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    if (!searchingArea) void handleSearchArea();
+                  }}
                   onChange={e => {
                     setAreaQuery(e.target.value);
                     setArea(null);
@@ -355,7 +429,7 @@ export function UserAddressesClient({
                 </button>
               </div>
               {areaResults.length > 0 && (
-                <div className="area-results static address-area-results">
+                <div id="address-area-results" className="area-results static address-area-results">
                   {areaResults.map(res => (
                     <button
                       type="button"
@@ -391,7 +465,7 @@ export function UserAddressesClient({
               {busy ? "Menyimpan…" : "Simpan alamat"}
             </button>
           </form>
-        </div>
+        </section>
       )}
     </div>
   );

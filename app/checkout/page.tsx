@@ -7,6 +7,7 @@ import { getCatalogProducts } from "@/lib/catalog";
 import { turnstileSiteKey } from "@/lib/turnstile";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { prisma } from "@/lib/db";
+import { getProfileCompleteness } from "@/lib/user-profile";
 
 export default async function CheckoutPage({
   searchParams,
@@ -16,6 +17,10 @@ export default async function CheckoutPage({
   const customer = await customerFromRequest();
   if (!customer) {
     redirect("/login?redirect=/checkout");
+  }
+  const completion = await getProfileCompleteness(customer.id);
+  if (!completion.isComplete) {
+    redirect("/user/settings?onboarding=1&next=/checkout");
   }
 
   const [query, products] = await Promise.all([searchParams, getCatalogProducts()]);

@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AlertCircle, ArrowLeft, Download, MapPin, Truck } from "lucide-react";
-import { StatusPill } from "@/components/status-pill";
+import { StatusPill, type StatusKey } from "@/components/status-pill";
 import { StoreHeader } from "@/components/store-header";
 import { OrderCancelButton } from "@/components/order-cancel-button";
 import { products } from "@/lib/demo-data";
@@ -39,10 +39,14 @@ function getPaymentLabel(state: string): string {
   switch (state) {
     case "pending": return "Menunggu Pembayaran";
     case "paid": return "Lunas";
+    case "not_created": return "Belum dibuat";
     case "canceled": return "Dibatalkan";
     case "expired": return "Kadaluwarsa";
+    case "failed": return "Gagal";
+    case "denied": return "Ditolak";
     case "refund_pending": return "Refund Diproses";
     case "refunded": return "Refund Selesai";
+    case "partially_refunded": return "Refund Sebagian";
     default: return state;
   }
 }
@@ -63,9 +67,12 @@ function getPaymentBadgeStyle(state: string): React.CSSProperties {
       return { ...base, background: "rgba(40, 115, 78, 0.08)", color: "var(--success)" };
     case "pending":
     case "refund_pending":
+    case "partially_refunded":
       return { ...base, background: "rgba(167, 107, 23, 0.08)", color: "var(--warning)" };
     case "canceled":
     case "expired":
+    case "failed":
+    case "denied":
       return { ...base, background: "rgba(181, 67, 59, 0.08)", color: "var(--danger)" };
     default:
       return { ...base, background: "var(--surface-muted)", color: "var(--ink-muted)" };
@@ -83,18 +90,16 @@ function uiStatus(value: string): OrderStatus {
 
 export default async function OrderPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ number: string }>;
-  searchParams: Promise<{ token?: string }>;
 }) {
-  const [{ number }, query] = await Promise.all([params, searchParams]);
-  const token = query.token || "";
+  const { number } = await params;
   const product = products[0];
   let view = {
     created: "13 Juli 2026, 09.42 WIB",
     email: "bu••@email.com",
     status: "in_transit" as OrderStatus,
+    displayStatus: "in_transit" as StatusKey,
     events: demoEvents,
     itemName: product.name,
     itemOptions: "Regular · 100 g · 1 item",
@@ -193,6 +198,7 @@ export default async function OrderPage({
       created: new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(order.createdAt),
       email: maskEmail(order.guestEmail),
       status: uiStatus(order.fulfillmentState),
+      displayStatus: order.fulfillmentState,
       events: (() => {
         const list: Array<{ time: Date; title: string; note: string }> = [];
         
@@ -458,7 +464,7 @@ export default async function OrderPage({
               </span>
             </p>
           </div>
-          <StatusPill status={view.status} />
+          <StatusPill status={view.displayStatus} />
         </div>
         {view.issueOrder && (
           <section className="panel notice-card notice-danger">
@@ -743,7 +749,7 @@ export default async function OrderPage({
                   {view.returnObj && view.returnObj.state === "awaiting_approval" && view.userId && !view.hasRefundInfo && (
                     <div className="inline-alert inline-alert-danger">
                       <strong>Informasi rekening belum lengkap</strong>
-                      <span>Mohon lengkapi data rekening atau e-wallet untuk pengembalian dana agar refund dapat segera diproses. <Link href="/user/payment">Isi data rekening →</Link></span>
+                      <span>Mohon lengkapi data rekening atau e-wallet untuk pengembalian dana agar refund dapat segera diproses. <Link href="/user/settings#payment">Isi data rekening →</Link></span>
                     </div>
                   )}
 
@@ -779,7 +785,7 @@ export default async function OrderPage({
                   )}
                   {view.canCancel && (
                     <div className="resolution-action">
-                      <OrderCancelButton number={number} token={token} paymentState={view.paymentState} />
+                      <OrderCancelButton number={number} paymentState={view.paymentState} />
                     </div>
                   )}
                 </>

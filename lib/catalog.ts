@@ -1,9 +1,12 @@
 import { products as demoProducts } from "@/lib/demo-data";
 import { isDemo } from "@/lib/env";
 import type { Product, StoreVariant } from "@/lib/types";
+import { revalidateTag, unstable_cache } from "next/cache";
 
-export async function getCatalogProducts(): Promise<Product[]> {
-  if (isDemo()) return demoProducts;
+export const CATALOG_CACHE_TAG = "storefront-catalog";
+
+async function loadCatalogProducts(): Promise<Product[]> {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL belum dikonfigurasi");
   const { prisma } = await import("@/lib/db");
   const rows = await prisma.product.findMany({
     where: { status: "active" },
@@ -69,4 +72,19 @@ export async function getCatalogProducts(): Promise<Product[]> {
       variants,
     }];
   });
+}
+
+const getCachedCatalogProducts = unstable_cache(
+  loadCatalogProducts,
+  ["storefront-catalog-v1"],
+  { revalidate: 30 * 60, tags: [CATALOG_CACHE_TAG] },
+);
+
+export async function getCatalogProducts(): Promise<Product[]> {
+  if (isDemo()) return demoProducts;
+  return getCachedCatalogProducts();
+}
+
+export function invalidateCatalogCache() {
+  revalidateTag(CATALOG_CACHE_TAG, { expire: 0 });
 }

@@ -1,102 +1,78 @@
-# Laporan pengujian v1.2.0
+# Laporan verifikasi REMPAHKARTA v1.3.0
 
-Tanggal audit terakhir: 16 Juli 2026 (Asia/Jakarta)
+Tanggal verifikasi: 19 Juli 2026 (Asia/Jakarta)
 
-## Hasil otomatis
+## Ringkasan hasil
 
-- TypeScript strict: lulus.
-- ESLint: lulus.
-- Unit/domain test: 13/13 lulus.
-- Production build Next.js: lulus. Sebanyak 31 halaman statis dihasilkan dan seluruh halaman dinamis serta route API terkompilasi.
+| Pemeriksaan | Hasil |
+| --- | --- |
+| `npm run lint` | Lulus, 0 error dan 0 warning. |
+| `npm test` | Lulus, 21/21 test; tidak ada skip/todo/failure. |
+| `npx tsc --noEmit --incremental false` | Lulus. |
+| `DATABASE_URL='mysql://…' npx prisma validate` | Lulus terhadap schema MySQL; URL dummy hanya memenuhi parser dan tidak membuka koneksi. |
+| `npm run build` | Lulus pada Next.js 16.2.10/Prisma 6.19.3; compile, TypeScript, page-data collection, dan 39/39 unit static generation selesai. |
+| `npm audit --omit=dev` | Lulus, 0 vulnerability. |
+| `node --check` untuk dua script operasional | Lulus untuk generator hash admin dan migrasi private media. |
 
-ESLint selesai dengan exit code 0. Warning lama yang tidak menghambat build masih tercatat pada import/parameter tidak terpakai dan penggunaan elemen `img` untuk avatar serta preview lokal. Perubahan UI tidak menurunkan aturan lint.
+Production build menghasilkan manifest lengkap untuk **34 page route** dan **50 API route**, termasuk dynamic route serta `proxy.ts`. Angka 39/39 pada output build adalah unit static-generation internal Next.js, bukan jumlah page aplikasi.
 
-Cakupan test:
+## Cakupan test otomatis
 
-- normalisasi status Biteship camelCase/snake_case;
-- mapping field rate resmi `type` ke `courier_type`;
-- pemulihan duplicate `reference_id` Biteship;
-- transisi fulfillment;
-- random order token, SHA-256, dan constant-time signature compare;
-- schema produk tanpa varian, varian dua tingkat, kombinasi duplikat, dan dimensi paket parsial;
-- mapping status pengiriman hingga completed/cancelled;
-- Turnstile Siteverify success dan action mismatch.
+Test saat ini memeriksa:
 
-## HTTP smoke test
+- normalisasi status dan mapping rate Biteship;
+- duplicate `reference_id` hanya direkonsiliasi untuk error resmi `40002060`, sedangkan HTTP 400 lain tetap gagal;
+- allowlist transisi fulfillment;
+- token acak, SHA-256, HMAC, dan constant-time comparison;
+- validasi produk tanpa varian, dua tingkat varian, kombinasi duplikat, dan dimensi paket;
+- pagination yang membatasi input dan metadata next/previous;
+- fixed-window in-memory rate limiter, header, block, dan reset;
+- hash password admin scrypt bersalt;
+- safe internal redirect;
+- paid provider yang datang setelah pembatalan lokal tetap authoritative;
+- Turnstile Siteverify berhasil, action mismatch, dan respons tanpa action ditolak.
 
-Mode development dan demo, dijalankan melalui `npm run dev -- --hostname 127.0.0.1`:
+Test tidak memakai seed, tidak menulis produk, dan tidak tersambung ke database live.
 
-- `/`: 200.
-- `/products/kayu-manis-premium`: 200.
-- `/checkout?variant=...`: 200.
-- `/admin/products`: 200.
-- `/admin/categories`: 200.
-- `GET /api/locations/search` dengan Turnstile test token: lulus dan area Sentolo 55664 ditemukan.
-- `POST /api/checkout/quotes` dengan Turnstile test token: lulus dan tiga rate JNE diterima.
-- `POST /api/checkout/orders` mode demo/mock: JSON valid dan URL halaman pesanan dikembalikan.
+## Verifikasi schema dan migration
 
-Smoke test UI putaran kedua pada 16 Juli 2026 memakai production server dengan `DEMO_MODE=true`:
+- `prisma/schema.prisma` valid untuk provider MySQL dan memuat 25 model.
+- `prisma/migrations/0_baseline/migration.sql` dibandingkan dengan DDL yang digenerate ulang dari schema aktif. Isi DDL cocok; perbedaan diff hanya satu baris kosong terminal.
+- `prisma/migrations/202607190001_api_query_indexes/migration.sql` hanya menambah enam index query secara idempoten melalui pemeriksaan `information_schema`.
+- Pencarian statement destructive/DML pada migration tidak menemukan `DROP`, `DELETE FROM`, `TRUNCATE`, `UPDATE`, `INSERT INTO`, atau `REPLACE INTO`.
+- `npm run setup` hanya menjalankan generate + migrate deploy. Seed tetap merupakan aksi eksplisit development melalui `db:seed`/`setup:demo`.
+- `scripts/migrate-private-media.mjs` dan `scripts/hash-admin-password.mjs` lolos pemeriksaan sintaks.
 
-- 200: `/`, `/products/kayu-manis-premium`, `/cart`, `/login`, `/pages/shipping`, `/pages/returns`.
-- 200: `/orders/ORD-20260713-8F3K?token=demo`, `/orders/ORD-20260713-8F3K/return`.
-- 200: `/admin`, `/admin/orders`, `/admin/products`, `/admin/categories`, `/admin/inventory`, `/admin/shipments`, `/admin/returns`, `/admin/settings`, `/admin/audit`.
-- 200: `/admin-login`, `/admin/products/new`, dan `/admin/orders/ORD-20260713-8F3K`.
-- 307 aman menuju login: `/checkout`, `/user`, `/user/orders`, `/user/addresses`, dan `/user/payment` tanpa session.
-- 404 pada `/admin/products/prd_01` karena repository demo tidak menyediakan data edit; route dan form tetap terkompilasi serta diaudit dari source.
-- 500 pada `/admin/users` dan detail retur demo tanpa `DATABASE_URL`. Halaman tersebut memanggil Prisma secara langsung. Source UI tetap diaudit. Perilaku data tidak diubah karena pekerjaan ini dibatasi pada presentasi.
+Migration **tidak dijalankan** karena lingkungan audit tidak memiliki clone MySQL/data production. Karena itu, keberhasilan DDL terhadap data existing, durasi pembuatan index, dan rollback operasional belum dibuktikan. Ikuti prosedur baseline, backup, rehearsal clone, dan dry-run media pada README sebelum production.
 
-Rincian audit visual dan state per halaman tersedia di `docs/ui-audit.md`.
+## Verifikasi UI berbasis source
 
-## Verifikasi UI 16 Juli 2026
+Sesuai arahan pekerjaan, aplikasi tidak dijalankan untuk mengambil screenshot halaman login/database. Audit UI dilakukan dari page, component, state render, dan cascade CSS, lalu diverifikasi melalui lint, TypeScript, serta production build.
 
-- Metadata dan branding storefront, login, footer, serta admin konsisten dengan REMPAHKARTA.
-- Aset demo pakaian diganti dengan crop non-destruktif dari aset rempah yang sudah tersedia di proyek.
-- Rasio seluruh media commerce, galeri, thumbnail, dan bukti distandardisasi ke 1:1.
-- Enam PNG demo diperiksa hingga level decoder; seluruhnya valid dan persegi.
-- Token warna, radius, shadow, tipografi, button, input, card, status pill, tabel, dan empty state dipusatkan di `app/globals.css`.
-- Storefront, detail produk, checkout, tracking, akun, return form, dan admin memperoleh aturan responsive yang konsisten.
-- Navigasi admin desktop dapat diciutkan dan mobile memakai drawer off-canvas dengan state terpisah; tidak ada route baru.
-- Seluruh tabel admin memiliki wrapper overflow terisolasi; filter, navigation rail, dan progress yang sengaja scroll tidak menyebabkan overflow body.
-- Style statis pada halaman status, action rail, cart, return, checkout, account, dan login dipusatkan sebagai class; inline style tersisa hanya nilai dinamis slider/background.
-- Focus ring, reduced motion, target sentuh, label tombol ikon, dan status nonwarna dipertahankan atau diperkuat.
-- `DESIGN.md` dipatenkan sebagai sumber acuan untuk token, komponen, page pattern, state matrix, aksesibilitas, dan definition of done.
+Pemeriksaan akhir mencakup:
 
-Cloud browser pada lingkungan pengujian menolak URL lokal berdasarkan kebijakan akses. Karena itu, screenshot halaman aktual tidak dapat diambil secara sah dari runtime ini. Verifikasi yang dapat dilakukan mencakup source audit, render HTTP, TypeScript, lint, unit test, dan production build.
+- shell akun desktop, tablet, mobile dan breakpoint 1060/920/760/420 px;
+- settings universal untuk kontak, alamat, dan rekening refund;
+- progress/completion state serta redirect onboarding;
+- statistik dashboard dan tiga order terbaru;
+- riwayat order 10/page dengan status payment/fulfillment aktual;
+- wrapping nilai/status panjang, target sentuh minimum 44 px, dan canvas dasar putih;
+- drawer focus trap/Escape/restore/inert, dropdown akun, `aria-pressed`, focus form alamat, dan feedback login;
+- storefront search, filter/empty state, serta tipografi informasi penting minimum 11 px.
 
-Upload lokal diuji dengan PNG 1.674.582 byte: MIME/signature valid, file tersimpan pada `/uploads/products/...`, dapat dibaca, lalu artefak uji dibersihkan.
+Audit source menutup temuan overlap yang terlihat dari grid/cascade, tetapi tidak dapat membuktikan pixel rendering untuk seluruh kombinasi font, browser, zoom, dan data production. Matriks smoke test visual yang masih harus dijalankan terdapat di `docs/ui-audit.md`.
 
-## Cloudflare Turnstile
+## Yang sengaja tidak diklaim
 
-Siteverify resmi diuji memakai test site/secret key Cloudflare. Dummy token diterima. Implementasi API bersifat fail-closed: token kosong, provider error, hasil gagal, atau action mismatch ditolak.
+Verifikasi ini tidak melakukan:
 
-## Biteship testing live
+- koneksi atau migration pada MySQL production/clone;
+- seed atau penulisan data produk;
+- login Google sungguhan;
+- Siteverify Turnstile live;
+- create/get/cancel payment BSTN;
+- quote/booking/tracking/cancel Biteship live;
+- webhook/concurrency test dengan request paralel dan database nyata;
+- HTTP browser E2E atau screenshot.
 
-API key testing yang diberikan pemilik digunakan secara sementara dan tidak disimpan ke source/env/arsip.
-
-- Maps origin `55664`: lulus, Area ID `IDNP5IDNC206IDND1764IDZ55664` (Sentolo, Kulon Progo).
-- Maps destination `55281`: lulus, Area ID `IDNP5IDNC412IDND5043IDZ55281` (Depok, Sleman).
-- Rates `jne`: lulus; JTR Rp60.000, REG Rp9.000, YES Rp13.000 pada payload uji 120 gram.
-- Create order sandbox: lulus, status `confirmed`.
-- Retrieve order dan tracking: lulus.
-- Cancellation reasons: lulus, 9 alasan.
-- Cancel order: lulus.
-- Retrieve sesudah cancel: lulus, status final `cancelled`.
-- Reference: `AMK-REMPAH-E2E-1784039184433`.
-
-## BSTN
-
-BSTN live tidak dipanggil karena pengujian transaksi diminta memakai payment mock. Kontrak create/get/cancel, item total, idempotency, webhook HMAC, GET confirmation, dan finish URL telah dipertahankan sesuai dokumen API yang diberikan.
-
-## Database dan batasan E2E
-
-Percobaan `prisma db push` ke host MySQL yang diberikan gagal sebelum autentikasi karena jaringan lingkungan pengembangan tidak memiliki rute ke server tersebut. Tidak ada perubahan atau data uji yang masuk ke database tersebut.
-
-Akibatnya, flow database riil `reserve → mock paid → processing → packed → booking → delivered` dan variasi cancel tidak dapat dieksekusi terhadap MySQL live dari lingkungan ini. Logika transisi, inventory, API, build, HTTP demo, Turnstile, dan provider Biteship sudah diuji. Langkah terakhir di jaringan pemilik:
-
-```bash
-npm install
-npm run setup
-npm run dev
-```
-
-Lalu aktifkan `PAYMENT_MOCK=true` untuk smoke test database. Setelah lolos, kembalikan `PAYMENT_MOCK=false`.
+Sebelum release, jalankan smoke test pada deployment sandbox yang memiliki HTTPS, MySQL clone, persistent volume, Google, Turnstile, BSTN, dan Biteship. Uji khusus race payment/cancel, retry webhook, double-click booking shipment, pagination data besar, serta restore backup database/media.

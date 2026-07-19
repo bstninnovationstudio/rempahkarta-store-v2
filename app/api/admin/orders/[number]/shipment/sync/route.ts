@@ -6,6 +6,7 @@ import { releaseOrderReservation, restockCommittedOrder } from "@/lib/inventory"
 import { sha256 } from "@/lib/security";
 import { fulfillmentFromBiteshipStatus, handedOverBiteshipStatuses } from "@/lib/shipping-state";
 import { serializeBigInt } from "@/lib/serialize";
+import { invalidateCatalogCache } from "@/lib/catalog";
 
 export async function POST(_: Request, { params }: { params: Promise<{ number: string }> }) {
   const admin = await adminFromRequest(); if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,6 +37,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ number: s
       await tx.auditLog.create({ data: { actorType: "admin", actorId: String(admin.email), action: "shipment.synced", entityType: "shipment", entityId: shipment.id, before: { status: shipment.status, waybillId: shipment.waybillId, actualPrice: shipment.actualPrice?.toString() }, after: { status, waybillId: waybill, actualPrice: actual.toString(), fulfillment } } });
       return result;
     });
+    invalidateCatalogCache();
     return NextResponse.json({ success: true, shipment: serializeBigInt(updated), fulfillment });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Sinkronisasi gagal" }, { status: 502 }); }
 }

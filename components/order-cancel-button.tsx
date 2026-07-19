@@ -11,7 +11,7 @@ const buyerReasons = [
   "Alasan lainnya"
 ];
 
-export function OrderCancelButton({number,token,paymentState}:{number:string;token:string;paymentState:string}){
+export function OrderCancelButton({number,paymentState}:{number:string;paymentState:string}){
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
@@ -34,7 +34,7 @@ export function OrderCancelButton({number,token,paymentState}:{number:string;tok
       const response = await fetch(`/api/orders/${encodeURIComponent(number)}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, reason: selectedReason })
+        body: JSON.stringify({ reason: selectedReason })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Pembatalan gagal");

@@ -1,13 +1,11 @@
 import { AlertTriangle } from "lucide-react";
+import { AdminPagination } from "@/components/admin-pagination";
 import { InventoryAdjustButton } from "@/components/inventory-adjust-button";
-import { getInventoryRows } from "@/lib/admin-data";
+import { getInventoryPage } from "@/lib/admin-data";
 
-export default async function InventoryPage() {
-  const rows = await getInventoryRows();
-  const onHand = rows.reduce((sum, row) => sum + row.onHand, 0);
-  const reserved = rows.reduce((sum, row) => sum + row.reserved, 0);
-  const available = rows.reduce((sum, row) => sum + Math.max(0, row.onHand - row.reserved - row.safety), 0);
-  const low = rows.filter(row => row.onHand - row.reserved - row.safety <= row.lowStockThreshold).length;
+export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ page?: string; pageSize?: string }> }) {
+  const query = await searchParams;
+  const { rows, stats, pagination } = await getInventoryPage({ page: Number(query.page), pageSize: Number(query.pageSize) });
 
   return (
     <div className="admin-content admin-inventory-page">
@@ -22,22 +20,22 @@ export default async function InventoryPage() {
       <section className="metrics-grid" aria-label="Ringkasan inventori">
         <article className="metric-card">
           <div className="metric-card-head"><span>Total stok fisik</span></div>
-          <strong className="admin-numeric">{onHand}</strong>
-          <span className="metric-trend">{rows.length} SKU</span>
+          <strong className="admin-numeric">{stats.onHand}</strong>
+          <span className="metric-trend">{pagination.total} SKU</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Direservasi</span></div>
-          <strong className="admin-numeric">{reserved}</strong>
+          <strong className="admin-numeric">{stats.reserved}</strong>
           <span className="metric-trend">Unit dalam pesanan</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Siap dijual</span></div>
-          <strong className="admin-numeric">{available}</strong>
+          <strong className="admin-numeric">{stats.available}</strong>
           <span className="metric-trend">Setelah stok pengaman</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Stok menipis</span><AlertTriangle size={15} aria-hidden="true" /></div>
-          <strong className="admin-numeric">{low}</strong>
+          <strong className="admin-numeric">{stats.low}</strong>
           <span className="metric-trend tone-warning">Pada atau di bawah batas SKU</span>
         </article>
       </section>
@@ -84,6 +82,7 @@ export default async function InventoryPage() {
             </tbody>
           </table>
         </div>
+        <AdminPagination data={pagination} basePath="/admin/inventory" query={{ pageSize: pagination.pageSize === 20 ? undefined : String(pagination.pageSize) }} itemLabel="SKU" />
       </section>
     </div>
   );

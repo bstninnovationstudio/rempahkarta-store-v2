@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { BiteshipAdapter } from "@/lib/adapters/biteship";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export async function GET(request: Request) {
+  const rate = checkRateLimit(request, { scope: "checkout:location-search", limit: 25 });
+  if (!rate.allowed) return rateLimitResponse(rate);
   const customer = await customerFromRequest();
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowRight,
   BadgeCheck,
@@ -15,6 +16,8 @@ import { ProductCatalog } from "@/components/product-catalog";
 import { StoreFooter } from "@/components/store-footer";
 import { StoreHeader } from "@/components/store-header";
 import { getCatalogProducts } from "@/lib/catalog";
+
+export const dynamic = "force-dynamic";
 
 const values = [
   {
@@ -60,8 +63,12 @@ const certifications = [
   },
 ] as const;
 
-export default async function Home() {
-  const products = await getCatalogProducts();
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string }>;
+}) {
+  const [products, query] = await Promise.all([getCatalogProducts(), searchParams]);
 
   return (
     <>
@@ -70,8 +77,8 @@ export default async function Home() {
         <section className="hero">
           <div className="hero-copy">
             <div className="mall-badges">
-              <img src="/shopee-mall.webp" alt="Shopee Mall" className="mall-badge" />
-              <img src="/tiktok-mall.webp" alt="TikTok Mall" className="mall-badge" />
+              <Image src="/shopee-mall.webp" alt="Shopee Mall" width={87} height={26} className="mall-badge" />
+              <Image src="/tiktok-mall.webp" alt="TikTok Mall" width={87} height={26} className="mall-badge" />
             </div>
             <p className="eyebrow">100% Rempah Asli Nusantara</p>
             <h1>
@@ -108,7 +115,7 @@ export default async function Home() {
               Untuk semua kalangan dan untuk kesehatan semua orang! Dapatkan dalam harga terbaik langsung dari produsennya!
             </p>
           </div>
-          <ProductCatalog products={products} />
+          <ProductCatalog products={products} autoFocusSearch={query.search === "1"} />
         </section>
 
         <section className="values-section" id="values">

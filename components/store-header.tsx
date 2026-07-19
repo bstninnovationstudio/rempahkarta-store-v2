@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, LogIn, Menu, Search, ShoppingBag, X, Smartphone, LogOut } from "lucide-react";
+import Image from "next/image";
+import { ArrowUpRight, LogIn, Menu, Search, Settings2, ShoppingBag, X, Smartphone, LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,7 +15,11 @@ export function StoreHeader() {
   const [avatarFailed, setAvatarFailed] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const openMenuButtonRef = useRef<HTMLButtonElement>(null);
   const closeMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLElement>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const accountTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
@@ -70,19 +75,84 @@ export function StoreHeader() {
     if (!open) return;
 
     const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : openMenuButtonRef.current;
+    const menuLayer = mobileMenuRef.current?.closest(".mobile-menu-layer");
+    const backgroundElements = Array.from(document.body.children)
+      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== menuLayer);
+    const previousInertValues = backgroundElements.map((element) => [element, element.inert] as const);
+
     document.body.style.overflow = "hidden";
+    backgroundElements.forEach((element) => { element.inert = true; });
     closeMenuButtonRef.current?.focus();
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const dialog = mobileMenuRef.current;
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      )).filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const active = document.activeElement;
+      if (!dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
+      previousInertValues.forEach(([element, inert]) => { element.inert = inert; });
       window.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && !accountMenuRef.current?.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setDropdownOpen(false);
+      accountTriggerRef.current?.focus();
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [dropdownOpen]);
 
   useEffect(() => {
     function updateCount() {
@@ -107,35 +177,45 @@ export function StoreHeader() {
     <header className="store-header">
       <div className="store-header-inner">
         <button
+          ref={openMenuButtonRef}
           className="icon-button mobile-only"
           aria-label="Buka menu"
           aria-expanded={open}
           aria-controls="mobile-navigation"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setDropdownOpen(false);
+            setOpen(true);
+          }}
         ><Menu size={20} /></button>
-        <Link href="/" className="wordmark brand-wordmark" aria-label="REMPAHKARTA beranda"><img src="/main-logo.webp" alt="" className="brand-logo-img" />REMPAHKARTA</Link>
+        <Link href="/" className="wordmark brand-wordmark" aria-label="REMPAHKARTA beranda"><Image src="/main-logo.webp" alt="" width={34} height={34} className="brand-logo-img" />REMPAHKARTA</Link>
         <nav className="desktop-nav" aria-label="Navigasi utama">
           <Link href="/#product">Produk</Link><Link href="/#values">Nilai Utama</Link><Link href="/#guarantee">Garansi</Link><Link href="/#legal">Legalitas</Link><Link href="/#contact">Kontak</Link>
         </nav>
         <div className="header-actions">
-          <Link className="icon-button" href="/?search=1" aria-label="Cari produk"><Search size={20} /></Link>
+          <Link className="icon-button" href="/?search=1#product" aria-label="Cari produk"><Search size={20} /></Link>
           <Link className="icon-button bag-button" href="/cart" aria-label="Keranjang">
             <ShoppingBag size={20} />
             {cartCount > 0 && <span>{cartCount}</span>}
           </Link>
           {!loading && (
             user ? (
-              <div className="account-menu">
+              <div className="account-menu" ref={accountMenuRef}>
                 <button
+                  ref={accountTriggerRef}
+                  type="button"
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                   className="account-trigger"
                   aria-label={`Buka menu akun ${user.name}`}
                   aria-expanded={dropdownOpen}
+                  aria-controls="account-dropdown"
                 >
                   {user.avatarUrl && !avatarFailed ? (
-                    <img
+                    <Image
                       src={user.avatarUrl}
                       alt=""
+                      width={28}
+                      height={28}
+                      unoptimized
                       className="account-avatar-image"
                       referrerPolicy="no-referrer"
                       onError={() => setAvatarFailed(true)}
@@ -147,12 +227,15 @@ export function StoreHeader() {
                   )}
                 </button>
                 {dropdownOpen && (
-                  <div className="account-dropdown">
+                  <div className="account-dropdown" id="account-dropdown" aria-label="Menu akun">
                     <Link href="/user" className="dropdown-link" onClick={() => setDropdownOpen(false)}>
                       Dashboard
                     </Link>
                     <Link href="/user/orders" className="dropdown-link" onClick={() => setDropdownOpen(false)}>
                       Riwayat Belanja
+                    </Link>
+                    <Link href="/user/settings" className="dropdown-link" onClick={() => setDropdownOpen(false)}>
+                      Pengaturan Akun
                     </Link>
                     <hr />
                     <button
@@ -178,17 +261,19 @@ export function StoreHeader() {
       </div>
       {open && typeof document !== "undefined" ? createPortal(
         <div className="mobile-menu-layer">
-          <button className="mobile-menu-scrim" aria-label="Tutup menu" onClick={() => setOpen(false)} />
+          <button className="mobile-menu-scrim" tabIndex={-1} aria-label="Tutup menu" onClick={() => setOpen(false)} />
           <aside
+            ref={mobileMenuRef}
             className="mobile-menu"
             id="mobile-navigation"
             role="dialog"
             aria-modal="true"
             aria-label="Navigasi utama"
+            tabIndex={-1}
           >
             <div className="mobile-menu-head">
               <Link href="/" className="wordmark brand-wordmark" onClick={() => setOpen(false)}>
-                <img src="/main-logo.webp" alt="" className="brand-logo-img" />REMPAHKARTA
+                <Image src="/main-logo.webp" alt="" width={34} height={34} className="brand-logo-img" />REMPAHKARTA
               </Link>
               <button
                 ref={closeMenuButtonRef}
@@ -201,6 +286,7 @@ export function StoreHeader() {
             <div className="mobile-menu-body">
               <nav className="mobile-menu-group" aria-label="Jelajahi REMPAHKARTA">
                 <p>Jelajahi</p>
+                <Link href="/?search=1#product" onClick={() => setOpen(false)}><span>Cari produk</span><Search size={17}/></Link>
                 <Link href="/#product" onClick={() => setOpen(false)}><span>Produk</span><span>01</span></Link>
                 <Link href="/#values" onClick={() => setOpen(false)}><span>Nilai utama</span><span>02</span></Link>
                 <Link href="/#guarantee" onClick={() => setOpen(false)}><span>Garansi</span><span>03</span></Link>
@@ -214,6 +300,7 @@ export function StoreHeader() {
                   <>
                     <Link href="/user" onClick={() => setOpen(false)}><span>Dashboard saya</span><ArrowUpRight size={17}/></Link>
                     <Link href="/user/orders" onClick={() => setOpen(false)}><span>Riwayat belanja</span><ArrowUpRight size={17}/></Link>
+                    <Link href="/user/settings" onClick={() => setOpen(false)}><span>Pengaturan akun</span><Settings2 size={17}/></Link>
                   </>
                 ) : (
                   <Link className="mobile-menu-login" href="/login" onClick={() => setOpen(false)}>

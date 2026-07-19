@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { ProductInput } from "@/lib/product-admin";
 import { slugify } from "@/lib/product-admin";
+import { invalidateCatalogCache } from "@/lib/catalog";
 
 function variantName(productName: string, option1: string | null, option2: string | null) {
   return [productName, option1, option2].filter(Boolean).join(" / ");
@@ -35,7 +36,7 @@ export async function saveProduct(input: ProductInput, adminEmail: string, produ
     slug = await prisma.product.findUnique({ where: { slug: base } }) ? `${base}-${Date.now().toString(36)}` : base;
   }
 
-  return prisma.$transaction(async tx => {
+  const saved = await prisma.$transaction(async tx => {
     const product = existingProduct
       ? await tx.product.update({
           where: { id: existingProduct.id },
@@ -133,4 +134,6 @@ export async function saveProduct(input: ProductInput, adminEmail: string, produ
     await tx.auditLog.create({ data: { actorType: "admin", actorId: adminEmail, action: existingProduct ? "product.updated" : "product.created", entityType: "product", entityId: product.id, after: { name: product.name, slug: product.slug, status: product.status, hasVariants: product.hasVariants, variantCount: input.variants.length, imageCount: input.images.length, categoryId: input.categoryId } } });
     return product;
   });
+  invalidateCatalogCache();
+  return saved;
 }

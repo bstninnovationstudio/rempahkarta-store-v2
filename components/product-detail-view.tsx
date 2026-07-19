@@ -4,7 +4,7 @@ import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, RotateCcw, ShieldCheck, ShoppingBag, Star } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, RotateCcw, ShieldCheck, ShoppingBag } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
@@ -281,8 +281,8 @@ export function ProductDetailView({ product }: { product: Product }) {
 
       <aside className="product-details">
         <div className="mall-badges">
-          <img src="/shopee-mall.webp" alt="Shopee Mall" className="mall-badge" />
-          <img src="/tiktok-mall.webp" alt="TikTok Mall" className="mall-badge" />
+          <Image src="/shopee-mall.webp" alt="Shopee Mall" width={87} height={26} className="mall-badge" />
+          <Image src="/tiktok-mall.webp" alt="TikTok Mall" width={87} height={26} className="mall-badge" />
         </div>
         <p className="eyebrow">100% Rempah Asli Nusantara</p>
         <h1>{product.name}</h1>
@@ -411,17 +411,17 @@ export function ProductDetailView({ product }: { product: Product }) {
             <div className="external-links-grid">
               {product.shopeeLink && (
                 <a href={product.shopeeLink} target="_blank" rel="noopener noreferrer" className="external-link-icon" aria-label="Beli di Shopee">
-                  <img src="/icon-shopee.webp" alt="Shopee" />
+                  <Image src="/icon-shopee.webp" alt="Shopee" width={36} height={36} />
                 </a>
               )}
               {product.tiktokLink && (
                 <a href={product.tiktokLink} target="_blank" rel="noopener noreferrer" className="external-link-icon" aria-label="Beli di TikTok">
-                  <img src="/icon-tiktok.webp" alt="TikTok" />
+                  <Image src="/icon-tiktok.webp" alt="TikTok" width={36} height={36} />
                 </a>
               )}
               {product.tokopediaLink && (
                 <a href={product.tokopediaLink} target="_blank" rel="noopener noreferrer" className="external-link-icon" aria-label="Beli di Tokopedia">
-                  <img src="/icon-tokped.webp" alt="Tokopedia" />
+                  <Image src="/icon-tokped.webp" alt="Tokopedia" width={36} height={36} />
                 </a>
               )}
             </div>

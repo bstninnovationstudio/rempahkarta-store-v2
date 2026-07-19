@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { Camera, CheckCircle2, Trash2 } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import Link from "next/link";
@@ -12,14 +13,6 @@ interface OrderItem {
   options: string;
   price: number;
   quantity: number;
-}
-
-interface ReturnRate {
-  company: string;
-  courier_type: string;
-  courier_name: string;
-  price: number;
-  etaText?: string;
 }
 
 export function ReturnForm({ number, orderItems, isDemo = false }: { number: string; orderItems: OrderItem[]; isDemo?: boolean }) {
@@ -37,16 +30,9 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
 
   const [description, setDescription] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [solution, setSolution] = useState("refund"); // "refund" or "return"
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-
-  // Shipping rates for return
-  const [rates, setRates] = useState<ReturnRate[]>([]);
-  const [selectedRate, setSelectedRate] = useState<ReturnRate | null>(null);
-  const [ratesBusy, setRatesBusy] = useState(false);
-  const [ratesError, setRatesError] = useState("");
 
   const problemLabels: Record<string, string> = {
     damaged: "Produk rusak atau cacat",
@@ -104,50 +90,6 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
     }));
   }
 
-  async function checkShippingRates() {
-    setRatesBusy(true);
-    setRatesError("");
-    setRates([]);
-    setSelectedRate(null);
-
-    const itemsPayload = orderItems
-      .filter(item => selectedItems[item.id]?.selected)
-      .map(item => ({
-        orderItemId: item.id,
-        quantity: selectedItems[item.id].quantity
-      }));
-
-    if (itemsPayload.length === 0) {
-      setRatesError("Pilih minimal satu produk bermasalah terlebih dahulu.");
-      setRatesBusy(false);
-      return;
-    }
-
-    if (isDemo) {
-      setTimeout(() => {
-        setRates([
-          { company: "jne", courier_type: "reg", courier_name: "JNE Regular", price: 19000, etaText: "1-2 hari" },
-          { company: "sicepat", courier_type: "reg", courier_name: "SiCepat Regular", price: 18000, etaText: "2-3 hari" },
-          { company: "jnt", courier_type: "ez", courier_name: "J&T EZ", price: 21000, etaText: "1-3 hari" },
-        ]);
-        setRatesBusy(false);
-      }, 1000);
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/orders/${encodeURIComponent(number)}/returns/quote?items=${encodeURIComponent(JSON.stringify(itemsPayload))}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Gagal mendapatkan ongkir retur");
-      
-      setRates(data.pricing || []);
-    } catch (err) {
-      setRatesError(err instanceof Error ? err.message : "Terjadi kesalahan cek ongkir");
-    } finally {
-      setRatesBusy(false);
-    }
-  }
-
   async function handleSubmit() {
     setError("");
     setBusy(true);
@@ -197,20 +139,15 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
         evidence.push(result.path);
       }
 
-      // 2. Submit return request
-      // We append return shipping details in the description if returning items
-      let finalDescription = description;
-      if (solution === "return" && selectedRate) {
-        finalDescription += `\n\n[Informasi Retur Pengiriman Balik]\nEkspedisi: ${selectedRate.courier_name}\nOngkos Kirim Estimasi: ${rupiah(selectedRate.price)}`;
-      }
-
+      // 2. Submit return request. The current customer flow requests a refund;
+      // any physical return instructions are decided after admin review.
       const response = await fetch(`/api/orders/${encodeURIComponent(number)}/returns`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reason: solution,
+          reason: "refund",
           cause: problemCode,
-          description: finalDescription,
+          description,
           items: itemsPayload,
           evidence
         })
@@ -245,10 +182,6 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
       }
       setStep(3);
     } else if (step === 3) {
-      if (solution === "return" && !selectedRate) {
-        setError("Pilih layanan pengiriman kurir untuk cek ongkir terlebih dahulu.");
-        return;
-      }
       setStep(4);
     }
   }
@@ -331,7 +264,7 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
             <div className="return-evidence-grid">
               {previews.map((src, index) => (
                 <div className="return-evidence" key={src}>
-                  <img src={src} alt={`Bukti masalah ${index + 1}`} />
+                  <Image src={src} alt={`Bukti masalah ${index + 1}`} width={320} height={320} unoptimized />
                   <button type="button" onClick={() => removeFile(index)} aria-label={`Hapus bukti ${index + 1}`}>
                     <Trash2 size={12} />
                   </button>
@@ -371,14 +304,11 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
           <h2>Draf ringkasan pengajuan</h2>
           <div className="detail-list">
             <div><span>Jenis masalah</span><strong>{problemLabels[problemCode]}</strong></div>
-            <div><span>Solusi diminta</span><strong className="text-accent">{solution === "return" ? "Pengembalian barang & dana" : "Pengembalian dana saja"}</strong></div>
+            <div><span>Solusi diminta</span><strong className="text-accent">Pengembalian dana saja</strong></div>
             <div><span>Deskripsi masalah</span><strong className="detail-copy">{description}</strong></div>
-            {solution === "return" && selectedRate && (
-              <div><span>Kurir retur terpilih</span><strong>{selectedRate.courier_name} ({rupiah(selectedRate.price)})</strong></div>
-            )}
             <div>
               <span>Estimasi refund</span>
-              <strong className="text-success">{solution === "return" && selectedRate ? rupiah(Math.max(0, totalRefund - selectedRate.price)) : rupiah(totalRefund)}</strong>
+              <strong className="text-success">{rupiah(totalRefund)}</strong>
             </div>
           </div>
 
@@ -397,7 +327,9 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
           <div className="return-review-section">
             <p className="return-review-label">Bukti gambar ({files.length})</p>
             <div className="return-review-evidence">
-              {previews.map((src, index) => <img key={src} src={src} alt={`Bukti masalah ${index + 1}`} />)}
+              {previews.map((src, index) => (
+                <Image key={src} src={src} alt={`Bukti masalah ${index + 1}`} width={320} height={320} unoptimized />
+              ))}
             </div>
           </div>
         </div>

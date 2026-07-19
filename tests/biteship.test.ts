@@ -17,6 +17,12 @@ test("rates memakai field type resmi sebagai courier_type internal",async()=>{
 
 test("duplicate reference Biteship dipulihkan dengan GET order yang sudah ada",async()=>{
   const original=globalThis.fetch;let calls=0;
-  globalThis.fetch=async(_input,init)=>{calls++;if(init?.method==="POST")return new Response(JSON.stringify({success:false,details:{order_id:"order-existing"}}),{status:400});return new Response(JSON.stringify({success:true,id:"order-existing",status:"confirmed",price:12000,courier:{tracking_id:"trk",waybill_id:"awb"}}),{status:200})};
+  globalThis.fetch=async(_input,init)=>{calls++;if(init?.method==="POST")return new Response(JSON.stringify({success:false,code:40002060,details:{order_id:"order-existing"}}),{status:400});return new Response(JSON.stringify({success:true,id:"order-existing",status:"confirmed",price:12000,courier:{tracking_id:"trk",waybill_id:"awb"}}),{status:200})};
   try{const result=await new BiteshipAdapter("https://example.test","test").createOrder({reference_id:"SHP-1"});assert.equal(result.id,"order-existing");assert.equal(calls,2)}finally{globalThis.fetch=original}
+});
+
+test("error 400 Biteship selain duplicate reference tidak dianggap sukses",async()=>{
+  const original=globalThis.fetch;let calls=0;
+  globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({success:false,code:40000001,details:{order_id:"unrelated"}}),{status:400})};
+  try{await assert.rejects(()=>new BiteshipAdapter("https://example.test","test").createOrder({reference_id:"SHP-2"}));assert.equal(calls,1)}finally{globalThis.fetch=original}
 });

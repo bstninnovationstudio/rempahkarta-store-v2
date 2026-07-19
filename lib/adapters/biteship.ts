@@ -102,11 +102,16 @@ export class BiteshipAdapter {
     try {
       return await this.request<BiteshipOrder>("/v1/orders", { method: "POST", body: JSON.stringify(payload) });
     } catch (error) {
-      const details = error instanceof BiteshipApiError && error.body && typeof error.body === "object"
-        ? (error.body as { details?: { order_id?: string } }).details
+      const response = error instanceof BiteshipApiError && error.body && typeof error.body === "object"
+        ? error.body as { code?: string | number; details?: { order_id?: string } }
         : undefined;
-      if (error instanceof BiteshipApiError && error.status === 400 && details?.order_id) {
-        return this.getOrder(details.order_id);
+      if (
+        error instanceof BiteshipApiError
+        && error.status === 400
+        && String(response?.code) === "40002060"
+        && response?.details?.order_id
+      ) {
+        return this.getOrder(response.details.order_id);
       }
       throw error;
     }

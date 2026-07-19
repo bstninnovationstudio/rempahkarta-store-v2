@@ -413,15 +413,15 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
         <div className="field-grid">
           <div className="field full">
             <label htmlFor="product-shopee-link">Tautan Shopee</label>
-            <input id="product-shopee-link" type="url" value={shopeeLink} onChange={event => setShopeeLink(event.target.value)} placeholder="https://shopee.co.id/..."/>
+            <input id="product-shopee-link" type="url" maxLength={500} value={shopeeLink} onChange={event => setShopeeLink(event.target.value)} placeholder="https://shopee.co.id/..."/>
           </div>
           <div className="field full">
             <label htmlFor="product-tiktok-link">Tautan TikTok</label>
-            <input id="product-tiktok-link" type="url" value={tiktokLink} onChange={event => setTiktokLink(event.target.value)} placeholder="https://www.tiktok.com/..."/>
+            <input id="product-tiktok-link" type="url" maxLength={500} value={tiktokLink} onChange={event => setTiktokLink(event.target.value)} placeholder="https://www.tiktok.com/..."/>
           </div>
           <div className="field full">
             <label htmlFor="product-tokopedia-link">Tautan Tokopedia</label>
-            <input id="product-tokopedia-link" type="url" value={tokopediaLink} onChange={event => setTokopediaLink(event.target.value)} placeholder="https://www.tokopedia.com/..."/>
+            <input id="product-tokopedia-link" type="url" maxLength={500} value={tokopediaLink} onChange={event => setTokopediaLink(event.target.value)} placeholder="https://www.tokopedia.com/..."/>
           </div>
         </div>
       </section>

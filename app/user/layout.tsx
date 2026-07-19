@@ -1,11 +1,14 @@
 import React from "react";
 import Link from "next/link";
-import { Settings } from "lucide-react";
+import { AlertCircle, ArrowRight, ShieldAlert, ShieldCheck } from "lucide-react";
 import { StoreHeader } from "@/components/store-header";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { redirect } from "next/navigation";
 import { CustomerLogoutButton } from "@/components/customer-logout-button";
 import { CustomerProfileSection } from "@/components/customer-profile-section";
+import { UserAccountNavigation } from "@/components/user-account-navigation";
+import { UserCompletionGate } from "@/components/user-completion-gate";
+import { getProfileCompleteness } from "@/lib/user-profile";
 
 export default async function UserLayout({
   children,
@@ -17,11 +20,19 @@ export default async function UserLayout({
     redirect("/login?redirect=/user");
   }
 
+  const profileCompletion = await getProfileCompleteness(customer.id);
+  const isComplete = profileCompletion.isComplete;
+  const missingLabels = [
+    !profileCompletion.sections.contact && "kontak utama",
+    !profileCompletion.sections.address && "alamat pengiriman",
+    !profileCompletion.sections.refundAccount && "rekening pengembalian dana",
+  ].filter(Boolean) as string[];
+
   return (
-    <>
+    <div className="user-panel-page">
       <StoreHeader />
       <main className="user-panel-container">
-        <aside className="user-sidebar">
+        <aside className="user-sidebar" aria-label="Menu akun">
           <CustomerProfileSection customer={{
             id: customer.id,
             name: customer.name,
@@ -29,41 +40,42 @@ export default async function UserLayout({
             avatarUrl: customer.avatarUrl,
             phone: customer.phone,
           }} />
-          <nav className="user-sidebar-nav">
-            <Link href="/user" className="user-sidebar-link">
-              Ringkasan Akun
-            </Link>
-            <Link href="/user/orders" className="user-sidebar-link">
-              Riwayat Pesanan
-            </Link>
-            <Link href="/user/addresses" className="user-sidebar-link">
-              Buku Alamat
-            </Link>
-            <Link href="/user/payment" className="user-sidebar-link">
-              Refund &amp; Rekening
-            </Link>
+          <UserAccountNavigation isComplete={isComplete} />
+          <div className={`user-sidebar-status ${isComplete ? "complete" : "incomplete"}`}>
+            {isComplete ? (
+              <ShieldCheck size={16} aria-hidden="true" />
+            ) : (
+              <ShieldAlert size={16} aria-hidden="true" />
+            )}
+            <div>
+              <strong>{isComplete ? "Akun siap digunakan" : "Akun belum lengkap"}</strong>
+              <span>{isComplete ? "Data wajib sudah tersimpan." : `${missingLabels.length} bagian perlu dilengkapi.`}</span>
+            </div>
+          </div>
+          <div className="user-sidebar-session">
             <CustomerLogoutButton />
-          </nav>
+          </div>
         </aside>
         <section className="user-content">
-          {!customer.phone && (
+          {!isComplete && (
             <div className="account-completion-alert">
               <div className="account-completion-icon">
-                <Settings size={18} />
+                <AlertCircle size={19} aria-hidden="true" />
               </div>
-              <div>
-                <strong>
-                  Nomor WhatsApp belum dilengkapi
-                </strong>
+              <div className="account-completion-copy">
+                <strong>Lengkapi akun sebelum membuat pesanan</strong>
                 <p>
-                  Gunakan ikon gerigi pada kartu profil untuk melengkapinya agar koordinasi pengiriman lebih mudah.
+                  Masih diperlukan: {missingLabels.join(", ")}. Data ini membantu checkout, pengiriman, dan refund berjalan tanpa hambatan.
                 </p>
               </div>
+              <Link href="/user/settings?onboarding=1" className="account-completion-link">
+                Lengkapi sekarang <ArrowRight size={14} aria-hidden="true" />
+              </Link>
             </div>
           )}
-          {children}
+          <UserCompletionGate isComplete={isComplete}>{children}</UserCompletionGate>
         </section>
       </main>
-    </>
+    </div>
   );
 }

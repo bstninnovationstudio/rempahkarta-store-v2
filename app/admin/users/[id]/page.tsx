@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, User, CreditCard, MapPin, ClipboardList } from "lucide-react";
+import { AdminPagination } from "@/components/admin-pagination";
 import { prisma } from "@/lib/db";
 import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
@@ -17,17 +18,27 @@ function uiStatus(value: string): OrderStatus {
 
 export default async function UserDetailAdminPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const { id } = await params;
+  const query = await searchParams;
+  const requestedPage = Number.isSafeInteger(Number(query.page)) && Number(query.page) > 0 ? Number(query.page) : 1;
+  const pageSize = 10;
 
   const user = await prisma.user.findUnique({
     where: { id },
-    include: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      avatarUrl: true,
+      createdAt: true,
       addresses: { orderBy: { id: "desc" } },
       refundSetting: true,
-      orders: { orderBy: { createdAt: "desc" } },
     },
   });
 
@@ -35,9 +46,28 @@ export default async function UserDetailAdminPage({
     notFound();
   }
 
-  const totalSpent = user.orders
-    .filter(o => o.paymentState === "paid" || o.fulfillmentState === "completed")
-    .reduce((sum, o) => sum + Number(o.grandTotal), 0);
+  const [totalOrders, spent] = await Promise.all([
+    prisma.order.count({ where: { userId: id } }),
+    prisma.order.aggregate({ where: { userId: id, OR: [{ paymentState: "paid" }, { fulfillmentState: "completed" }] }, _sum: { grandTotal: true } }),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const orders = await prisma.order.findMany({
+    where: { userId: id },
+    select: { id: true, publicNumber: true, fulfillmentState: true, createdAt: true, grandTotal: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+  const totalSpent = Number(spent._sum.grandTotal || 0);
+  const orderPagination = {
+    page,
+    pageSize,
+    total: totalOrders,
+    totalPages,
+    from: totalOrders === 0 ? 0 : (page - 1) * pageSize + 1,
+    to: totalOrders === 0 ? 0 : Math.min(page * pageSize, totalOrders),
+  };
 
   return (
     <div className="admin-content">
@@ -85,10 +115,6 @@ export default async function UserDetailAdminPage({
               <strong>{user.email}</strong>
             </div>
             <div className="profile-row">
-              <span>Google Sub ID</span>
-              <strong className="admin-data-code">{user.googleId}</strong>
-            </div>
-            <div className="profile-row">
               <span>Nomor WhatsApp</span>
               <strong>{user.phone || "Belum diisi"}</strong>
             </div>
@@ -98,7 +124,7 @@ export default async function UserDetailAdminPage({
             </div>
             <div className="profile-row">
               <span>Total pesanan</span>
-              <strong className="admin-numeric">{user.orders.length} pesanan</strong>
+              <strong className="admin-numeric">{totalOrders} pesanan</strong>
             </div>
             <div className="profile-row">
               <span>Total belanja berhasil</span>
@@ -182,11 +208,11 @@ export default async function UserDetailAdminPage({
           {/* Order history sidebar card */}
           <div className="detail-card order-history-card">
             <h2 className="detail-card-heading">
-              <ClipboardList size={16} aria-hidden="true" /> Riwayat pesanan ({user.orders.length})
+              <ClipboardList size={16} aria-hidden="true" /> Riwayat pesanan ({totalOrders})
             </h2>
-            {user.orders.length > 0 ? (
+            {orders.length > 0 ? (
               <div className="admin-order-history">
-                {user.orders.map(order => (
+                {orders.map(order => (
                   <Link
                     key={order.id}
                     href={`/admin/orders/${order.publicNumber}`}
@@ -206,6 +232,7 @@ export default async function UserDetailAdminPage({
             ) : (
               <p className="detail-empty">Belum ada pesanan terdaftar.</p>
             )}
+            <AdminPagination data={orderPagination} basePath={`/admin/users/${id}`} itemLabel="pesanan" />
           </div>
         </aside>
       </div>

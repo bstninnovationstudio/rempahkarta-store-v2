@@ -26,7 +26,7 @@ export function StoreFooter() {
         </nav>
         <nav aria-label="Navigasi bantuan">
           <h3>Bantuan</h3>
-          <Link href="/orders/ORD-20260713-8F3K?token=demo">Lacak pesanan</Link>
+          <Link href="/user/orders">Pesanan saya</Link>
           <Link href="/pages/shipping">Pengiriman</Link>
           <Link href="/pages/returns">Retur &amp; refund</Link>
         </nav>

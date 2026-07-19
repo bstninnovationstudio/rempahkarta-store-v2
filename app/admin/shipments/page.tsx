@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Truck } from "lucide-react";
+import { AdminPagination } from "@/components/admin-pagination";
 import { StatusPill } from "@/components/status-pill";
-import { getShipmentRows } from "@/lib/admin-data";
+import { getShipmentRowsPage } from "@/lib/admin-data";
 
-export default async function Shipments() {
-  const rows = await getShipmentRows();
-  const awaitingPickup = rows.filter(row => row.status === "handover_pending").length;
-  const inTransit = rows.filter(row => row.status === "in_transit").length;
+export default async function Shipments({ searchParams }: { searchParams: Promise<{ page?: string; pageSize?: string }> }) {
+  const query = await searchParams;
+  const { rows, stats, pagination } = await getShipmentRowsPage({ page: Number(query.page), pageSize: Number(query.pageSize) });
 
   return (
     <div className="admin-content admin-shipments-page">
@@ -21,23 +21,23 @@ export default async function Shipments() {
       <section className="metrics-grid" aria-label="Ringkasan pengiriman">
         <article className="metric-card">
           <div className="metric-card-head"><span>Total pengiriman</span><Truck size={15} aria-hidden="true" /></div>
-          <strong className="admin-numeric">{rows.length}</strong>
+          <strong className="admin-numeric">{stats.total}</strong>
           <span className="metric-trend">Booking tercatat</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Menunggu pickup</span></div>
-          <strong className="admin-numeric">{awaitingPickup}</strong>
+          <strong className="admin-numeric">{stats.awaitingPickup}</strong>
           <span className="metric-trend">Perlu dipantau</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Dalam perjalanan</span></div>
-          <strong className="admin-numeric">{inTransit}</strong>
+          <strong className="admin-numeric">{stats.inTransit}</strong>
           <span className="metric-trend">Pelacakan aktif</span>
         </article>
         <article className="metric-card metric-card-neutral">
           <div className="metric-card-head"><span>Kendala pengiriman</span></div>
-          <strong aria-label="Belum dihitung">—</strong>
-          <span className="metric-trend">Belum dihitung otomatis</span>
+          <strong className="admin-numeric">{stats.issue}</strong>
+          <span className="metric-trend">Status provider perlu perhatian</span>
         </article>
       </section>
 
@@ -74,6 +74,7 @@ export default async function Shipments() {
             </tbody>
           </table>
         </div>
+        <AdminPagination data={pagination} basePath="/admin/shipments" query={{ pageSize: pagination.pageSize === 20 ? undefined : String(pagination.pageSize) }} itemLabel="pengiriman" />
       </section>
     </div>
   );

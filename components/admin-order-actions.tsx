@@ -1,7 +1,11 @@
 "use client";
 
+import Script from "next/script";
 import { useEffect, useId, useState } from "react";
 import { Box, CheckCircle2, Printer, RefreshCw, Truck, XCircle } from "lucide-react";
+import { useTurnstile } from "@/components/use-turnstile";
+
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NODE_ENV !== "production" ? "1x00000000000000000000BB" : "");
 
 const sellerRejectionReasons = [
   "Paket sudah dikemas & siap dikirim",
@@ -58,6 +62,7 @@ export function AdminOrderActions({
   const directCancelId = useId();
   const rejectionCustomId = useId();
   const directCustomId = useId();
+  const { containerRef, token: getTurnstileToken } = useTurnstile(turnstileSiteKey);
 
   useEffect(() => {
     // Load Biteship cancellation reasons if cancellation request is active or if order has shipment
@@ -76,14 +81,17 @@ export function AdminOrderActions({
     }
   }, [cancellationState, hasShipment]);
 
-  async function post(action: string, url: string, payload: unknown) {
+  async function post(action: string, url: string, payload: unknown, turnstileAction?: string) {
     setBusy(action);
     setMessage("");
     try {
+      const body = turnstileAction
+        ? { ...(payload as Record<string, unknown>), turnstileToken: await getTurnstileToken(turnstileAction) }
+        : payload;
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(body)
       });
       const text = await response.text();
       const result = text ? JSON.parse(text) : {};
@@ -105,9 +113,10 @@ export function AdminOrderActions({
 
   return (
     <>
+      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" />
       <div className="admin-actions-stack" aria-busy={Boolean(busy)}>
         {paymentState === "pending" && (
-          <button type="button" className="button button-light" disabled={!!busy} onClick={() => post("payment-sync", `${base}/payment/sync`, {})}>
+          <button type="button" className="button button-light" disabled={!!busy} onClick={() => post("payment-sync", `${base}/payment/sync`, {}, "admin_payment_sync")}>
             <RefreshCw size={16} /> {busy === "payment-sync" ? "Memeriksa…" : "Sinkronkan BSTN"}
           </button>
         )}
@@ -289,6 +298,7 @@ export function AdminOrderActions({
           {message}
         </p>
       )}
+      <div ref={containerRef} className="turnstile-container" aria-live="polite" />
     </>
   );
 }

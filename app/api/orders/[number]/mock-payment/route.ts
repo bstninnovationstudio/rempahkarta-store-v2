@@ -2,13 +2,17 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { releaseOrderReservation } from "@/lib/inventory";
-import { sha256 } from "@/lib/security";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { isPaymentMock } from "@/lib/env";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { invalidateCatalogCache } from "@/lib/catalog";
 
-const schema=z.object({token:z.string().optional(),result:z.enum(["paid","failed"])});
+const schema=z.object({result:z.enum(["paid","failed"])});
 
 export async function POST(request:Request,{params}:{params:Promise<{number:string}>}){
-  if(process.env.PAYMENT_MOCK!=="true")return NextResponse.json({error:"Mock payment tidak aktif"},{status:404});
+  if(!isPaymentMock())return NextResponse.json({error:"Mock payment tidak aktif"},{status:404});
+  const rate=checkRateLimit(request,{scope:"payment:mock",limit:10});
+  if(!rate.allowed)return rateLimitResponse(rate);
   const body=schema.safeParse(await request.json());if(!body.success)return NextResponse.json({error:"Payload tidak valid"},{status:400});
   const {number}=await params;
 
@@ -19,7 +23,7 @@ export async function POST(request:Request,{params}:{params:Promise<{number:stri
   if(!order) return NextResponse.json({error:"Pesanan tidak ditemukan"},{status:404});
 
   const isOwner = order.userId === customer.id || (order.userId === null && order.guestEmail.toLowerCase() === customer.email.toLowerCase());
-  if(!isOwner) return NextResponse.json({error:"Unauthorized"},{status:401});
+  if(!isOwner) return NextResponse.json({error:"Pesanan tidak ditemukan"},{status:404});
   const payment=order.payments[0];if(!payment)return NextResponse.json({error:"Payment mock tidak ditemukan"},{status:404});
   if(payment.status!=="pending")return NextResponse.json({success:true,status:payment.status});
   await prisma.$transaction(async tx=>{
@@ -33,5 +37,6 @@ export async function POST(request:Request,{params}:{params:Promise<{number:stri
     }
     await tx.auditLog.create({data:{actorType:"system",action:`payment.mock_${body.data.result}`,entityType:"order",entityId:order.id}});
   });
+  invalidateCatalogCache();
   return NextResponse.json({success:true,status:body.data.result});
 }

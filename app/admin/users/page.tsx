@@ -1,34 +1,13 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { AdminPagination } from "@/components/admin-pagination";
+import { getAdminUsersPage } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
 
-export default async function UsersAdminPage() {
-  const users = await prisma.user.findMany({
-    include: {
-      orders: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  // Calculate statistics for each user
-  const rows = users.map(user => {
-    const totalOrders = user.orders.length;
-    const totalSpent = user.orders
-      .filter(o => o.paymentState === "paid" || o.fulfillmentState === "completed")
-      .reduce((sum, o) => sum + Number(o.grandTotal), 0);
-
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      avatarUrl: user.avatarUrl,
-      createdAt: user.createdAt,
-      totalOrders,
-      totalSpent,
-    };
-  });
+export default async function UsersAdminPage({ searchParams }: { searchParams: Promise<{ page?: string; pageSize?: string }> }) {
+  const query = await searchParams;
+  const { rows, pagination } = await getAdminUsersPage({ page: Number(query.page), pageSize: Number(query.pageSize) });
 
   return (
     <div className="admin-content">
@@ -109,6 +88,7 @@ export default async function UsersAdminPage() {
             </tbody>
           </table>
         </div>
+        <AdminPagination data={pagination} basePath="/admin/users" query={{ pageSize: pagination.pageSize === 20 ? undefined : String(pagination.pageSize) }} itemLabel="pelanggan" />
       </section>
     </div>
   );

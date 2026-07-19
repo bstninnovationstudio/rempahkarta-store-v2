@@ -45,7 +45,7 @@ const labels = {
   provider_failed: "Penyedia gagal memproses",
 } as const satisfies Record<string, string>;
 
-type StatusKey = keyof typeof labels;
+export type StatusKey = keyof typeof labels;
 type SupportedStatus = OrderStatus | StatusKey;
 
 const successStatuses = new Set<SupportedStatus>([

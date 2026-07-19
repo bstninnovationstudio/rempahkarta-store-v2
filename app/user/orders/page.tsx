@@ -1,78 +1,131 @@
-import React from "react";
 import Link from "next/link";
+import { ChevronLeft, ChevronRight, PackageOpen, ReceiptText } from "lucide-react";
+import type { Prisma } from "@prisma/client";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
-import type { OrderStatus } from "@/lib/types";
 
-function uiStatus(value: string): OrderStatus {
-  if (["packed", "shipment_booked"].includes(value)) return "processing";
-  if (["handed_over", "return_in_transit"].includes(value)) return "in_transit";
-  if (value === "returned") return "completed";
-  return (["awaiting_payment", "awaiting_processing", "processing", "handover_pending", "completed", "cancelled", "finished"].includes(value) ? value : "awaiting_processing") as OrderStatus;
-}
+const PAGE_SIZE = 10;
 
-function uiPaymentStatus(value: string): "paid" | "pending" | "refund_pending" {
-  return value === "paid" ? "paid" : value === "refund_pending" ? "refund_pending" : "pending";
-}
-
-export default async function UserOrdersHistoryPage() {
+export default async function UserOrdersHistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const customer = await customerFromRequest();
   if (!customer) return null;
 
-  const orders = await prisma.order.findMany({
-    where: {
-      OR: [
-        { userId: customer.id },
-        { userId: null, guestEmail: customer.email }
-      ]
-    },
-    orderBy: { createdAt: "desc" }
-  });
+  const query = await searchParams;
+  const parsedPage = Number.parseInt(query.page || "1", 10);
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const accountOrderWhere: Prisma.OrderWhereInput = {
+    OR: [
+      { userId: customer.id },
+      { userId: null, guestEmail: customer.email },
+    ],
+  };
+
+  const [totalOrders, orders] = await prisma.$transaction([
+    prisma.order.count({ where: accountOrderWhere }),
+    prisma.order.findMany({
+      where: accountOrderWhere,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+      select: {
+        id: true,
+        publicNumber: true,
+        createdAt: true,
+        grandTotal: true,
+        paymentState: true,
+        fulfillmentState: true,
+      },
+    }),
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalOrders / PAGE_SIZE));
+  if (page > totalPages) redirect(`/user/orders?page=${totalPages}`);
+  const firstItem = totalOrders === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastItem = Math.min(page * PAGE_SIZE, totalOrders);
 
   return (
-    <div>
-      <div className="user-content-header">
-        <h1>Riwayat Pesanan</h1>
-        <p>Lihat status pembayaran, pengiriman, dan rincian transaksi Anda.</p>
-      </div>
+    <div className="user-orders-page">
+      <header className="user-page-hero orders-hero">
+        <div>
+          <span className="user-page-eyebrow">Riwayat transaksi</span>
+          <h1>Pesanan Anda</h1>
+          <p>Lihat status pembayaran, proses pengemasan, pengiriman, dan rincian setiap transaksi.</p>
+        </div>
+        <div className="orders-total-summary">
+          <ReceiptText size={18} aria-hidden="true" />
+          <div><strong>{totalOrders}</strong><span>total pesanan</span></div>
+        </div>
+      </header>
 
       {orders.length > 0 ? (
-        <div className="orders-history-list">
-          {orders.map(order => {
-            const dateStr = new Date(order.createdAt).toLocaleDateString("id-ID", {
-              dateStyle: "medium",
-            });
-            return (
-              <Link key={order.id} href={`/orders/${order.publicNumber}`} className="order-card">
-                <div className="order-card-head">
-                  <div>
-                    <h3>{order.publicNumber}</h3>
-                    <span>Dipesan tanggal {dateStr}</span>
-                  </div>
-                  <div className="order-card-statuses">
-                    <StatusPill status={uiPaymentStatus(order.paymentState)} />
-                    <StatusPill status={uiStatus(order.fulfillmentState)} />
-                  </div>
-                </div>
-                <div className="order-card-body">
-                  <div className="order-card-body-details">
-                    <span>Total Pembayaran</span>
-                    <strong>{rupiah(Number(order.grandTotal))}</strong>
-                  </div>
-                  <span className="order-card-link">
-                    Lihat rincian →
-                  </span>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+        <>
+          <div className="orders-list-toolbar">
+            <p>Menampilkan <strong>{firstItem}–{lastItem}</strong> dari {totalOrders} pesanan</p>
+            <span>{PAGE_SIZE} pesanan per halaman</span>
+          </div>
+          <div className="orders-history-list">
+            {orders.map((order) => {
+              const date = new Intl.DateTimeFormat("id-ID", {
+                dateStyle: "long",
+              }).format(order.createdAt);
+              return (
+                <article key={order.id} className="order-card">
+                  <Link href={`/orders/${order.publicNumber}`} className="order-card-main" aria-label={`Lihat rincian pesanan ${order.publicNumber}`}>
+                    <span className="order-card-icon"><PackageOpen size={19} aria-hidden="true" /></span>
+                    <div className="order-card-identity">
+                      <span>Nomor pesanan</span>
+                      <h2>{order.publicNumber}</h2>
+                      <p>Dibuat {date}</p>
+                    </div>
+                    <div className="order-card-statuses" aria-label="Status pesanan">
+                      <StatusPill status={order.paymentState} />
+                      <StatusPill status={order.fulfillmentState} />
+                    </div>
+                    <div className="order-card-total">
+                      <span>Total pembayaran</span>
+                      <strong>{rupiah(Number(order.grandTotal))}</strong>
+                    </div>
+                    <span className="order-card-link">Lihat rincian <ChevronRight size={14} aria-hidden="true" /></span>
+                  </Link>
+                </article>
+              );
+            })}
+          </div>
+
+          {totalPages > 1 && (
+            <nav className="user-pagination" aria-label="Halaman riwayat pesanan">
+              {page > 1 ? (
+                <Link href={`/user/orders?page=${page - 1}`} rel="prev">
+                  <ChevronLeft size={15} aria-hidden="true" /> Sebelumnya
+                </Link>
+              ) : (
+                <span aria-disabled="true"><ChevronLeft size={15} aria-hidden="true" /> Sebelumnya</span>
+              )}
+              <p>Halaman <strong>{page}</strong> dari {totalPages}</p>
+              {page < totalPages ? (
+                <Link href={`/user/orders?page=${page + 1}`} rel="next">
+                  Berikutnya <ChevronRight size={15} aria-hidden="true" />
+                </Link>
+              ) : (
+                <span aria-disabled="true">Berikutnya <ChevronRight size={15} aria-hidden="true" /></span>
+              )}
+            </nav>
+          )}
+        </>
       ) : (
-        <p className="account-empty-state">
-          Anda belum pernah melakukan pemesanan.
-        </p>
+        <div className="account-empty-state user-orders-empty">
+          <PackageOpen size={30} aria-hidden="true" />
+          <strong>Belum ada pesanan</strong>
+          <p>Setelah checkout selesai, pesanan pertama Anda akan tercatat di sini.</p>
+          <Link href="/#product" className="button button-dark">Jelajahi produk</Link>
+        </div>
       )}
     </div>
   );
