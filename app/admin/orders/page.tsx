@@ -4,7 +4,7 @@ import { AdminPagination } from "@/components/admin-pagination";
 import { getAdminOrdersPage } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
 import { AdminOrderDuplicateButton } from "@/components/admin-order-duplicate-button";
-import { isDemo } from "@/lib/env";
+import { isDevToolsEnabled } from "@/lib/env";
 
 export default async function OrdersPage({
   searchParams,
@@ -14,7 +14,7 @@ export default async function OrdersPage({
   const query = (await searchParams) || {};
   const result = await getAdminOrdersPage({ filter: query.filter, page: Number(query.page), pageSize: Number(query.pageSize) });
   const { rows: orders, counts, pagination, filter } = result;
-  const developerToolsEnabled = isDemo();
+  const developerToolsEnabled = isDevToolsEnabled();
 
   return (
     <div className="admin-content">

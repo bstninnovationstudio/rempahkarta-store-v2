@@ -11,7 +11,7 @@ Dokumen ini mencatat kontrol yang terlihat pada source v1.3.0 dan keterbatasanny
 | Session pelanggan | JWT HS256 ber-issuer/audience/subject/JTI/token-use/session ID, cookie HttpOnly/SameSite/Secure production, dan device lock MySQL | Token salah konteks atau session lama ditolak. |
 | Login Google | RS256 remote JWK, issuer, audience, expiry, schema claim, dan `email_verified` | Credential tidak hanya di-decode; signature dan penerbit diverifikasi. |
 | Session admin | Password scrypt bersalt + JWT terpisah dengan audience/role/token-use, cookie 12 jam | Password tidak disimpan sebagai fast hash di production dan token pelanggan tidak dapat dipakai sebagai token admin. |
-| Mode development | Demo memerlukan non-production + dua flag eksplisit; payment mock memerlukan non-production | Demo tidak aktif dari env example default; kedua mekanisme fail-closed pada production. |
+| Mode operasional | APP_MODE=development / APP_MODE=production dengan dual API key (_DEV / _LIVE) | Menggabungkan kontrol mode aplikasi dan memisahkan credential development & live secara aman. |
 | Ownership order | Session wajib; `userId` atau email terverifikasi untuk order legacy | Nomor order saja tidak mengungkap detail. Resource asing dijawab 404 pada endpoint ownership. |
 | Onboarding | Completeness dihitung dari user/address/refund setting; gate page dan API checkout | User yang belum lengkap tidak dapat membuat order. |
 | Input | Zod pada payload penting, limit array/string, server re-read harga/rate/stok | Mengurangi mass assignment dan manipulasi nilai client. |

@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomToken, sha256 } from "@/lib/security";
-import { isDemo } from "@/lib/env";
+import { isDevToolsEnabled } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ number: string }> }
 ) {
-  if (!isDemo()) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!isDevToolsEnabled()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const admin = await adminFromRequest();
   if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

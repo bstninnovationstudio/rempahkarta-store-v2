@@ -6,6 +6,7 @@ import { releaseOrderReservation, restockCommittedOrder } from "@/lib/inventory"
 import { BstnPaymentAdapter } from "@/lib/adapters/bstn";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { getBstnApiKey } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
 
 const schema = z.object({ reason: z.string().trim().min(3).max(500) });
@@ -47,12 +48,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   const payment = order.payments[0];
   const automaticCancellation = order.paymentState === "pending";
   if (automaticCancellation && payment?.providerPaymentId && payment.provider !== "mock") {
-    if (!process.env.BSTN_PROJECT_API_KEY || !process.env.BSTN_RETURN_SIGNATURE_SECRET) {
+    const bstnApiKey = getBstnApiKey();
+    if (!bstnApiKey || !process.env.BSTN_RETURN_SIGNATURE_SECRET) {
       return NextResponse.json({ error: "Layanan pembayaran belum dikonfigurasi" }, { status: 503 });
     }
     const bstn = new BstnPaymentAdapter(
       process.env.BSTN_BASE_URL || "https://www.bstn-innovation-studio.web.id",
-      process.env.BSTN_PROJECT_API_KEY,
+      bstnApiKey,
       process.env.BSTN_RETURN_SIGNATURE_SECRET,
     );
     try { await bstn.cancelPayment(payment.providerPaymentId, body.data.reason); }

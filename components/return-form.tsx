@@ -15,7 +15,7 @@ interface OrderItem {
   quantity: number;
 }
 
-export function ReturnForm({ number, orderItems, isDemo = false }: { number: string; orderItems: OrderItem[]; isDemo?: boolean }) {
+export function ReturnForm({ number, orderItems }: { number: string; orderItems: OrderItem[] }) {
   const [step, setStep] = useState(1);
   const [problemCode, setProblemCode] = useState("damaged");
   
@@ -119,13 +119,7 @@ export function ReturnForm({ number, orderItems, isDemo = false }: { number: str
       return;
     }
 
-    if (isDemo) {
-      setTimeout(() => {
-        setSuccess(true);
-        setBusy(false);
-      }, 1500);
-      return;
-    }
+
 
     try {
       // 1. Upload media files

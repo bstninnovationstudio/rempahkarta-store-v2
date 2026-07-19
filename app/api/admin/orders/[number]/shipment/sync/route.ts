@@ -7,15 +7,17 @@ import { sha256 } from "@/lib/security";
 import { fulfillmentFromBiteshipStatus, handedOverBiteshipStatuses } from "@/lib/shipping-state";
 import { serializeBigInt } from "@/lib/serialize";
 import { invalidateCatalogCache } from "@/lib/catalog";
+import { getBiteshipApiKey } from "@/lib/env";
 
 export async function POST(_: Request, { params }: { params: Promise<{ number: string }> }) {
   const admin = await adminFromRequest(); if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!process.env.BITESHIP_API_KEY) return NextResponse.json({ error: "BITESHIP_API_KEY belum diisi" }, { status: 503 });
+  const apiKey = getBiteshipApiKey();
+  if (!apiKey) return NextResponse.json({ error: "BITESHIP_API_KEY belum diisi" }, { status: 503 });
   const { number } = await params;
   const shipment = await prisma.shipment.findFirst({ where: { order: { publicNumber: number } }, include: { order: true }, orderBy: { createdAt: "desc" } });
   if (!shipment?.providerOrderId) return NextResponse.json({ error: "Shipment Biteship belum tersedia" }, { status: 404 });
   try {
-    const adapter = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", process.env.BITESHIP_API_KEY);
+    const adapter = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", apiKey);
     const detail = await adapter.getOrder(shipment.providerOrderId);
     const actual = BigInt(detail.price ?? Number(shipment.actualPrice ?? shipment.quotedPrice));
     const status = normalizeBiteshipStatus(detail.status);

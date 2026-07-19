@@ -3,8 +3,9 @@ import { constantTimeEqual, hmacHex } from "@/lib/security";
 export type BstnItem = { id?: string; name: string; price: number; quantity: number };
 
 export class BstnApiError extends Error {
-  constructor(readonly status: number) {
-    super(`Permintaan BSTN gagal (${status})`);
+  constructor(readonly status: number, readonly responseText?: string) {
+    const detail = responseText ? `: ${responseText}` : "";
+    super(`Permintaan BSTN gagal (${status})${detail}`);
     this.name = "BstnApiError";
   }
 }
@@ -34,7 +35,7 @@ export class BstnPaymentAdapter {
         if (response.ok) throw new Error("Respons BSTN tidak valid");
       }
     }
-    if (!response.ok) throw new BstnApiError(response.status);
+    if (!response.ok) throw new BstnApiError(response.status, text);
     return body as T;
   }
 
@@ -108,8 +109,8 @@ export class BstnPaymentAdapter {
     });
   }
 
-  async verifyWebhook(raw: string, signature: string) {
-    const expected = await hmacHex(this.signatureSecret, raw);
-    return constantTimeEqual(expected, signature.toLowerCase());
+  verifyWebhook(rawBody: string, signature: string) {
+    if (!signature) return Promise.resolve(false);
+    return hmacHex(this.signatureSecret, rawBody).then(calculated => constantTimeEqual(calculated.toLowerCase(), signature.toLowerCase()));
   }
 }

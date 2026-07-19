@@ -7,6 +7,7 @@ import { invalidateCatalogCache } from "@/lib/catalog";
 import { isPrismaUniqueConstraintError } from "@/lib/prisma-errors";
 import { Prisma } from "@prisma/client";
 import { authoritativePaidSourceStates } from "@/lib/payment-sync";
+import { getBstnApiKey } from "@/lib/env";
 
 type WebhookPayload = {
   event?: string;
@@ -30,12 +31,13 @@ function localStatus(status:string){
 
 export async function POST(request: Request) {
   const raw = await request.text();
-  if (!isStrongSharedSecret(process.env.BSTN_RETURN_SIGNATURE_SECRET) || !process.env.BSTN_PROJECT_API_KEY) return NextResponse.json({ error: "Webhook BSTN belum dikonfigurasi dengan aman" }, { status: 503 });
+  const bstnApiKey = getBstnApiKey();
+  if (!isStrongSharedSecret(process.env.BSTN_RETURN_SIGNATURE_SECRET) || !bstnApiKey) return NextResponse.json({ error: "Webhook BSTN belum dikonfigurasi dengan aman" }, { status: 503 });
   const signature = request.headers.get("x-bstn-signature") || "";
   const deliveryId = request.headers.get("x-bstn-delivery-id") || await sha256(raw);
   const adapter = new BstnPaymentAdapter(
     process.env.BSTN_BASE_URL || "https://www.bstn-innovation-studio.web.id",
-    process.env.BSTN_PROJECT_API_KEY || "",
+    bstnApiKey,
     process.env.BSTN_RETURN_SIGNATURE_SECRET || "",
   );
   if (!await adapter.verifyWebhook(raw, signature)) {

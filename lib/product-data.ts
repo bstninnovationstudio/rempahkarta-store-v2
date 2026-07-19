@@ -1,4 +1,4 @@
-import { isDemo } from "@/lib/env";
+
 
 export type ProductFormVariant = {
   id?: string;
@@ -36,13 +36,13 @@ export type ProductFormInitial = {
 };
 
 export async function getCategoryOptions() {
-  if (isDemo()) return [];
+
   const { prisma } = await import("@/lib/db");
   return prisma.productCategory.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
 }
 
 export async function getProductForEdit(id: string): Promise<ProductFormInitial | null> {
-  if (isDemo()) return null;
+
   const { prisma } = await import("@/lib/db");
   const product = await prisma.product.findUnique({
     where: { id },

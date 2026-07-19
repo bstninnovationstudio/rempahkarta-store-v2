@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { releaseOrderReservation, restockCommittedOrder } from "@/lib/inventory";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { getBiteshipApiKey } from "@/lib/env";
 
 const schema = z.object({
   decision: z.enum(["approved", "rejected"]),
@@ -136,7 +137,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
 
     let providerResult: unknown = undefined;
     if (claim.providerOrderId) {
-      if (!process.env.BITESHIP_API_KEY) {
+      const biteshipApiKey = getBiteshipApiKey();
+      if (!biteshipApiKey) {
         await markProviderFailure(found.id, claim.cancellationId, "BITESHIP_API_KEY belum diisi", String(admin.email));
         return NextResponse.json({ error: "Layanan pengiriman belum dikonfigurasi" }, { status: 503 });
       }
@@ -146,7 +148,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
       }
       const biteship = new BiteshipAdapter(
         process.env.BITESHIP_BASE_URL || "https://api.biteship.com",
-        process.env.BITESHIP_API_KEY,
+        biteshipApiKey,
       );
       try {
         providerResult = await biteship.cancelOrder(

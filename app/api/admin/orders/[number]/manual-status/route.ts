@@ -10,7 +10,7 @@ import {
 import { normalizeBiteshipStatus } from "@/lib/adapters/biteship";
 import { fulfillmentFromBiteshipStatus } from "@/lib/shipping-state";
 import type { FulfillmentState } from "@prisma/client";
-import { isDemo } from "@/lib/env";
+import { isDevToolsEnabled } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
 
 const schema = z.object({
@@ -22,7 +22,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ number: string }> }
 ) {
-  if (!isDemo()) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!isDevToolsEnabled()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const admin = await adminFromRequest();
   if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "./db";
 import { assertStrongJwtSecret } from "./security";
+import { isProduction } from "./env";
 
 const COOKIE_NAME = "amk_user";
 const ISSUER = "rempahkarta-store";
@@ -69,7 +70,7 @@ export const customerCookie = {
   name: COOKIE_NAME,
   options: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isProduction(),
     sameSite: "lax" as const,
     path: "/",
     maxAge: 60 * 60 * 24 * 7 // 7 days

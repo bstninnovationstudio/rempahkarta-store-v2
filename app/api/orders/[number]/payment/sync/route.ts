@@ -7,6 +7,7 @@ import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { applyVerifiedPaymentStatus } from "@/lib/payment-sync";
+import { getBstnApiKey } from "@/lib/env";
 
 const schema = z.object({ turnstileToken: z.string().min(1).max(2048) });
 
@@ -36,14 +37,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   const payment = order.payments[0];
   if (!payment) return NextResponse.json({ error: "Pembayaran tidak ditemukan" }, { status: 404 });
   if (payment.provider === "mock") return NextResponse.json({ success: true, status: payment.status });
-  if (!payment.providerPaymentId || !process.env.BSTN_PROJECT_API_KEY || !process.env.BSTN_RETURN_SIGNATURE_SECRET) {
+  const bstnApiKey = getBstnApiKey();
+  if (!payment.providerPaymentId || !bstnApiKey || !process.env.BSTN_RETURN_SIGNATURE_SECRET) {
     return NextResponse.json({ error: "Layanan pembayaran belum dikonfigurasi" }, { status: 503 });
   }
 
   try {
     const adapter = new BstnPaymentAdapter(
       process.env.BSTN_BASE_URL || "https://www.bstn-innovation-studio.web.id",
-      process.env.BSTN_PROJECT_API_KEY,
+      bstnApiKey,
       process.env.BSTN_RETURN_SIGNATURE_SECRET,
     );
     const detail = await adapter.getPayment(payment.providerPaymentId);

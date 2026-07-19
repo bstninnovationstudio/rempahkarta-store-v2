@@ -44,8 +44,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 7 | `/pages/returns` | Publik | Kebijakan retur/refund | Konten statis. |
 | 8 | `/orders/[number]` | Owner | Status, timeline, item, alamat, shipment, cancel/return/refund | Lookup nomor unik lalu ownership; tidak menerima token URL sebagai kredensial. |
 | 9 | `/orders/[number]/payment` | Owner | QRIS/status, `PaymentPageClient` | Payment terbaru untuk order milik customer; sync manual melalui API terlindungi. |
-| 10 | `/orders/[number]/mock-payment` | Owner + development | `MockPaymentActions` | Hanya tersedia saat payment mock aktif di non-production. |
-| 11 | `/orders/[number]/return` | Owner | Wizard `ReturnForm`, item, bukti, alasan | Memastikan order eligible dan milik user; upload/submission melalui API owner. |
+| 10 | `/orders/[number]/return` | Owner | Wizard `ReturnForm`, item, bukti, alasan | Memastikan order eligible dan milik user; upload/submission melalui API owner. |
 | 12 | `/user` | Customer | Metrik, completeness, tiga pesanan terbaru | `count`/`aggregate` terpisah dan `take: 3`; layout account terpadu. |
 | 13 | `/user/orders` | Customer | Riwayat pesanan, payment/fulfillment pill | Pagination server 10 row/page; order customer + fallback email legacy. |
 | 14 | `/user/settings` | Customer | Kontak, alamat, rekening refund, progress onboarding | Satu layar universal; membaca user, maksimal lima alamat, dan refund setting. |
@@ -94,8 +93,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 11 | `/api/orders/[number]/cancel` | `POST` | Owner | — | 10/menit | Cancel pending payment atau buat cancellation request sesuai state. |
 | 12 | `/api/orders/[number]/media` | `POST` | Owner + order eligible | 5 MB/file, 10 file tersimpan | 10/menit | Simpan bukti return di private storage dan kembalikan URL API owner/admin. |
 | 13 | `/api/orders/[number]/media/[file]` | `GET` | Owner atau Admin | Satu file | `private, no-store` | Sajikan bukti return privat; akses asing mendapat 404. |
-| 14 | `/api/orders/[number]/mock-payment` | `POST` | Owner + development | — | 10/menit | Simulasi paid/failed; 404 di production. |
-| 15 | `/api/orders/[number]/returns` | `POST` | Owner | 1–5 bukti, maks. 20 item | 5/menit | Validasi bukti privat, masa/eligibility/item, serialisasi klaim, dan hitung refund. |
+| 14 | `/api/orders/[number]/returns` | `POST` | Owner | 1–5 bukti, maks. 20 item | 5/menit | Validasi bukti privat, masa/eligibility/item, serialisasi klaim, dan hitung refund. |
 | 16 | `/api/returns/[id]/media/[file]` | `GET` | Owner order atau Admin | Satu file | `private, no-store` | Sajikan bukti refund privat; akses asing mendapat 404. |
 
 ## API route: customer account (7)

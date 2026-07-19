@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminFromRequest } from "@/lib/auth";
-import { isDemo } from "@/lib/env";
+
 import { productInputSchema } from "@/lib/product-admin";
 import { saveProduct } from "@/lib/product-service";
 import type { Prisma, ProductStatus } from "@prisma/client";
@@ -11,7 +11,7 @@ import { paginationMeta, readPagination } from "@/lib/pagination";
 export async function GET(request: Request) {
   const admin = await adminFromRequest();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (isDemo()) return NextResponse.json({ data: [], pagination: paginationMeta(0, 1, 20) });
+
   const url = new URL(request.url);
   const { page, pageSize, skip } = readPagination(request.url, { defaultPageSize: 20, maxPageSize: 100 });
   const q = url.searchParams.get("q")?.trim().slice(0, 100);
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   try {
     const body = productInputSchema.safeParse(await request.json());
     if (!body.success) return NextResponse.json({ error: "Data produk tidak valid", details: body.error.flatten() }, { status: 400 });
-    if (isDemo()) return NextResponse.json({ success: true, id: "demo-product" }, { status: 201 });
+
     const product = await saveProduct(body.data, String(admin.email));
     return NextResponse.json({ success: true, id: product.id, slug: product.slug }, { status: 201 });
   } catch (cause) {

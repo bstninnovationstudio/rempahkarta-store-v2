@@ -1,5 +1,4 @@
 import { products as demoProducts } from "@/lib/demo-data";
-import { isDemo } from "@/lib/env";
 import type { Product, StoreVariant } from "@/lib/types";
 import { revalidateTag, unstable_cache } from "next/cache";
 
@@ -81,7 +80,6 @@ const getCachedCatalogProducts = unstable_cache(
 );
 
 export async function getCatalogProducts(): Promise<Product[]> {
-  if (isDemo()) return demoProducts;
   return getCachedCatalogProducts();
 }
 

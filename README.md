@@ -114,22 +114,21 @@ Panel admin tersedia di `/admin-login`.
 
 | Variabel | Fungsi |
 | --- | --- |
+| `APP_MODE` | Mode aplikasi (`development` atau `production`). Aplikasi secara otomatis memilih URL dan API key yang sesuai. |
+| `APP_URL_DEV`, `APP_URL_LIVE` | Origin publik callback/provider. Mode production menggunakan `APP_URL_LIVE` (wajib HTTPS). Mode development menggunakan `APP_URL_DEV`. |
 | `DATABASE_URL` | Koneksi MySQL runtime dan migration. |
-| `APP_URL` | Origin publik callback/provider; production wajib HTTPS. |
 | `AUTH_SECRET` | Secret JWT admin minimal 32 karakter; buat dengan `openssl rand -base64 48`. Placeholder production ditolak. |
 | `CUSTOMER_JWT_SECRET` | Secret JWT pelanggan terpisah; buat output acak berbeda dengan command yang sama. Bila kosong fallback ke `AUTH_SECRET`, tetapi secret terpisah disarankan. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD_SCRYPT` | Kredensial admin production. Hash scrypt bersalt dibuat melalui stdin dengan prosedur instalasi di atas; password harus 12–256 karakter. |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Audience Google ID token. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Widget client dan Siteverify server. |
-| `BSTN_BASE_URL`, `BSTN_PROJECT_API_KEY`, `BSTN_RETURN_SIGNATURE_SECRET` | Dynamic QRIS, verifikasi webhook, dan rekonsiliasi pembayaran. |
-| `BITESHIP_BASE_URL`, `BITESHIP_API_KEY`, `BITESHIP_WEBHOOK_SHARED_SECRET` | Area, tarif, shipment, tracking, pembatalan, dan autentikasi webhook. |
+| `BSTN_BASE_URL`, `BSTN_PROJECT_API_KEY_DEV`, `BSTN_PROJECT_API_KEY_LIVE`, `BSTN_RETURN_SIGNATURE_SECRET` | Dynamic QRIS, verifikasi webhook, dan rekonsiliasi pembayaran (dual key untuk DEV & LIVE). |
+| `BITESHIP_BASE_URL`, `BITESHIP_API_KEY_DEV`, `BITESHIP_API_KEY_LIVE`, `BITESHIP_WEBHOOK_SHARED_SECRET` | Area, tarif, shipment, tracking, pembatalan, dan autentikasi webhook (dual key untuk DEV & LIVE). |
 | `ENABLED_COURIERS` | Kode kurir yang boleh ditawarkan, dipisahkan koma. |
 | `WAREHOUSE_*` | Origin/pickup dan Area ID gudang. |
-| `PAYMENT_MOCK`, `PAYMENT_MOCK_AUTO_PAID` | Simulasi development; secara kode tidak aktif di production. |
-| `DEMO_MODE`, `ALLOW_INSECURE_DEMO` | Kedua-duanya harus `true` untuk fixture/bypass demo, dan hanya bekerja di non-production. Default keduanya `false`; khusus localhost/disposable. |
 | `RATE_LIMIT_TRUSTED_IP_HEADER` | Header IP yang sudah dihapus/ditulis ulang oleh reverse proxy tepercaya; hanya `cf-connecting-ip`, `x-real-ip`, atau `x-forwarded-for`. |
 
-`.env.example` sengaja memakai placeholder secret yang gagal validasi dan test key resmi Turnstile untuk localhost. Ganti seluruhnya; production menolak marker contoh, shared webhook secret di bawah 16 karakter, test key Turnstile, action/hostname yang tidak cocok, atau JWT secret di bawah 32 karakter. Jangan masukkan `.env`, credential, dump database, atau media pelanggan ke Git/arsip distribusi.
+`.env.example` sengaja memakai placeholder secret yang gagal validasi dan test key resmi Turnstile untuk localhost. Ganti seluruhnya; production (APP_MODE=production) menolak marker contoh, shared webhook secret di bawah 16 karakter, test key Turnstile, action/hostname yang tidak cocok, atau JWT secret di bawah 32 karakter. Jangan masukkan `.env`, credential, dump database, atau media pelanggan ke Git/arsip distribusi.
 
 `ADMIN_PASSWORD_HASH` SHA-256 hanya didukung sebagai kompatibilitas development dan ditolak di production. Jangan memasukkan `ADMIN_PASSWORD` plaintext ke `.env`; variabel itu hanya input sementara saat menjalankan generator hash.
 

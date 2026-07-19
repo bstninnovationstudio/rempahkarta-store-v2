@@ -5,7 +5,7 @@ import { useEffect, useId, useState } from "react";
 import { Box, CheckCircle2, Printer, RefreshCw, Truck, XCircle } from "lucide-react";
 import { useTurnstile } from "@/components/use-turnstile";
 
-const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NODE_ENV !== "production" ? "1x00000000000000000000BB" : "");
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NEXT_PUBLIC_APP_MODE !== "production" ? "1x00000000000000000000BB" : "");
 
 const sellerRejectionReasons = [
   "Paket sudah dikemas & siap dikirim",

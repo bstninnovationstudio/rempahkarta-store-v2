@@ -6,7 +6,7 @@ import { LockKeyhole } from "lucide-react";
 import { useState } from "react";
 import { useTurnstile } from "@/components/use-turnstile";
 
-const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NODE_ENV !== "production" ? "1x00000000000000000000BB" : "");
+const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || (process.env.NEXT_PUBLIC_APP_MODE !== "production" ? "1x00000000000000000000BB" : "");
 
 export default function AdminLogin() {
   const [error, setError] = useState("");

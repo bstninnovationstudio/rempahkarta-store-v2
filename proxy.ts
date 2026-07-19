@@ -1,21 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, rateLimitHeaders, rateLimitResponse } from "@/lib/rate-limit";
+import { isProduction, getAppUrl } from "@/lib/env";
 
 export function proxy(request: NextRequest) {
   const webhook = request.nextUrl.pathname.startsWith("/api/webhooks/");
   const unsafeMethod = ["POST", "PUT", "PATCH", "DELETE"].includes(request.method);
   if (!webhook && unsafeMethod) {
     let expectedOrigin = request.nextUrl.origin;
-    if (process.env.APP_URL) {
-      try { expectedOrigin = new URL(process.env.APP_URL).origin; }
+    const appUrl = getAppUrl();
+    if (appUrl) {
+      try { expectedOrigin = new URL(appUrl).origin; }
       catch {
-        if (process.env.NODE_ENV === "production") {
-          return NextResponse.json({ error: "APP_URL production tidak valid" }, { status: 503 });
+        if (isProduction()) {
+          return NextResponse.json({ error: "APP_URL_LIVE production tidak valid" }, { status: 503 });
         }
       }
     }
     const origin = request.headers.get("origin");
-    if ((process.env.NODE_ENV === "production" || origin) && origin !== expectedOrigin) {
+    if ((isProduction() || origin) && origin !== expectedOrigin) {
       return NextResponse.json({ error: "Origin permintaan tidak diizinkan" }, { status: 403 });
     }
   }

@@ -1,5 +1,4 @@
-import { adminOrders, products } from "@/lib/demo-data";
-import { isDemo } from "@/lib/env";
+import { products } from "@/lib/demo-data";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { getBiteshipStatusDetail } from "@/lib/shipping-state";
 import type { Prisma } from "@prisma/client";
@@ -91,18 +90,6 @@ function mapAdminOrder(order: {
 }
 
 export async function getAdminDashboardData() {
-  if (isDemo()) {
-    const latestOrders = adminOrders.slice(0, 4);
-    return {
-      latestOrders,
-      stats: {
-        totalOrders: adminOrders.length,
-        paidSales: adminOrders.filter(order => order.payment === "paid").reduce((sum, order) => sum + order.total, 0),
-        needProcess: adminOrders.filter(order => order.fulfillment === "awaiting_processing").length,
-        pickup: adminOrders.filter(order => order.fulfillment === "handover_pending").length,
-      },
-    };
-  }
   const { prisma } = await import("@/lib/db");
   const [rows, totalOrders, paidSales, needProcess, pickup] = await prisma.$transaction([
     prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 4, include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 } } }),
@@ -125,30 +112,7 @@ export async function getAdminOrdersPage(options: { page?: number; pageSize?: nu
     ? options.filter as AdminOrderFilter
     : undefined;
 
-  if (isDemo()) {
-    const filtered = adminOrders.filter(order => {
-      if (validFilter === "processing") return order.fulfillment === "awaiting_processing";
-      if (validFilter === "active") return order.fulfillment === "processing";
-      if (validFilter === "pickup") return order.fulfillment === "handover_pending";
-      if (validFilter === "intransit") return order.fulfillment === "in_transit";
-      if (validFilter === "issue") return Boolean(order.issueOrder);
-      return true;
-    });
-    const pageInfo = pagination(requestedPage, pageSize, filtered.length);
-    return {
-      rows: filtered.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize),
-      pagination: pageInfo,
-      counts: {
-        all: adminOrders.length,
-        processing: adminOrders.filter(order => order.fulfillment === "awaiting_processing").length,
-        active: adminOrders.filter(order => order.fulfillment === "processing").length,
-        pickup: adminOrders.filter(order => order.fulfillment === "handover_pending").length,
-        intransit: adminOrders.filter(order => order.fulfillment === "in_transit").length,
-        issue: adminOrders.filter(order => order.issueOrder).length,
-      },
-      filter: validFilter,
-    };
-  }
+
 
   const { prisma } = await import("@/lib/db");
   const [total, fulfillmentGroups, issue] = await Promise.all([
@@ -186,20 +150,7 @@ export async function getAdminOrdersPage(options: { page?: number; pageSize?: nu
 export async function getInventoryPage(options: { page?: number; pageSize?: number } = {}) {
   const requestedPage = safePage(options.page);
   const pageSize = safePageSize(options.pageSize);
-  if (isDemo()) {
-    const allRows = products.map((product,index)=>({id:product.id,sku:`AMK-${index%3===0?"SHN":"NWS"}-${String(index+1).padStart(3,"0")}`,name:product.name,color:product.color,onHand:product.stock,reserved:index%3,safety:index===2?5:3,lowStockThreshold:5}));
-    const pageInfo = pagination(requestedPage, pageSize, allRows.length);
-    return {
-      rows: allRows.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize),
-      pagination: pageInfo,
-      stats: {
-        onHand: allRows.reduce((sum, row) => sum + row.onHand, 0),
-        reserved: allRows.reduce((sum, row) => sum + row.reserved, 0),
-        available: allRows.reduce((sum, row) => sum + Math.max(0, row.onHand - row.reserved - row.safety), 0),
-        low: allRows.filter(row => row.onHand - row.reserved - row.safety <= row.lowStockThreshold).length,
-      },
-    };
-  }
+
   const { prisma } = await import("@/lib/db");
   const [total, sums, availabilityResult] = await Promise.all([
     prisma.inventoryLevel.count(),
@@ -231,11 +182,7 @@ export async function getInventoryPage(options: { page?: number; pageSize?: numb
 export async function getProductRowsPage(options: { page?: number; pageSize?: number } = {}) {
   const requestedPage = safePage(options.page);
   const pageSize = safePageSize(options.pageSize);
-  if (isDemo()) {
-    const allRows = products.map((product,index)=>({id:product.id,name:product.name,category:product.category,color:product.color,sku:`AMK-${index%3===0?"SHN":"NWS"}-${String(index+1).padStart(3,"0")}`,price:product.price,stock:product.stock,status:"active",image:product.image,isLow:product.stock<=5}));
-    const pageInfo = pagination(requestedPage, pageSize, allRows.length);
-    return { rows: allRows.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize), pagination: pageInfo };
-  }
+
   const { prisma } = await import("@/lib/db");
   const total = await prisma.product.count();
   const pageInfo = pagination(requestedPage, pageSize, total);
@@ -249,11 +196,7 @@ export async function getProductRowsPage(options: { page?: number; pageSize?: nu
 export async function getShipmentRowsPage(options: { page?: number; pageSize?: number } = {}) {
   const requestedPage = safePage(options.page);
   const pageSize = safePageSize(options.pageSize);
-  if (isDemo()) {
-    const allRows = adminOrders.slice(0,4).map((order,index)=>({number:order.number,courier:order.courier,waybill:index<2?`AMK12873219${8+index}`:"Belum tersedia",method:index%2?"Drop-off":"Pickup",status:order.fulfillment,updatedAt:order.createdAt}));
-    const pageInfo = pagination(requestedPage, pageSize, allRows.length);
-    return { rows: allRows.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize), pagination: pageInfo, stats: { total: allRows.length, awaitingPickup: allRows.filter(row => row.status === "handover_pending").length, inTransit: allRows.filter(row => row.status === "in_transit").length, issue: 0 } };
-  }
+
   const { prisma } = await import("@/lib/db");
   const issueStatuses = ["cancelled", "rejected", "courier_not_found", "disposed"];
   const [total, awaitingPickup, inTransit, issue] = await prisma.$transaction([
@@ -267,18 +210,10 @@ export async function getShipmentRowsPage(options: { page?: number; pageSize?: n
   return { rows:rows.map(row=>({number:row.order.publicNumber,courier:`${row.courierCompany.toUpperCase()} ${row.courierType}`,waybill:row.waybillId||row.trackingId||"Belum tersedia",method:row.collectionMethod==="drop_off"?"Drop-off":"Pickup",status:fulfillmentForUi(row.order.fulfillmentState),updatedAt:adminDate(row.updatedAt)})), pagination: pageInfo, stats: { total, awaitingPickup, inTransit, issue } };
 }
 
-const demoReturns = [
-  {id:"demo-return-1",number:"RET-260713-004",orderNumber:"ORD-20260712-7C1J",reason:"Produk rusak",cause:"damaged",state:"requested",refund:"refund_pending",amount:179000,createdAt:"13 Jul, 08.54",source:"buyer",type:"return"},
-  {id:"demo-return-2",number:"RET-260712-003",orderNumber:"ORD-20260710-1B9R",reason:"Varian tidak sesuai",cause:"wrong",state:"in_transit",refund:"pending",amount:239000,createdAt:"12 Jul, 14.21",source:"buyer",type:"return"},
-];
-
 export async function getReturnRowsPage(options: { page?: number; pageSize?: number } = {}) {
   const requestedPage = safePage(options.page);
   const pageSize = safePageSize(options.pageSize);
-  if (isDemo()) {
-    const pageInfo = pagination(requestedPage, pageSize, demoReturns.length);
-    return { rows: demoReturns.slice((pageInfo.page - 1) * pageSize, pageInfo.page * pageSize), pagination: pageInfo, stats: { review: 1, transit: 1, inspection: 0, refund: 0 } };
-  }
+
   const { prisma } = await import("@/lib/db");
   const [total, groups] = await Promise.all([
     prisma.returnRequest.count(),
@@ -352,10 +287,7 @@ export async function getAuditLogPage(options: { page?: number; pageSize?: numbe
 }
 
 export async function getAdminOrderDetail(number:string){
-  if(isDemo()){
-    const order=adminOrders.find(item=>item.number===number)||adminOrders[0];const product=products[0];
-    return{number:order.number,createdAt:order.createdAt,customer:order.customer,email:"demo@amk.store",phone:"0812••••7890",address:"Jl. Contoh No. 88, Yogyakarta 55281",note:"Dekat pintu samping",paymentState:order.payment,fulfillmentState:order.fulfillment,subtotal:product.price,shippingFee:9000,grandTotal:order.total,payableAmount:order.total+82,items:[{id:"demo",sku:"RMP-KMN-RGL-100",name:order.item,options:"Regular · 100 g",quantity:1,price:product.price,image:product.image}],shipment:null,cancellation:null as {state:string;reason:string;decisionReason:string|null}|null,events:[{at:"09.44",title:"Pembayaran QRIS terverifikasi",note:"payment.finalized"},{at:"09.42",title:"Pesanan dibuat",note:"Stok direservasi"}],collectionMethods:["pickup"]};
-  }
+
   const {prisma}=await import("@/lib/db");
   const order=await prisma.order.findUnique({where:{publicNumber:number},include:{items:true,addresses:true,payments:{orderBy:{createdAt:"desc"},take:1},quotes:{where:{selectedAt:{not:null}},orderBy:{createdAt:"desc"},take:1},shipments:{include:{events:{orderBy:{occurredAt:"desc"}}},orderBy:{createdAt:"desc"},take:1},cancellations:{orderBy:{requestedAt:"desc"}},returns:{include:{refunds:{orderBy:{createdAt:"desc"},take:1}},orderBy:{createdAt:"desc"}}}});
   if(!order)return null;

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { sha256 } from "@/lib/security";
 import { serializeBigInt } from "@/lib/serialize";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { getBiteshipApiKey } from "@/lib/env";
 
 const schema = z.object({
   collectionMethod: z.enum(["pickup", "drop_off"]),
@@ -32,7 +33,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   catch { return NextResponse.json({ error: "Payload tidak valid" }, { status: 400 }); }
   const body = schema.safeParse(json);
   if (!body.success) return NextResponse.json({ error: "Payload tidak valid", details: body.error.flatten() }, { status: 400 });
-  if (!process.env.BITESHIP_API_KEY) return NextResponse.json({ error: "Layanan pengiriman belum dikonfigurasi" }, { status: 503 });
+  const apiKey = getBiteshipApiKey();
+  if (!apiKey) return NextResponse.json({ error: "Layanan pengiriman belum dikonfigurasi" }, { status: 503 });
 
   const { number } = await params;
   const order = await prisma.order.findUnique({
@@ -44,52 +46,53 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
     },
   });
   if (!order) return NextResponse.json({ error: "Pesanan tidak ditemukan" }, { status: 404 });
-  const warehouse = await prisma.warehouse.findFirst({ where: { isDefault: true } });
-  const destination = order.addresses.find(address => address.type === "shipping");
+  if (order.fulfillmentState === "cancelled") return NextResponse.json({ error: "Pesanan sudah dibatalkan" }, { status: 409 });
+  if (order.paymentState !== "paid") return NextResponse.json({ error: "Pesanan belum lunas" }, { status: 409 });
+
   const quote = order.quotes[0];
-  if (!warehouse || !destination || !quote) {
-    return NextResponse.json({ error: "Data pengiriman belum lengkap" }, { status: 409 });
-  }
-  const allowed = Array.isArray(quote.collectionMethods) ? quote.collectionMethods.map(String) : ["pickup"];
-  if (!allowed.includes(body.data.collectionMethod)) {
-    return NextResponse.json({ error: `Metode ${body.data.collectionMethod} tidak tersedia untuk layanan ini` }, { status: 409 });
-  }
+  const shippingAddr = order.addresses.find(item => item.type === "shipping");
+  if (!quote || !shippingAddr) return NextResponse.json({ error: "Data pengiriman pesanan belum lengkap" }, { status: 409 });
+
+  const warehouse = (await prisma.warehouse.findFirst({ where: { isDefault: true } })) || (await prisma.warehouse.findFirst());
+  if (!warehouse) return NextResponse.json({ error: "Gudang default belum dikonfigurasi" }, { status: 500 });
+
+  const shippingItems = order.items.map(item => ({
+    name: item.nameSnapshot,
+    description: Object.values(item.optionsSnapshot as Record<string, string>).filter(Boolean).join(" / ") || undefined,
+    category: "food_and_drink",
+    sku: item.skuSnapshot,
+    value: Number(item.unitPrice),
+    quantity: item.quantity,
+    weight: item.weight,
+    length: item.length || undefined,
+    width: item.width || undefined,
+    height: item.height || undefined,
+  }));
 
   try {
     const claim = await prisma.$transaction(async tx => {
-      await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${order.id} FOR UPDATE`);
-      const current = await tx.order.findUniqueOrThrow({
-        where: { id: order.id },
-        include: { shipments: { orderBy: { createdAt: "desc" }, take: 1 } },
-      });
-      if (current.shipments[0]) return { existing: current.shipments[0], claimed: false };
-      if (current.paymentState !== "paid") {
-        throw new BookingConflictError("Pengiriman hanya dapat dibooking setelah pembayaran terverifikasi");
+      const existing = await tx.shipment.findFirst({ where: { orderId: order.id }, orderBy: { createdAt: "desc" } });
+      if (existing) {
+        const isTransient = ["booking_claimed", "booking_failed"].includes(existing.status);
+        const expired = existing.updatedAt.getTime() + CLAIM_TTL_MS < Date.now();
+        if (!isTransient || !expired) return { existing, claimed: false };
+        await tx.shipment.update({ where: { id: existing.id }, data: { status: "booking_claimed" } });
+        return { existing: null, claimed: true };
       }
-      if (current.fulfillmentState === "shipment_booked") {
-        if (Date.now() - current.updatedAt.getTime() < CLAIM_TTL_MS) {
-          throw new BookingConflictError("Booking pengiriman sedang diproses. Tunggu sebentar lalu muat ulang halaman.");
-        }
-        // Recover a claim left by a crashed/timeout request. The fixed provider
-        // reference below makes the retry idempotent and reconciles duplicates.
-        await tx.order.update({ where: { id: current.id }, data: { fulfillmentState: "shipment_booked" } });
-      } else {
-        const changed = await tx.order.updateMany({
-          where: { id: current.id, fulfillmentState: "packed", paymentState: "paid" },
-          data: { fulfillmentState: "shipment_booked" },
-        });
-        if (changed.count !== 1) {
-          throw new BookingConflictError("Pesanan harus ditandai sudah dikemas sebelum booking pengiriman");
-        }
-      }
-      await tx.auditLog.create({
+
+      await tx.shipment.create({
         data: {
-          actorType: "admin",
-          actorId: String(admin.email),
-          action: "shipment.booking_started",
-          entityType: "order",
-          entityId: current.id,
-          after: { collectionMethod: body.data.collectionMethod },
+          orderId: order.id,
+          warehouseId: warehouse.id,
+          providerOrderId: `claim_${crypto.randomUUID()}`,
+          referenceId: `SHP-${order.publicNumber}`,
+          trackingId: `claim_${crypto.randomUUID()}`,
+          courierCompany: quote.courierCompany,
+          courierType: quote.courierType,
+          collectionMethod: body.data.collectionMethod,
+          quotedPrice: quote.price,
+          actualPrice: quote.price,
+          status: "booking_claimed",
         },
       });
       return { existing: null, claimed: true };
@@ -100,7 +103,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
 
     const adapter = new BiteshipAdapter(
       process.env.BITESHIP_BASE_URL || "https://api.biteship.com",
-      process.env.BITESHIP_API_KEY,
+      apiKey,
     );
     const reference = `SHP-${order.publicNumber}`;
     let providerResult;
@@ -114,143 +117,73 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
         origin_contact_phone: warehouse.contactPhone,
         origin_address: warehouse.address,
         origin_postal_code: Number(warehouse.postalCode),
-        origin_area_id: warehouse.areaId,
-        origin_collection_method: body.data.collectionMethod,
-        destination_contact_name: destination.contactName,
-        destination_contact_phone: destination.contactPhone,
-        destination_contact_email: destination.contactEmail,
-        destination_address: destination.address,
-        destination_note: destination.note,
-        destination_postal_code: Number(destination.postalCode),
-        destination_area_id: destination.areaId,
+        origin_area_id: warehouse.areaId || undefined,
+        destination_contact_name: shippingAddr.contactName || order.guestName,
+        destination_contact_phone: shippingAddr.contactPhone || order.guestPhone,
+        destination_contact_email: shippingAddr.contactEmail || order.guestEmail,
+        destination_address: shippingAddr.address,
+        destination_postal_code: Number(shippingAddr.postalCode),
+        destination_area_id: shippingAddr.areaId || undefined,
         courier_company: quote.courierCompany,
         courier_type: quote.courierType,
         delivery_type: body.data.deliveryType,
         delivery_date: body.data.deliveryDate,
         delivery_time: body.data.deliveryTime,
-        metadata: { order_number: order.publicNumber },
-        items: order.items.map(item => ({
-          name: item.nameSnapshot,
-          description: Object.values(item.optionsSnapshot as Record<string, string>).filter(Boolean).join(" / "),
-          category: "food_and_drink",
-          sku: item.skuSnapshot,
-          value: Number(item.unitPrice),
-          quantity: item.quantity,
-          weight: item.weight,
-          length: item.length,
-          width: item.width,
-          height: item.height,
-        })),
+        order_note: shippingAddr.note || undefined,
+        items: shippingItems,
       });
-    } catch {
-      await releaseBookingClaim(order.id, String(admin.email), "Provider booking failed");
-      return NextResponse.json({ error: "Booking Biteship gagal. Silakan coba kembali." }, { status: 502 });
+    } catch (cause) {
+      await prisma.shipment.updateMany({ where: { orderId: order.id, status: "booking_claimed" }, data: { status: "booking_failed" } });
+      throw cause;
     }
 
-    const priceCandidate = providerResult.price ?? Number(quote.price);
-    if (!Number.isSafeInteger(priceCandidate) || priceCandidate < 0) {
-      await releaseBookingClaim(order.id, String(admin.email), "Invalid provider price");
-      return NextResponse.json({ error: "Nilai ongkir dari provider tidak valid. Silakan coba kembali." }, { status: 502 });
-    }
-    const actual = BigInt(priceCandidate);
-    const status = normalizeBiteshipStatus(providerResult.status);
-    const rawResult = JSON.parse(JSON.stringify(providerResult)) as Prisma.InputJsonValue;
-    const payloadHash = await sha256(JSON.stringify(rawResult));
-    try {
-      const shipment = await prisma.$transaction(async tx => {
-        await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${order.id} FOR UPDATE`);
-        const current = await tx.order.findUniqueOrThrow({
-          where: { id: order.id },
-          include: { shipments: { orderBy: { createdAt: "desc" }, take: 1 } },
-        });
-        if (current.shipments[0]) return current.shipments[0];
-        if (current.fulfillmentState !== "shipment_booked" || current.paymentState !== "paid") {
-          throw new BookingConflictError("Status pesanan berubah selama booking. Muat ulang halaman.");
-        }
-        const created = await tx.shipment.create({
-          data: {
-            orderId: order.id,
-            warehouseId: warehouse.id,
-            providerOrderId: providerResult.id,
-            referenceId: reference,
-            trackingId: providerResult.courier?.tracking_id || null,
-            waybillId: providerResult.courier?.waybill_id || null,
-            courierCompany: quote.courierCompany,
-            courierType: quote.courierType,
-            collectionMethod: body.data.collectionMethod,
-            quotedPrice: quote.price,
-            actualPrice: actual,
-            priceAdjustment: actual - quote.price,
-            status,
-            raw: rawResult,
-          },
-        });
-        await tx.shipmentTrackingEvent.create({
-          data: {
-            shipmentId: created.id,
-            providerStatus: status,
-            note: "Pesanan memasuki proses pengiriman.",
-            occurredAt: new Date(),
-            payloadHash,
-            payload: rawResult,
-          },
-        });
-        await tx.auditLog.create({
-          data: {
-            actorType: "admin",
-            actorId: String(admin.email),
-            action: "shipment.booked",
-            entityType: "shipment",
-            entityId: created.id,
-            after: {
-              status,
-              collectionMethod: body.data.collectionMethod,
-              waybillId: providerResult.courier?.waybill_id,
-              quotedPrice: quote.price.toString(),
-              actualPrice: actual.toString(),
-            },
-          },
-        });
-        return created;
-      });
-      return NextResponse.json({ success: true, shipment: serializeBigInt(shipment) });
-    } catch (error) {
-      await releaseBookingClaim(order.id, String(admin.email), "Local booking finalization failed");
-      if (error instanceof BookingConflictError) {
-        return NextResponse.json({ error: error.message }, { status: 409 });
+    const shipment = await prisma.$transaction(async tx => {
+      const currentOrder = await tx.order.findUnique({ where: { id: order.id }, select: { fulfillmentState: true } });
+      if (currentOrder?.fulfillmentState === "cancelled") {
+        try { await adapter.cancelOrder(providerResult.id, "others", "Pesanan dibatalkan bersamaan dengan booking"); }
+        catch { /* ignore provider cancel error */ }
+        throw new BookingConflictError("Booking dibatalkan karena pesanan sudah dibatalkan");
       }
-      return NextResponse.json({
-        error: "Booking provider berhasil tetapi penyimpanan lokal perlu direkonsiliasi. Coba kembali dengan referensi pesanan yang sama.",
-      }, { status: 503 });
-    }
-  } catch (error) {
-    if (error instanceof BookingConflictError) {
-      return NextResponse.json({ error: error.message }, { status: 409 });
-    }
-    return NextResponse.json({ error: "Booking pengiriman belum dapat diproses" }, { status: 500 });
-  }
-}
 
-async function releaseBookingClaim(orderId: string, adminEmail: string, reason: string) {
-  await prisma.$transaction(async tx => {
-    await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${orderId} FOR UPDATE`);
-    const existing = await tx.shipment.count({ where: { orderId } });
-    if (existing > 0) return;
-    const released = await tx.order.updateMany({
-      where: { id: orderId, fulfillmentState: "shipment_booked" },
-      data: { fulfillmentState: "packed" },
-    });
-    if (released.count === 1) {
+      await tx.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
+
+      const initialStatus = normalizeBiteshipStatus(providerResult.status || "allocated");
+      const saved = await tx.shipment.create({
+        data: {
+          orderId: order.id,
+          warehouseId: warehouse.id,
+          providerOrderId: providerResult.id,
+          referenceId: providerResult.reference_id || reference,
+          trackingId: providerResult.courier?.tracking_id || providerResult.id,
+          waybillId: providerResult.courier?.waybill_id || providerResult.courier?.tracking_id || null,
+          courierCompany: providerResult.courier?.company || quote.courierCompany,
+          courierType: providerResult.courier?.type || quote.courierType,
+          collectionMethod: body.data.collectionMethod,
+          quotedPrice: quote.price,
+          actualPrice: BigInt(providerResult.price || quote.price),
+          status: initialStatus,
+          lastProviderSyncAt: new Date(),
+          raw: providerResult as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      await tx.order.update({ where: { id: order.id }, data: { fulfillmentState: "shipment_booked" } });
       await tx.auditLog.create({
         data: {
           actorType: "admin",
-          actorId: adminEmail,
-          action: "shipment.booking_failed",
-          entityType: "order",
-          entityId: orderId,
-          after: { reason },
+          actorId: String(admin.email),
+          action: "shipment.created",
+          entityType: "shipment",
+          entityId: saved.id,
+          after: { providerOrderId: saved.providerOrderId, waybillId: saved.waybillId },
         },
       });
-    }
-  });
+      return saved;
+    });
+
+    return NextResponse.json({ success: true, shipment: serializeBigInt(shipment) });
+  } catch (cause) {
+    if (cause instanceof BookingConflictError) return NextResponse.json({ error: cause.message }, { status: 409 });
+    return NextResponse.json({ error: cause instanceof Error ? cause.message : "Booking Biteship gagal" }, { status: 502 });
+  }
 }

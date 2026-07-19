@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
   // terautentikasi dari storage/private dan tidak melewati Next Image.
   images: { unoptimized: true },
   poweredByHeader: false,
+  env: {
+    // Expose APP_MODE ke client components sebagai NEXT_PUBLIC_APP_MODE.
+    // Cukup set APP_MODE di .env; nilai ini otomatis tersedia di browser.
+    NEXT_PUBLIC_APP_MODE: process.env.APP_MODE || "development",
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

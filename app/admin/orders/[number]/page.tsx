@@ -9,7 +9,7 @@ import { getAdminOrderDetail } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
 import { getBiteshipStatusDetail } from "@/lib/shipping-state";
 import type { OrderStatus } from "@/lib/types";
-import { isDemo } from "@/lib/env";
+import { isDevToolsEnabled } from "@/lib/env";
 
 function uiStatus(value: string): OrderStatus {
   if (["packed", "shipment_booked"].includes(value)) return "processing";
@@ -79,7 +79,7 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ n
 
           <section className="admin-section" aria-labelledby="order-activity-title">
             <h2 id="order-activity-title">Aktivitas pesanan</h2>
-            {isDemo() && <AdminOrderStatusMock number={order.number} fulfillmentState={order.fulfillmentState} issueOrder={order.issueOrder} />}
+            {isDevToolsEnabled() && <AdminOrderStatusMock number={order.number} fulfillmentState={order.fulfillmentState} issueOrder={order.issueOrder} />}
             <div className="timeline admin-order-timeline" role="list" aria-label="Riwayat aktivitas pesanan">
               {order.events.map((event, index) => (
                 <div className="timeline-item" role="listitem" key={`${event.at}-${index}`}>

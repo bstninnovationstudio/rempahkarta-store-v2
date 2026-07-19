@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { BiteshipAdapter } from "@/lib/adapters/biteship";
-import { warehouseAreaId } from "@/lib/env";
+import { warehouseAreaId, getBiteshipApiKey } from "@/lib/env";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
@@ -27,7 +27,8 @@ export async function POST(request: Request) {
     if (!parsed.success) return NextResponse.json({ error: "Payload ongkir tidak valid", details: parsed.error.flatten() }, { status: 400 });
     const verification = await verifyTurnstile(request, parsed.data.turnstileToken, "shipping_quotes");
     if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
-    if (!process.env.BITESHIP_API_KEY) return NextResponse.json({ error: "BITESHIP_API_KEY belum dikonfigurasi" }, { status: 503 });
+    const biteshipApiKey = getBiteshipApiKey();
+    if (!biteshipApiKey) return NextResponse.json({ error: "BITESHIP_API_KEY belum dikonfigurasi" }, { status: 503 });
     const { turnstileToken: _token, ...input } = parsed.data;
     void _token;
     const variantIds = input.items.map(item => item.variantId);
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
         height: variant.height || undefined,
       };
     });
-    const adapter = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", process.env.BITESHIP_API_KEY);
+    const adapter = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", biteshipApiKey);
     const data = await adapter.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: input.destinationAreaId, destinationPostalCode: input.destinationPostalCode, couriers: process.env.ENABLED_COURIERS || "jne", items: shippingItems });
     return NextResponse.json(data);
   } catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "Tarif pengiriman gagal dimuat" }, { status: 502 }); }

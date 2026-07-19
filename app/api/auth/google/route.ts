@@ -16,12 +16,6 @@ const googlePayloadSchema = z.object({
 });
 const googleJwks = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 
-function mockLoginEnabled() {
-  return process.env.NODE_ENV !== "production"
-    && process.env.DEMO_MODE === "true"
-    && process.env.ALLOW_INSECURE_DEMO === "true";
-}
-
 async function establishSession(user: { id: string; name: string; email: string }, sessionId: string) {
   const [token, completion] = await Promise.all([
     createCustomerToken(user.id, sessionId),
@@ -44,24 +38,6 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Credential Google wajib disediakan" }, { status: 400 });
     const { credential } = parsed.data;
-
-    if (credential.startsWith("mock_")) {
-      if (!mockLoginEnabled()) return NextResponse.json({ error: "Credential Google tidak valid" }, { status: 401 });
-      const parts = credential.split(":");
-      const mockData = z.object({ email: z.string().email().max(200), name: z.string().trim().min(2).max(160) }).safeParse({
-        email: parts[1] || "pelanggan.demo@example.com",
-        name: parts[2] || "Pelanggan Demo",
-      });
-      if (!mockData.success) return NextResponse.json({ error: "Credential demo tidak valid" }, { status: 400 });
-      const sessionId = crypto.randomUUID();
-      const mockGoogleId = `mock_google_${mockData.data.email.replace(/[^a-zA-Z0-9]/g, "")}`;
-      const user = await prisma.user.upsert({
-        where: { googleId: mockGoogleId },
-        update: { ...mockData.data, currentSessionId: sessionId },
-        create: { googleId: mockGoogleId, ...mockData.data, currentSessionId: sessionId },
-      });
-      return establishSession(user, sessionId);
-    }
 
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) return NextResponse.json({ error: "Google Login belum dikonfigurasi" }, { status: 503 });
