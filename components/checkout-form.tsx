@@ -49,6 +49,10 @@ export function CheckoutForm({
   const [busy, setBusy] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState("");
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucherCheckBusy, setVoucherCheckBusy] = useState(false);
+  const [voucherMessage, setVoucherMessage] = useState("");
+  const [appliedVoucher, setAppliedVoucher] = useState<{ code: string; name: string; target: string; discountAmount: number; subtotal: number; shippingFee: number } | null>(null);
   const [cartItems, setCartItems] = useState<Array<{ productId: string; variantId: string; quantity: number; product: Product; variant: StoreVariant }>>([]);
 
   const [nameInput, setNameInput] = useState(customerName);
@@ -87,7 +91,10 @@ export function CheckoutForm({
     ? cartItems.reduce((sum, item) => sum + item.variant.price * item.quantity, 0)
     : (variant ? variant.price : 0);
   const baseAmount = subtotal + (shipping?.price ?? 0);
-  const feeBreakdown = calculateServiceFee(baseAmount);
+  const activeVoucher = appliedVoucher && appliedVoucher.subtotal === subtotal && appliedVoucher.shippingFee === (shipping?.price ?? 0) ? appliedVoucher : null;
+  const voucherDiscount = activeVoucher?.discountAmount ?? 0;
+  const discountedBaseAmount = Math.max(0, baseAmount - voucherDiscount);
+  const feeBreakdown = calculateServiceFee(discountedBaseAmount);
   const serviceFee = shipping ? feeBreakdown.serviceFee : 0;
   const total = shipping ? feeBreakdown.grandTotal : subtotal;
   const variantLabel = variant ? ([variant.option1Value, variant.option2Value].filter(Boolean).join(" · ") || "Produk tunggal") : "";
@@ -95,6 +102,26 @@ export function CheckoutForm({
     ? cartItems.reduce((sum, item) => sum + (item.variant.weight || 0) * item.quantity, 0)
     : (variant ? (variant.weight || 0) : 0);
   const formattedWeight = totalWeight >= 1000 ? `${(totalWeight / 1000).toFixed(2)} kg` : `${totalWeight} g`;
+
+  async function checkVoucher() {
+    if (!shipping) return setVoucherMessage("Pilih ongkir terlebih dahulu sebelum mengecek promo.");
+    if (!voucherCode.trim()) return setVoucherMessage("Masukkan kode promo.");
+    setVoucherCheckBusy(true); setVoucherMessage(""); setAppliedVoucher(null);
+    try {
+      const token = await turnstileToken("voucher_check");
+      const response = await fetch("/api/vouchers/check", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turnstileToken: token, code: voucherCode, subtotal, shippingFee: shipping.price }),
+      });
+      const data = await readJson(response);
+      if (!response.ok || !data.voucher) throw new Error(String(data.error || "Voucher tidak dapat digunakan"));
+      const voucher = data.voucher as { code: string; name: string; target: string; discountAmount: number };
+      setVoucherCode(voucher.code);
+      setAppliedVoucher({ ...voucher, subtotal, shippingFee: shipping.price });
+      setVoucherMessage(`Promo ${voucher.code} diterapkan.`);
+    } catch (cause) { setVoucherMessage(cause instanceof Error ? cause.message : "Voucher tidak dapat diperiksa"); }
+    finally { setVoucherCheckBusy(false); }
+  }
 
   async function searchArea() {
     if (areaQuery.trim().length < 3) return setError("Masukkan minimal 3 karakter kecamatan atau kode pos.");
@@ -210,6 +237,7 @@ export function CheckoutForm({
           areaId: area.id,
           shipping: { company: shipping.company, type: shipping.type, name: shipping.name, price: shipping.price, eta: shipping.eta },
           items: itemsPayload,
+          ...(activeVoucher ? { voucherCode: activeVoucher.code } : {}),
           acceptPolicies: true
         })
       });
@@ -425,6 +453,24 @@ export function CheckoutForm({
               <span>Biaya Layanan</span>
               <span>{shipping ? rupiah(serviceFee) : "Hitung ongkir dahulu"}</span>
             </div>
+            <div className="voucher-field">
+              <label htmlFor="voucher-code">Kode promo</label>
+              <div className="voucher-input-row">
+                <input id="voucher-code" value={voucherCode} onChange={event => setVoucherCode(event.target.value.toUpperCase())} placeholder="Masukkan kode promo" maxLength={50} disabled={voucherCheckBusy || Boolean(activeVoucher)} />
+                {activeVoucher ? (
+                  <button type="button" className="button button-light" onClick={() => { setAppliedVoucher(null); setVoucherMessage(""); }}>Hapus</button>
+                ) : (
+                  <button type="button" className="button button-light" onClick={checkVoucher} disabled={voucherCheckBusy || !shipping}>{voucherCheckBusy ? "Mengecek…" : "CEK"}</button>
+                )}
+              </div>
+              {voucherMessage && <small className={activeVoucher ? "voucher-feedback success" : "voucher-feedback"} role="status">{voucherMessage}</small>}
+            </div>
+            {activeVoucher && (
+              <div className="summary-line voucher-discount">
+                <span>Diskon promo ({activeVoucher.code})</span>
+                <span>-{rupiah(voucherDiscount)}</span>
+              </div>
+            )}
             <div className="summary-line total">
               <span>Total invoice</span>
               <span>{rupiah(total)}</span>

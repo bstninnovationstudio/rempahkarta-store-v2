@@ -13,6 +13,8 @@ interface PaymentPageClientProps {
   number: string;
   subtotal?: number;
   shippingFee?: number;
+  voucherCode?: string | null;
+  discountAmount?: number;
   serviceFee?: number;
   grandTotal: number;
   payableAmount: number;
@@ -28,6 +30,8 @@ export function PaymentPageClient({
   number,
   subtotal,
   shippingFee,
+  voucherCode,
+  discountAmount = 0,
   serviceFee,
   grandTotal,
   payableAmount,
@@ -282,9 +286,15 @@ export function PaymentPageClient({
                   <span>Ongkos Kirim</span>
                   <span>{rupiah(shippingFee)}</span>
                 </div>
+                {discountAmount > 0 && (
+                  <div>
+                    <span>Diskon Promo ({voucherCode || "PROMO"})</span>
+                    <span className="tone-success">-{rupiah(discountAmount)}</span>
+                  </div>
+                )}
                 <div>
                   <span>Biaya Layanan</span>
-                  <span>{rupiah(payableAmount - (subtotal + shippingFee))}</span>
+                  <span>{rupiah(payableAmount - (subtotal + shippingFee - discountAmount))}</span>
                 </div>
               </>
             ) : (

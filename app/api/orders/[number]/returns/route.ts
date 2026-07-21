@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { privateImageExists } from "@/lib/local-media";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const terminalReturnStates = ["rejected", "closed", "cancelled", "finished", "refunded"] as const;
 const schema = z.object({
@@ -123,6 +124,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
           after: { reason: body.data.reason, cause: body.data.cause, itemCount: body.data.items.length },
         },
       });
+      await syncOrderRevenue(tx, order.id, customer.id);
       return created;
     });
     return NextResponse.json({ success: true, return_number: returnCase.publicNumber }, { status: 201 });

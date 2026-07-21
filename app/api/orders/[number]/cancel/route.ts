@@ -8,6 +8,7 @@ import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBstnApiKey } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const schema = z.object({ reason: z.string().trim().min(3).max(500) });
 const handedOverStates = ["handed_over", "completed", "return_in_transit", "returned", "finished"] as const;
@@ -148,6 +149,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
             after: { fulfillmentState: "cancelled", paymentState: nextPaymentState },
           },
         });
+        await syncOrderRevenue(tx, order.id, customer.id);
         return { status: "cancelled" as const, refundPending: paymentArrived, changed: true };
       });
       if (result.changed) invalidateCatalogCache();
@@ -186,6 +188,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
           after: { fulfillmentState: "cancel_requested" },
         },
       });
+      await syncOrderRevenue(tx, order.id, customer.id);
       return "cancel_requested" as const;
     });
     return NextResponse.json({ success: true, status: result });

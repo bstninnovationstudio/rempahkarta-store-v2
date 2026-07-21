@@ -1,20 +1,20 @@
 # Laporan verifikasi REMPAHKARTA v1.3.0
 
-Tanggal verifikasi: 19 Juli 2026 (Asia/Jakarta)
+Tanggal verifikasi: 21 Juli 2026 (Asia/Jakarta)
 
 ## Ringkasan hasil
 
 | Pemeriksaan | Hasil |
 | --- | --- |
-| `npm run lint` | Lulus, 0 error dan 0 warning. |
-| `npm test` | Lulus, 21/21 test; tidak ada skip/todo/failure. |
-| `npx tsc --noEmit --incremental false` | Lulus. |
-| `DATABASE_URL='mysql://…' npx prisma validate` | Lulus terhadap schema MySQL; URL dummy hanya memenuhi parser dan tidak membuka koneksi. |
-| `npm run build` | Lulus pada Next.js 16.2.10/Prisma 6.19.3; compile, TypeScript, page-data collection, dan 39/39 unit static generation selesai. |
-| `npm audit --omit=dev` | Lulus, 0 vulnerability. |
-| `node --check` untuk dua script operasional | Lulus untuk generator hash admin dan migrasi private media. |
+| `npx tsc --noEmit` | Lulus. |
+| `npm run lint` | Lulus tanpa error; warning lama tersisa pada invoice dan payment client. |
+| `npm test` | Lulus, 28/28 test; tidak ada skip/todo/failure. |
+| `npm run build` | Tahap `prisma generate` tertahan `EPERM` karena DLL Prisma sedang dipakai dev server aktif. |
+| `npx next build` | Lulus; compile, TypeScript, page-data collection, dan 48/48 unit static generation selesai. |
+| `npx prisma validate` | Lulus. |
+| `npm run db:migrate` | Lulus tanpa seed; migration finance diterapkan. |
 
-Production build menghasilkan manifest lengkap untuk **34 page route** dan **50 API route**, termasuk dynamic route serta `proxy.ts`. Angka 39/39 pada output build adalah unit static-generation internal Next.js, bukan jumlah page aplikasi.
+Production build menghasilkan manifest lengkap untuk **37 page route** dan **62 API route file**, termasuk finance, voucher/cron, serta `proxy.ts`. Angka 48/48 pada output build adalah unit static-generation internal Next.js, bukan jumlah page aplikasi.
 
 ## Cakupan test otomatis
 
@@ -31,19 +31,22 @@ Test saat ini memeriksa:
 - safe internal redirect;
 - paid provider yang datang setelah pembatalan lokal tetap authoritative;
 - Turnstile Siteverify berhasil, action mismatch, dan respons tanpa action ditolak.
+- Pemetaan voucher ke line item BSTN non-negatif, termasuk target ongkir dan nominal total yang tetap tepat.
+- Formula omzet bersih setelah diskon, posisi paid aktif sebagai held, perpindahan kembali karena issue/retur/cancellation, dan pembatasan refund agar saldo tidak negatif.
 
 Test tidak memakai seed, tidak menulis produk, dan tidak tersambung ke database live.
 
 ## Verifikasi schema dan migration
 
-- `prisma/schema.prisma` valid untuk provider MySQL dan memuat 25 model.
+- `prisma/schema.prisma` di-format dan divalidasi; schema kini memuat 30 model termasuk voucher dan tiga model ledger finance. Generate memperbarui type client tetapi penggantian DLL engine tidak dapat diselesaikan saat dev server Windows masih aktif.
 - `prisma/migrations/0_baseline/migration.sql` dibandingkan dengan DDL yang digenerate ulang dari schema aktif. Isi DDL cocok; perbedaan diff hanya satu baris kosong terminal.
 - `prisma/migrations/202607190001_api_query_indexes/migration.sql` hanya menambah enam index query secara idempoten melalui pemeriksaan `information_schema`.
-- Pencarian statement destructive/DML pada migration tidak menemukan `DROP`, `DELETE FROM`, `TRUNCATE`, `UPDATE`, `INSERT INTO`, atau `REPLACE INTO`.
+- Migration `202607210002_add_vouchers` menambah enum/model voucher serta snapshot order secara additive; tidak menjalankan seed atau memodifikasi row order yang ada.
+- Migration `202607210003_add_financial_ledgers` menambah `RevenueLedger`, `BiteshipFundAccount`, dan `BiteshipLedger`, melakukan backfill posisi order lama, serta membuat saldo shadow Biteship awal nol tanpa seed.
 - `npm run setup` hanya menjalankan generate + migrate deploy. Seed tetap merupakan aksi eksplisit development melalui `db:seed`/`setup:demo`.
 - `scripts/migrate-private-media.mjs` dan `scripts/hash-admin-password.mjs` lolos pemeriksaan sintaks.
 
-Migration **tidak dijalankan** karena lingkungan audit tidak memiliki clone MySQL/data production. Karena itu, keberhasilan DDL terhadap data existing, durasi pembuatan index, dan rollback operasional belum dibuktikan. Ikuti prosedur baseline, backup, rehearsal clone, dan dry-run media pada README sebelum production.
+`npm run db:migrate` dijalankan tanpa seed dan berhasil menerapkan `202607210003_add_financial_ledgers` pada database yang dikonfigurasi. Verifikasi read-only setelah migration menemukan 7 order ter-backfill: saldo available Rp121.000, held Rp398.000, dan saldo Biteship Rp0. `npx next build` lulus. Wrapper `npm run build` berhenti sebelum Next build pada `prisma generate` dengan `EPERM` karena tiga proses dev server aktif mengunci query engine; proses tersebut sengaja tidak dihentikan.
 
 ## Verifikasi UI berbasis source
 
@@ -59,6 +62,7 @@ Pemeriksaan akhir mencakup:
 - wrapping nilai/status panjang, target sentuh minimum 44 px, dan canvas dasar putih;
 - drawer focus trap/Escape/restore/inert, dropdown akun, `aria-pressed`, focus form alamat, dan feedback login;
 - storefront search, filter/empty state, serta tipografi informasi penting minimum 11 px.
+- halaman finance omzet/Biteship, responsive two-column-to-single-column, konfirmasi penarikan, tabel overflow lokal, dan pembatasan aksi pada record otomatis.
 
 Audit source menutup temuan overlap yang terlihat dari grid/cascade, tetapi tidak dapat membuktikan pixel rendering untuk seluruh kombinasi font, browser, zoom, dan data production. Matriks smoke test visual yang masih harus dijalankan terdapat di `docs/ui-audit.md`.
 
@@ -66,13 +70,13 @@ Audit source menutup temuan overlap yang terlihat dari grid/cascade, tetapi tida
 
 Verifikasi ini tidak melakukan:
 
-- koneksi atau migration pada MySQL production/clone;
+- penentuan apakah database terkonfigurasi merupakan clone/staging/production; migration memang dijalankan pada target `.env` aktif;
 - seed atau penulisan data produk;
 - login Google sungguhan;
 - Siteverify Turnstile live;
 - create/get/cancel payment BSTN;
 - quote/booking/tracking/cancel Biteship live;
-- webhook/concurrency test dengan request paralel dan database nyata;
+- webhook/provider live dan concurrency test dengan request paralel;
 - HTTP browser E2E atau screenshot.
 
 Sebelum release, jalankan smoke test pada deployment sandbox yang memiliki HTTPS, MySQL clone, persistent volume, Google, Turnstile, BSTN, dan Biteship. Uji khusus race payment/cancel, retry webhook, double-click booking shipment, pagination data besar, serta restore backup database/media.

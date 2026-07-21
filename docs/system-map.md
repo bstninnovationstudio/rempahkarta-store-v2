@@ -1,8 +1,8 @@
 # Peta sistem REMPAHKARTA v1.3.0
 
-Snapshot source: 19 Juli 2026 (Asia/Jakarta)
+Snapshot source: 21 Juli 2026 (Asia/Jakarta)
 
-Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumlah pada snapshot ini adalah **34 page route** dan **50 API route handler**. Route dinamis ditulis dengan parameter dalam kurung siku.
+Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumlah pada snapshot ini adalah **37 page route** dan **62 API route file**. Route dinamis ditulis dengan parameter dalam kurung siku.
 
 ## Legenda
 
@@ -20,8 +20,8 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | `app/` | App Router: page, layout, route handler, global CSS, dan client page khusus. |
 | `components/` | Komponen storefront, account, checkout/order, admin shell/table/action, dan shipping label. |
 | `lib/` | Domain/server module: auth, query, cache, inventory, provider adapter, validation, media, security. |
-| `prisma/` | Schema 25 model, baseline DDL + migration index idempoten, migration lock MySQL, dan seed demo eksplisit. |
-| `tests/` | Unit/domain test untuk security, product, inventory/state, dan adapter Biteship. |
+| `prisma/` | Schema 30 model, baseline DDL + migration index/voucher/finance additive, migration lock MySQL, dan seed demo eksplisit. |
+| `tests/` | Unit/domain test untuk security, product, inventory/state, voucher/BSTN item, finance, dan adapter Biteship. |
 | `public/` | Logo/aset storefront/demo, manifest/service worker, dan media produk publik saat runtime. |
 | `storage/private/` | Lokasi runtime bukti retur/refund; tidak disajikan statis dan harus dipersist/backup terpisah. |
 | `docs/` | Arsitektur, map, audit, test report, dan snapshot referensi BSTN. |
@@ -51,7 +51,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 15 | `/user/addresses` | Customer | Route kompatibilitas | Redirect ke `/user/settings#addresses`, mempertahankan query aksi/redirect aman. |
 | 16 | `/user/payment` | Customer | Route kompatibilitas | Redirect ke `/user/settings#payment`. |
 
-## Page route: admin (18)
+## Page route: admin (20)
 
 | # | Route | Akses | Data/komponen utama | Query dan perilaku |
 | ---: | --- | --- | --- | --- |
@@ -73,8 +73,11 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 32 | `/admin/users/[id]` | Admin | Profil, alamat, rekening, riwayat order | Profil unik; order dipaginasi 10/page dan total dihitung terpisah. |
 | 33 | `/admin/settings` | Admin | Readiness konfigurasi server | Membaca keberadaan konfigurasi; tidak memuat credential mentah. |
 | 34 | `/admin/audit` | Admin | Filter dan `AuditLog` | Pagination 20/50; select field minimum dan urutan deterministik. |
+| 35 | `/admin/vouchers` | Admin | `VoucherManager`, CRUD, duplikasi, riwayat pemakaian | Voucher terakhir, status semantik, form modal dan tabel overflow lokal. |
+| 36 | `/admin/finance/omzet` | Admin | Metric omzet, penarikan, `RevenueLedger` | Seluruh metric dari aggregate ledger; transaksi 20/page. |
+| 37 | `/admin/finance/biteship` | Admin | Shadow balance, biaya request, CRUD manual, `BiteshipLedger` | Akun singleton + ledger terpaginasi 20/page; record otomatis immutable. |
 
-`app/admin/layout.tsx` adalah security/layout boundary untuk route 18–34: `requireAdmin()`, shell desktop, drawer tablet/mobile, dan navigasi admin. `app/user/layout.tsx` adalah boundary session/layout route akun, menampilkan progress completeness dan navigasi account.
+`app/admin/layout.tsx` adalah security/layout boundary untuk route 18–37: `requireAdmin()`, shell desktop, drawer tablet/mobile, dan navigasi admin. `app/user/layout.tsx` adalah boundary session/layout route akun, menampilkan progress completeness dan navigasi account.
 
 ## API route: autentikasi, katalog, checkout, dan customer order (16)
 
@@ -85,9 +88,9 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 3 | `/api/auth/me` | `GET` | Customer | — | — | Identitas session dan status profile completeness. |
 | 4 | `/api/products` | `GET` | Publik | 12 default, 48 maksimum | — | List snapshot cache katalog dengan filter kategori dan metadata page. |
 | 5 | `/api/products/[slug]` | `GET` | Publik | — | — | Detail satu produk dari cache katalog. |
-| 6 | `/api/locations/search` | `GET` | Customer | Hasil provider dibatasi | 25/menit; Turnstile `location_search` | Cari Area ID Biteship setelah aksi user. |
-| 7 | `/api/checkout/quotes` | `POST` | Customer | Hasil provider dibatasi | 25/menit; Turnstile `shipping_quotes` | Hitung tarif kurir aktif dari item server. |
-| 8 | `/api/checkout/orders` | `POST` | Customer + profil lengkap | Maks. 20 item | 10/menit; Turnstile `checkout_order` | Re-rate, reserve stok, buat order/payment, rollback reservation bila payment gagal. |
+| 6 | `/api/locations/search` | `GET` | Customer | Hasil provider dibatasi | 25/menit; Turnstile `location_search`; saldo shadow | Cari Area ID Biteship setelah aksi user dan catat biaya request. |
+| 7 | `/api/checkout/quotes` | `POST` | Customer | Hasil provider dibatasi | 25/menit; Turnstile `shipping_quotes`; saldo shadow | Hitung tarif kurir aktif dari item server dan catat biaya request. |
+| 8 | `/api/checkout/orders` | `POST` | Customer + profil lengkap | Maks. 20 item | 10/menit; Turnstile `checkout_order`; saldo shadow | Re-rate berbiaya, reserve stok, buat order/payment, rollback reservation bila payment gagal. |
 | 9 | `/api/orders/[number]/payment/status` | `GET` | Owner | Satu payment terbaru | — | Status payment terbaru tanpa mengubah data. |
 | 10 | `/api/orders/[number]/payment/sync` | `POST` | Owner | — | 15/menit; Turnstile `payment_sync` | Rekonsiliasi status BSTN server-to-server. |
 | 11 | `/api/orders/[number]/cancel` | `POST` | Owner | — | 10/menit | Cancel pending payment atau buat cancellation request sesuai state. |
@@ -108,7 +111,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 22 | `/api/user/payment` | `GET`, `POST` | Customer | Satu setting | `POST`: 20/menit + Turnstile `user_payment` | Baca/upsert rekening refund bank/e-wallet. |
 | 23 | `/api/user/cart` | `GET`, `POST`, `PUT` | Customer | Maksimum 50 item | Write: 30/menit gabungan | Baca, tambah, atau sinkron penuh cart dengan validasi produk/varian. |
 
-## API route: admin (25)
+## API route: admin (30)
 
 | # | Route | Metode | Akses | Pagination/batas | Kontrol tambahan | Tujuan |
 | ---: | --- | --- | --- | --- | --- | --- |
@@ -130,13 +133,23 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 39 | `/api/admin/orders/[number]/transition` | `POST` | Admin | — | — | Jalankan transisi fulfillment yang sah melalui state machine. |
 | 40 | `/api/admin/orders/[number]/manual-status` | `POST` | Admin + demo lokal | — | — | Simulasi status/issue; 404 tanpa dua flag demo non-production. |
 | 41 | `/api/admin/orders/[number]/duplicate` | `POST` | Admin + demo lokal | — | — | Duplikasi order operasional; 404 tanpa dua flag demo non-production. |
-| 42 | `/api/admin/orders/[number]/shipment` | `POST` | Admin | — | 10/menit | Book shipment Biteship dengan quote/collection method terpilih. |
-| 43 | `/api/admin/orders/[number]/shipment/sync` | `POST` | Admin | — | — | Rekonsiliasi shipment, waybill, harga, dan fulfillment. |
+| 42 | `/api/admin/orders/[number]/shipment` | `POST` | Admin | — | 10/menit; saldo shadow ≥ quote | Book shipment Biteship dan debit harga quote setelah reservasi atomik. |
+| 43 | `/api/admin/orders/[number]/shipment/sync` | `POST` | Admin | — | Saldo shadow tracking | Rekonsiliasi shipment, waybill, harga, fulfillment, dan posisi omzet. |
 | 44 | `/api/admin/orders/[number]/payment/sync` | `POST` | Admin | — | 15/menit; Turnstile `admin_payment_sync` | Rekonsiliasi payment BSTN dan audit actor admin. |
 | 45 | `/api/admin/orders/[number]/cancellation` | `POST` | Admin | — | 20/menit | Setujui/tolak cancellation, koordinasi provider, inventory, refund state. |
 | 46 | `/api/admin/orders/[number]/resolve` | `POST` | Admin | — | — | Selesaikan issue order melalui flow refund/return/finish yang ada. |
 | 47 | `/api/admin/returns/[id]/decision` | `POST` | Admin | — | 20/menit | Setujui/tolak kasus secara serialized dan sinkronkan state order/return. |
 | 48 | `/api/admin/returns/[id]/refund` | `POST` | Admin | Satu refund operation | 10/menit | Verifikasi bukti privat, lock order, cegah over-refund, catat referensi/audit/state. |
+
+## API route: keuangan admin (5)
+
+| Route | Metode | Akses | Kontrol tambahan | Tujuan |
+| --- | --- | --- | --- | --- |
+| `/api/admin/finance/omzet` | `GET` | Admin | Pagination 20 default/100 maksimum | Aggregate saldo ledger dan daftar transaksi omzet. |
+| `/api/admin/finance/omzet/withdraw` | `POST` | Admin | 10/menit, exact Origin | Validasi saldo tersedia atomik, catat penarikan, dan audit. |
+| `/api/admin/finance/biteship` | `GET`, `POST` | Admin | GET pagination; POST 20/menit + exact Origin | Baca shadow balance/ledger atau tambah catatan manual. |
+| `/api/admin/finance/biteship/[id]` | `PUT`, `DELETE` | Admin | 20/menit + exact Origin | Edit/hapus hanya record manual sambil merekonsiliasi saldo. |
+| `/api/admin/finance/biteship/settings` | `PUT` | Admin | 10/menit + exact Origin | Atur biaya area, rate, dan tracking. |
 
 ## API route: provider webhook (2)
 
@@ -145,20 +158,32 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 49 | `/api/webhooks/biteship` | `POST` | Shared secret kuat; probe kosong/test tanpa side effect | — | Bucket webhook 1.000/menit | Deduplikasi/retry inbox, tolak stale/regressive state, proses status/price/waybill/inventory/issue. |
 | 50 | `/api/webhooks/bstn` | `POST` | HMAC + shared secret kuat | — | Bucket webhook 1.000/menit | Deduplikasi/retry inbox, verifikasi reference/amount, GET provider, update payment/order/inventory. |
 
-## Model Prisma (25)
+## API route: voucher dan cron (6)
+
+| Route | Metode | Akses | Kontrol tambahan | Tujuan |
+| --- | --- | --- | --- | --- |
+| `/api/vouchers/check` | `POST` | Customer | 15/menit, exact Origin, Turnstile `voucher_check` | Evaluasi UI kode berdasarkan subtotal/ongkir saat ini; checkout tetap authoritative. |
+| `/api/vouchers/public` | `GET` | Publik | Cache response singkat | Daftar voucher public yang active dan berada dalam masa berlaku. |
+| `/api/cron/vouchers` | `GET`, `POST` | Scheduler | Bearer atau `X-Cron-Secret` | Menandai promo expired/limit total habis sebagai `FINISH`. |
+| `/api/admin/vouchers` | `GET`, `POST` | Admin | GET pagination; POST exact Origin | List dan create voucher + audit. |
+| `/api/admin/vouchers/[id]` | `GET`, `PUT` | Admin | PUT exact Origin | Detail voucher, 100 penggunaan terbaru, dan update + audit. |
+| `/api/admin/vouchers/[id]/duplicate` | `POST` | Admin | exact Origin | Duplikasi konfigurasi dengan kode baru dan status awal `PAUSE`. |
+
+## Model Prisma (30)
 
 | Domain | Model | Peran |
 | --- | --- | --- |
 | Katalog | `Product`, `ProductCategory`, `ProductVariant`, `ProductImage` | Master produk, satu kategori opsional, unit jual, media. |
 | Inventory | `Warehouse`, `InventoryLevel`, `InventoryMovement` | Gudang, saldo/version per varian, ledger side effect idempoten. |
 | Customer | `User`, `UserAddress`, `UserRefundSetting`, `CartItem` | Identitas Google/session lock, alamat, rekening refund, cart server. |
-| Order | `Order`, `OrderItem`, `OrderAddress` | Header state/total/owner, snapshot item, snapshot alamat. |
+| Order/voucher | `Order`, `OrderItem`, `OrderAddress`, `Voucher`, `VoucherUsage` | Header state/total/owner, snapshot item/alamat/voucher, aturan dan pemakaian promo. |
 | Payment | `Payment`, `PaymentEvent` | Payment lokal/provider dan histori delivery/status. |
 | Shipping | `ShippingQuote`, `Shipment`, `ShipmentTrackingEvent` | Snapshot tarif terpilih, booking, status/waybill/harga/tracking. |
 | Purnajual | `CancellationRequest`, `ReturnRequest`, `ReturnItem`, `Refund` | Permintaan batal, kasus retur/issue, item, refund manual. |
 | Operasional | `WebhookInbox`, `AuditLog` | Idempotency inbox provider dan jejak perubahan aktor/entity. |
+| Keuangan | `RevenueLedger`, `BiteshipFundAccount`, `BiteshipLedger` | Posisi omzet available/held, shadow balance atomik, dan histori dana Biteship. |
 
-Enum state kanonis: `ProductStatus`, `PaymentState`, `FulfillmentState`, `ReturnState`, `RefundState`, dan `CancellationState`.
+Enum state kanonis mencakup state order/retur, voucher, `RevenueLedgerType`, dan `BiteshipLedgerType` pada `prisma/schema.prisma`.
 
 ## Peta modul server
 
@@ -181,8 +206,9 @@ Enum state kanonis: `ProductStatus`, `PaymentState`, `FulfillmentState`, `Return
 | `lib/rate-limit.ts`, `proxy.ts` | Bucket global/scope dan header 429 | Seluruh API. |
 | `lib/turnstile.ts` | Siteverify fail-closed dan site key dev | Login, checkout, profile/address/payment sync. |
 | `lib/inventory.ts` | Commit/release/restock + movement dedupe | Checkout, payment, shipment, cancellation, webhook. |
-| `lib/repositories/order-repository.ts` | Reserve dan create snapshot order atomik | Checkout order. |
+| `lib/repositories/order-repository.ts`, `lib/voucher.ts` | Reserve, evaluasi voucher, dan create snapshot order atomik | Checkout order, voucher check/public, cron. |
 | `lib/payment-sync.ts` | Rekonsiliasi payment provider, state order, inventory, dan audit secara konsisten | Sync customer/admin, webhook BSTN, dan test domain. |
+| `lib/finance.ts` | Posisi omzet, penarikan, shadow balance, reservasi/reversal biaya, dan CRUD manual atomik | Lifecycle payment/order/return/shipment serta page/API keuangan. |
 | `lib/adapters/bstn.ts` | Create/cancel/get payment dan verify webhook | Checkout, sync, cancel, webhook. |
 | `lib/adapters/biteship.ts` | Area/rate/order/tracking/cancel provider | Checkout, shipment, sync. |
 | `lib/shipping-state.ts` | Normalisasi dan mapping status provider | Webhook, admin shipment, timeline. |
@@ -199,11 +225,12 @@ Enum state kanonis: `ProductStatus`, `PaymentState`, `FulfillmentState`, `Return
 | --- | --- | --- |
 | Store shell | `store-header`, `store-footer` | Navigasi storefront, akun, cart, footer. |
 | Katalog | `product-catalog`, `product-card`, `product-detail-view`, `product-purchase` | Filter/grid, visual produk, pilihan varian, add-to-cart. |
-| Checkout/cart | `cart-sync`, `checkout-form`, cart/payment page clients | Sinkron cart, lokasi/tarif/Turnstile/order, status payment. |
+| Checkout/cart | `cart-sync`, `checkout-form`, `public-voucher-marquee`, cart/payment page clients | Sinkron cart, lokasi/tarif/promo/Turnstile/order, status payment. |
 | Akun | `user-account-navigation`, `user-completion-gate`, `user-contact-settings-client`, `user-addresses-client`, `user-payment-client` | Navigasi responsif, onboarding, kontak, alamat, rekening. |
 | Order customer | `order-cancel-button`, payment page client, `return-form`, `mock-payment-actions` | Aksi yang dibatasi ownership/state. |
 | Admin shell/list | `admin-shell`, `admin-pagination`, `status-pill` | Sidebar/drawer, paging, status semantik. |
 | Admin mutation | `product-form`, category editors, inventory/order/return action components | Mutasi katalog, stok, transaksi, shipment, return/refund tanpa mengganti state flow. |
+| Admin finance | `revenue-finance-manager`, `biteship-finance-manager` | Penarikan omzet, biaya request, CRUD dana manual, dan feedback mutasi. |
 | Shipping label | `shipping-label` | Label A6 dan barcode untuk route resi. |
 
 ## Boundary data penting

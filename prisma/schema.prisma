@@ -80,6 +80,48 @@ enum CancellationState {
   provider_failed
 }
 
+enum RevenueLedgerType {
+  ORDER_HOLD
+  ORDER_AVAILABLE
+  ORDER_RELEASE
+  ORDER_REFUND
+  WITHDRAWAL
+  ADJUSTMENT_ADD
+  ADJUSTMENT_SUBTRACT
+}
+
+enum BiteshipLedgerType {
+  TOP_UP
+  DEDUCT_MANUAL
+  USAGE_AREA
+  USAGE_RATE
+  USAGE_SHIPMENT
+  USAGE_TRACKING
+  REVERSAL
+}
+
+enum VoucherStatus {
+  ACTIVE
+  PAUSE
+  FINISH
+}
+
+enum VoucherAvailable {
+  public
+  private
+}
+
+enum VoucherMode {
+  NOMINAL
+  PERCENTAGE
+}
+
+enum VoucherTarget {
+  TOTAL
+  PRODUCT_SUBTOTAL
+  SHIPPING
+}
+
 model Product {
   id             String           @id @default(cuid())
   slug           String           @unique @db.VarChar(180)
@@ -217,6 +259,10 @@ model Order {
   currency         String                @default("IDR") @db.VarChar(3)
   subtotal         BigInt
   shippingFee      BigInt
+  voucherId        String?
+  voucherCode      String?               @db.VarChar(50)
+  discountAmount   BigInt                @default(0)
+  voucherTarget    VoucherTarget?
   serviceFee       BigInt                @default(0)
   grandTotal       BigInt
   paymentState     PaymentState          @default(not_created)
@@ -226,6 +272,8 @@ model Order {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   user             User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  voucher          Voucher?              @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  voucherUsage     VoucherUsage?
   items            OrderItem[]
   addresses        OrderAddress[]
   payments         Payment[]
@@ -234,6 +282,7 @@ model Order {
   returns          ReturnRequest[]
   refunds          Refund[]
   cancellations    CancellationRequest[]
+  revenueLedgers   RevenueLedger[]
 
   @@index([paymentState, createdAt])
   @@index([fulfillmentState, createdAt])
@@ -243,6 +292,99 @@ model Order {
   @@index([userId, createdAt])
   @@index([userId, paymentState, createdAt])
   @@index([guestEmail, paymentState, createdAt])
+  @@index([voucherId])
+}
+
+model RevenueLedger {
+  id             String            @id @default(cuid())
+  orderId        String?
+  dedupeKey      String            @unique @db.VarChar(220)
+  type           RevenueLedgerType
+  availableDelta BigInt            @default(0)
+  heldDelta      BigInt            @default(0)
+  grossAmount    BigInt            @default(0)
+  shippingFee    BigInt            @default(0)
+  serviceFee     BigInt            @default(0)
+  adminFee       BigInt            @default(0)
+  discountAmount BigInt            @default(0)
+  netAmount      BigInt            @default(0)
+  notes          String?           @db.VarChar(500)
+  actorId        String?           @db.VarChar(120)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  order          Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt])
+  @@index([orderId, createdAt])
+  @@index([createdAt])
+}
+
+model BiteshipFundAccount {
+  id                String   @id @default("primary") @db.VarChar(30)
+  balance           BigInt   @default(0)
+  areaSearchCost    BigInt   @default(0)
+  rateQuoteCost     BigInt   @default(0)
+  trackingCheckCost BigInt   @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model BiteshipLedger {
+  id          String             @id @default(cuid())
+  type        BiteshipLedgerType
+  amount      BigInt
+  referenceId String?            @db.VarChar(160)
+  dedupeKey   String?            @unique @db.VarChar(220)
+  notes       String?            @db.VarChar(500)
+  actorId     String?            @db.VarChar(120)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([type, createdAt])
+  @@index([referenceId, createdAt])
+  @@index([createdAt])
+}
+
+model Voucher {
+  id            String           @id @default(cuid())
+  name          String           @db.VarChar(160)
+  description   String?          @db.Text
+  code          String           @unique @db.VarChar(50)
+  status        VoucherStatus    @default(ACTIVE)
+  available     VoucherAvailable @default(public)
+  mode          VoucherMode      @default(NOMINAL)
+  discountValue BigInt
+  minPurchase   BigInt?
+  maxDiscount   BigInt?
+  dailyLimit    Int?
+  totalLimit    Int?
+  userLimit     Int?
+  totalUsage    Int              @default(0)
+  startAt       DateTime?
+  endAt         DateTime?
+  target        VoucherTarget    @default(TOTAL)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  orders        Order[]
+  usages        VoucherUsage[]
+
+  @@index([status, available, code])
+  @@index([endAt, status])
+}
+
+model VoucherUsage {
+  id             String   @id @default(cuid())
+  voucherId      String
+  orderId        String   @unique
+  userId         String
+  discountAmount BigInt
+  createdAt      DateTime @default(now())
+  voucher        Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([voucherId, userId])
+  @@index([voucherId, createdAt])
 }
 
 model OrderItem {
@@ -491,6 +633,7 @@ model User {
   addresses        UserAddress[]
   refundSetting    UserRefundSetting?
   cartItems        CartItem[]
+  voucherUsages    VoucherUsage[]
 
   @@index([createdAt])
 }

@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
 import { randomToken, sha256 } from "@/lib/security";
+import { calculateServiceFee } from "@/lib/fee";
+import { evaluateVoucher, normalizeVoucherCode } from "@/lib/voucher";
 
 export type CheckoutInput = {
   name: string;
@@ -8,7 +10,7 @@ export type CheckoutInput = {
   address: string;
   postalCode: string;
   areaId?: string;
-  userId?: string;
+  userId: string;
   shipping: {
     company: string;
     type: string;
@@ -18,6 +20,7 @@ export type CheckoutInput = {
     collectionMethods?: string[];
   };
   items: Array<{ variantId: string; quantity: number }>;
+  voucherCode?: string;
 };
 
 export async function createOrderWithReservation(input: CheckoutInput) {
@@ -78,8 +81,22 @@ export async function createOrderWithReservation(input: CheckoutInput) {
     }
 
     const shipping = BigInt(input.shipping.price);
-    const { calculateServiceFee } = await import("@/lib/fee");
-    const feeBreakdown = calculateServiceFee(Number(subtotal + shipping));
+    const voucherEvaluation = input.voucherCode
+      ? await evaluateVoucher(tx, { code: normalizeVoucherCode(input.voucherCode), userId: input.userId, amounts: { subtotal, shippingFee: shipping } })
+      : null;
+    if (voucherEvaluation) {
+      const quota = await tx.voucher.updateMany({
+        where: {
+          id: voucherEvaluation.voucher.id,
+          status: "ACTIVE",
+          ...(voucherEvaluation.voucher.totalLimit !== null ? { totalUsage: { lt: voucherEvaluation.voucher.totalLimit } } : {}),
+        },
+        data: { totalUsage: { increment: 1 } },
+      });
+      if (quota.count !== 1) throw new Error("Kuota voucher sudah habis");
+    }
+    const discountAmount = voucherEvaluation?.discountAmount || BigInt(0);
+    const feeBreakdown = calculateServiceFee(Number(subtotal + shipping - discountAmount));
     const serviceFee = BigInt(feeBreakdown.serviceFee);
     const grandTotal = BigInt(feeBreakdown.grandTotal);
 
@@ -94,6 +111,12 @@ export async function createOrderWithReservation(input: CheckoutInput) {
         accessTokenHash: await sha256(token),
         subtotal,
         shippingFee: shipping,
+        ...(voucherEvaluation ? {
+          voucher: { connect: { id: voucherEvaluation.voucher.id } },
+          voucherCode: voucherEvaluation.voucher.code,
+          discountAmount,
+          voucherTarget: voucherEvaluation.voucher.target,
+        } : {}),
         serviceFee,
         grandTotal,
         paymentState: "not_created",
@@ -148,6 +171,9 @@ export async function createOrderWithReservation(input: CheckoutInput) {
         },
       },
     });
+    if (voucherEvaluation) {
+      await tx.voucherUsage.create({ data: { voucherId: voucherEvaluation.voucher.id, orderId: created.id, userId: input.userId, discountAmount } });
+    }
     await tx.auditLog.create({
       data: {
         actorType: input.userId ? "customer" : "guest",
@@ -159,7 +185,7 @@ export async function createOrderWithReservation(input: CheckoutInput) {
       },
     });
     return created;
-  });
+  }, { isolationLevel: "Serializable" });
 
   return { order, token };
 }

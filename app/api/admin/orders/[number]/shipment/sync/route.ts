@@ -8,6 +8,7 @@ import { fulfillmentFromBiteshipStatus, handedOverBiteshipStatuses } from "@/lib
 import { serializeBigInt } from "@/lib/serialize";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { getBiteshipApiKey } from "@/lib/env";
+import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds, syncOrderRevenue } from "@/lib/finance";
 
 export async function POST(_: Request, { params }: { params: Promise<{ number: string }> }) {
   const admin = await adminFromRequest(); if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,7 +19,14 @@ export async function POST(_: Request, { params }: { params: Promise<{ number: s
   if (!shipment?.providerOrderId) return NextResponse.json({ error: "Shipment Biteship belum tersedia" }, { status: 404 });
   try {
     const adapter = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", apiKey);
-    const detail = await adapter.getOrder(shipment.providerOrderId);
+    const fundReservation = await reserveBiteshipFunds({ kind: "tracking", referenceId: shipment.order.publicNumber, notes: `Sinkronisasi shipment ${shipment.order.publicNumber}`, actorId: String(admin.email) });
+    let detail;
+    try {
+      detail = await adapter.getOrder(shipment.providerOrderId);
+    } catch (cause) {
+      await reverseBiteshipFunds(fundReservation, `Sinkronisasi shipment ${shipment.order.publicNumber} gagal`);
+      throw cause;
+    }
     const actual = BigInt(detail.price ?? Number(shipment.actualPrice ?? shipment.quotedPrice));
     const status = normalizeBiteshipStatus(detail.status);
     const waybill = detail.courier?.waybill_id || shipment.waybillId;
@@ -36,10 +44,14 @@ export async function POST(_: Request, { params }: { params: Promise<{ number: s
         }
         await tx.order.update({ where: { id: shipment.orderId }, data: { fulfillmentState: fulfillment, ...(fulfillment === "cancelled" && shipment.order.paymentState === "paid" ? { paymentState: "refund_pending" } : {}) } });
       }
+      await syncOrderRevenue(tx, shipment.orderId, String(admin.email));
       await tx.auditLog.create({ data: { actorType: "admin", actorId: String(admin.email), action: "shipment.synced", entityType: "shipment", entityId: shipment.id, before: { status: shipment.status, waybillId: shipment.waybillId, actualPrice: shipment.actualPrice?.toString() }, after: { status, waybillId: waybill, actualPrice: actual.toString(), fulfillment } } });
       return result;
     });
     invalidateCatalogCache();
     return NextResponse.json({ success: true, shipment: serializeBigInt(updated), fulfillment });
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Sinkronisasi gagal" }, { status: 502 }); }
+  } catch (error) {
+    if (error instanceof BiteshipBalanceError) return NextResponse.json({ error: "Saldo Biteship tidak mencukupi untuk sinkronisasi shipment" }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Sinkronisasi gagal" }, { status: 502 });
+  }
 }

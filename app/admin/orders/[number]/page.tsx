@@ -160,6 +160,7 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ n
             <div className="detail-list">
               <div><span>Subtotal</span><strong className="admin-numeric">{rupiah(order.subtotal)}</strong></div>
               <div><span>Pengiriman</span><strong className="admin-numeric">{rupiah(order.shippingFee)}</strong></div>
+              {order.discountAmount > 0 && <div><span>Diskon voucher ({order.voucherCode || "PROMO"})</span><strong className="admin-numeric tone-success">-{rupiah(order.discountAmount)}</strong></div>}
               <div><span>Biaya Layanan</span><strong className="admin-numeric">{rupiah(order.serviceFee)}</strong></div>
               <div><span>Total invoice</span><strong className="admin-numeric">{rupiah(order.grandTotal)}</strong></div>
               <div><span>QRIS dibayar</span><strong className="admin-numeric">{rupiah(order.payableAmount)}</strong></div>

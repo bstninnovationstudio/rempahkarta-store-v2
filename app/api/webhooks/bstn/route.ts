@@ -8,6 +8,7 @@ import { isPrismaUniqueConstraintError } from "@/lib/prisma-errors";
 import { Prisma } from "@prisma/client";
 import { authoritativePaidSourceStates } from "@/lib/payment-sync";
 import { getBstnApiKey } from "@/lib/env";
+import { syncOrderRevenue } from "@/lib/finance";
 
 type WebhookPayload = {
   event?: string;
@@ -158,6 +159,8 @@ export async function POST(request: Request) {
         data: { actorType: "system", action: "payment.signal_ignored", entityType: "order", entityId: local.orderId, after: { currentStatus: current.status, providerStatus } },
       });
     }
+
+    await syncOrderRevenue(tx, local.orderId);
 
     await tx.webhookInbox.update({
       where: { source_deliveryKey: { source: "bstn", deliveryKey: deliveryId } },

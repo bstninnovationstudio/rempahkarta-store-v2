@@ -4,10 +4,10 @@ import { z } from "zod";
 import { BiteshipAdapter, normalizeBiteshipStatus } from "@/lib/adapters/biteship";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { sha256 } from "@/lib/security";
 import { serializeBigInt } from "@/lib/serialize";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBiteshipApiKey } from "@/lib/env";
+import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds } from "@/lib/finance";
 
 const schema = z.object({
   collectionMethod: z.enum(["pickup", "drop_off"]),
@@ -106,6 +106,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
       apiKey,
     );
     const reference = `SHP-${order.publicNumber}`;
+    const fundReservation = await reserveBiteshipFunds({
+      kind: "shipment",
+      amount: quote.price,
+      referenceId: order.publicNumber,
+      dedupeKey: `biteship:shipment:${order.publicNumber}`,
+      notes: `Pembuatan shipment ${order.publicNumber}`,
+      actorId: String(admin.email),
+    });
     let providerResult;
     try {
       providerResult = await adapter.createOrder({
@@ -133,6 +141,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
         items: shippingItems,
       });
     } catch (cause) {
+      await reverseBiteshipFunds(fundReservation, `Pembuatan shipment ${order.publicNumber} gagal`);
       await prisma.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
       throw cause;
     }
@@ -186,6 +195,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   } catch (cause) {
     await prisma.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
     if (cause instanceof BookingConflictError) return NextResponse.json({ error: cause.message }, { status: 409 });
+    if (cause instanceof BiteshipBalanceError) return NextResponse.json({ error: "Saldo Biteship tidak mencukupi untuk membuat shipment" }, { status: 409 });
     return NextResponse.json({ error: cause instanceof Error ? cause.message : "Booking Biteship gagal" }, { status: 502 });
   }
 }

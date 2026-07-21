@@ -5,6 +5,7 @@ import { warehouseAreaId, getBiteshipApiKey } from "@/lib/env";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds } from "@/lib/finance";
 
 const schema = z.object({
   turnstileToken: z.string().min(1).max(2048),
@@ -61,7 +62,21 @@ export async function POST(request: Request) {
     });
     const adapter = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", biteshipApiKey);
     const enabledCouriers = (process.env.ENABLED_COURIERS || "jne,sicepat,anteraja,jnt").split(",").map(c => c.trim().toLowerCase()).filter(Boolean).join(",");
-    const data = await adapter.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: input.destinationAreaId, destinationPostalCode: input.destinationPostalCode, couriers: enabledCouriers, items: shippingItems });
+    const reservation = await reserveBiteshipFunds({
+      kind: "rate",
+      referenceId: customer.id,
+      notes: `Pengecekan ongkir Biteship oleh pelanggan ${customer.id}`,
+    });
+    let data;
+    try {
+      data = await adapter.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: input.destinationAreaId, destinationPostalCode: input.destinationPostalCode, couriers: enabledCouriers, items: shippingItems });
+    } catch (cause) {
+      await reverseBiteshipFunds(reservation, "Pengecekan ongkir Biteship gagal");
+      throw cause;
+    }
     return NextResponse.json(data);
-  } catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "Tarif pengiriman gagal dimuat" }, { status: 502 }); }
+  } catch (cause) {
+    if (cause instanceof BiteshipBalanceError) return NextResponse.json({ error: "Permintaan tidak dapat diproses" }, { status: 409 });
+    return NextResponse.json({ error: cause instanceof Error ? cause.message : "Tarif pengiriman gagal dimuat" }, { status: 502 });
+  }
 }

@@ -8,6 +8,7 @@ import { releaseOrderReservation, restockCommittedOrder } from "@/lib/inventory"
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBiteshipApiKey } from "@/lib/env";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const schema = z.object({
   decision: z.enum(["approved", "rejected"]),
@@ -69,6 +70,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
             after: { reason: body.data.reason },
           },
         });
+        await syncOrderRevenue(tx, current.id, String(admin.email));
       });
       return NextResponse.json({ success: true, state: "rejected" });
     }
@@ -124,6 +126,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
         });
         cancellationId = created.id;
       }
+      await syncOrderRevenue(tx, current.id, String(admin.email));
       return {
         alreadyCancelled: false as const,
         cancellationId,
@@ -225,6 +228,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
           after: { reason: body.data.reason, refundPending: isPaid },
         },
       });
+        await syncOrderRevenue(tx, current.id, String(admin.email));
         return { refundPending: requiresRefund, conflict: null as string | null };
       });
     } catch (error) {
@@ -262,6 +266,7 @@ async function markProviderFailure(orderId: string, cancellationId: string, reas
           after: { message: reason },
         },
       });
+      await syncOrderRevenue(tx, orderId, adminEmail);
     }
   });
 }

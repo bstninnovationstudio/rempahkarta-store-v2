@@ -1,5 +1,6 @@
 import { Prisma, type PaymentState } from "@prisma/client";
 import { releaseOrderReservation } from "@/lib/inventory";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const failedProviderStatuses = new Set(["expired", "canceled", "failed", "denied"]);
 export const authoritativePaidSourceStates = [
@@ -88,6 +89,8 @@ export async function applyVerifiedPaymentStatus(
       });
     }
   }
+
+  await syncOrderRevenue(tx, input.orderId);
 
   return { transitioned, previousStatus: payment.status, providerStatus: input.providerStatus };
 }

@@ -14,6 +14,8 @@ import {
   RotateCcw,
   Settings,
   ShoppingBag,
+  Ticket,
+  WalletCards,
   Users,
   Warehouse,
   X,
@@ -33,9 +35,17 @@ const navigation = [
       ["/admin/products", "Produk", ShoppingBag],
       ["/admin/categories", "Kategori", FolderTree],
       ["/admin/inventory", "Inventori", Warehouse],
+      ["/admin/vouchers", "Voucher", Ticket],
       ["/admin/shipments", "Pengiriman", PackageSearch],
       ["/admin/returns", "Retur & refund", RotateCcw],
       ["/admin/users", "Pelanggan", Users],
+    ],
+  },
+  {
+    label: "Keuangan",
+    items: [
+      ["/admin/finance/omzet", "Dana omzet", WalletCards],
+      ["/admin/finance/biteship", "Dana Biteship", PackageSearch],
     ],
   },
   {

@@ -127,6 +127,7 @@ Panel admin tersedia di `/admin-login`.
 | `ENABLED_COURIERS` | Kode kurir yang boleh ditawarkan, dipisahkan koma. |
 | `WAREHOUSE_*` | Origin/pickup dan Area ID gudang. |
 | `RATE_LIMIT_TRUSTED_IP_HEADER` | Header IP yang sudah dihapus/ditulis ulang oleh reverse proxy tepercaya; hanya `cf-connecting-ip`, `x-real-ip`, atau `x-forwarded-for`. |
+| `CRON_SECRET` | Secret Bearer atau `X-Cron-Secret` untuk cron voucher harian. Wajib diisi sebelum scheduler diaktifkan. |
 
 `.env.example` sengaja memakai placeholder secret yang gagal validasi dan test key resmi Turnstile untuk localhost. Ganti seluruhnya; production (APP_MODE=production) menolak marker contoh, shared webhook secret di bawah 16 karakter, test key Turnstile, action/hostname yang tidak cocok, atau JWT secret di bawah 32 karakter. Jangan masukkan `.env`, credential, dump database, atau media pelanggan ke Git/arsip distribusi.
 
@@ -191,6 +192,7 @@ Siteverify server wajib untuk aksi berikut:
 - pencarian lokasi: `location_search`;
 - cek ongkir: `shipping_quotes`;
 - membuat pesanan: `checkout_order`;
+- mengecek kode voucher: `voucher_check`;
 - simpan kontak: `user_profile`;
 - tambah/edit/hapus alamat: `user_address`;
 - simpan rekening refund: `user_payment`;
@@ -224,6 +226,24 @@ awaiting_payment → awaiting_processing → processing → packed
 - Cancel sebelum handover dapat mengembalikan stok; setelah handover pelanggan memakai alur retur.
 - Refund tetap manual dan membutuhkan rekening pelanggan, bukti, serta referensi admin.
 - Flow transaksi/admin yang ada tidak diganti; peningkatan difokuskan pada batas query, autentikasi, validasi, dan presentasi.
+
+## Voucher promo
+
+- Voucher dikelola di `/admin/vouchers` dengan kode unik, status `ACTIVE`/`PAUSE`/`FINISH`, visibilitas public/private, nominal/persentase, target total/subtotal produk/ongkir, masa berlaku WIB, serta limit total harian, total, dan per akun.
+- Tidak ada mekanisme klaim. Pelanggan yang login dapat mengecek kode di checkout; hasil cek hanya untuk UI dan checkout menghitung ulang voucher secara authoritative di transaksi MySQL serializable.
+- Order menyimpan snapshot `voucherCode`, `discountAmount`, dan target voucher. Pemakaian mempunyai relasi unik ke order; kuota total dinaikkan atomik dan dilepas kembali bila pembentukan pembayaran gagal.
+- Diskon diterapkan sebelum biaya layanan/QRIS. Karena BSTN hanya menerima harga item non-negatif, diskon dipetakan ke harga line produk/ongkir (dengan pemecahan unit bila diperlukan) sehingga jumlah item tetap tepat sama dengan nominal BSTN.
+- Voucher yang lewat `endAt` atau mencapai limit total ditandai `FINISH` secara lazy saat evaluasi dan oleh `GET`/`POST /api/cron/vouchers`. Jadwalkan endpoint cron tersebut sekali setiap hari dengan `Authorization: Bearer $CRON_SECRET` (atau header `X-Cron-Secret`). Limit harian/per-user tidak menandai `FINISH` karena dapat berlaku lagi pada hari/account lain.
+- Voucher public muncul setelah katalog pada beranda, bergerak otomatis namun berhenti saat hover/fokus serta menghormati reduced motion. Voucher private tetap dapat dipakai bila kode diketahui tetapi tidak ditampilkan.
+
+## Keuangan internal
+
+- `/admin/finance/omzet` mengelola ledger omzet bersih produk. Nilai bersih adalah `subtotal - discountAmount`; ongkir, service fee, dan fee BSTN disimpan sebagai snapshot audit dan tidak dikurangi dua kali.
+- Dana order lunas masuk saldo tertahan, lalu berpindah ke saldo tersedia hanya setelah fulfillment `completed`/`finished` tanpa issue, retur aktif, atau pembatalan aktif. Refund, pembatalan, dan perubahan issue memperbarui posisi melalui delta ledger dalam transaksi state yang sama.
+- Kartu saldo tersedia, tertahan, dan total transaksi hanya mengagregasi `RevenueLedger`, bukan membaca ulang seluruh order. Penarikan adalah pencatatan manual, dibatasi saldo tersedia, memerlukan konfirmasi, dan menghasilkan audit log.
+- `/admin/finance/biteship` mengelola shadow balance lokal; nilai ini tidak membaca atau mengubah saldo nyata pada server Biteship. Admin dapat menambah/mengurangi dana, mengubah biaya per request, serta mengedit/menghapus hanya catatan manual.
+- Pencarian area, cek ongkir, re-rate checkout, booking shipment, dan sinkronisasi tracking memerlukan saldo Biteship positif. Debit dilakukan atomik; biaya request provider yang gagal dibalik. Booking memakai harga quote sebagai debit.
+- Akun shadow balance migration dimulai dari Rp0. Admin wajib mencatat top up sebelum fitur Biteship tersebut dapat digunakan. Nilai biaya area/rate/tracking boleh nol, tetapi saldo nol tetap memblokir request sesuai saklar operasional yang diminta.
 
 ## Webhook
 

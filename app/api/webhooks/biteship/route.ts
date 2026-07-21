@@ -5,6 +5,7 @@ import { releaseOrderReservation, restockCommittedOrder } from "@/lib/inventory"
 import { constantTimeEqual, isStrongSharedSecret, sha256 } from "@/lib/security";
 import { fulfillmentFromBiteshipStatus, handedOverBiteshipStatuses } from "@/lib/shipping-state";
 import { invalidateCatalogCache } from "@/lib/catalog";
+import { syncOrderRevenue } from "@/lib/finance";
 import { isPrismaUniqueConstraintError } from "@/lib/prisma-errors";
 
 type BiteshipWebhook = {
@@ -199,6 +200,7 @@ export async function POST(request: Request) {
       }
       await tx.auditLog.create({data:{actorType:"system",action:statusAccepted?`biteship.${payload.event}`:"biteship.signal_ignored",entityType:"shipment",entityId:shipment.id,before:{status:shipment.status,waybillId:shipment.waybillId,actualPrice:shipment.actualPrice?.toString()},after:{status:appliedStatus,providerStatus:normalized,waybillId:waybill,actualPrice:actual}}});
     }
+    await syncOrderRevenue(tx, shipment.orderId);
     await tx.webhookInbox.update({where:{source_deliveryKey:{source:"biteship",deliveryKey}},data:{status:"processed",processedAt:new Date(),error:null}});
   });
   invalidateCatalogCache();

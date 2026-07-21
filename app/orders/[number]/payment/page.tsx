@@ -49,6 +49,8 @@ export default async function PaymentPage({
       number={number}
       subtotal={Number(order.subtotal)}
       shippingFee={Number(order.shippingFee)}
+      voucherCode={order.voucherCode}
+      discountAmount={Number(order.discountAmount)}
       serviceFee={Number(order.serviceFee)}
       grandTotal={Number(order.grandTotal)}
       payableAmount={Number(payment.payableAmount || order.grandTotal)}

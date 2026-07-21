@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const schema = z.object({
   type: z.enum(["refund", "finish"]),
@@ -49,6 +50,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
           after: { fulfillmentState: "finished" },
         },
       });
+      await syncOrderRevenue(tx, order.id, String(admin.email));
     });
     return NextResponse.json({ success: true });
   }
@@ -97,6 +99,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
         },
       },
     });
+
+    await syncOrderRevenue(tx, order.id, String(admin.email));
 
     return created;
   });

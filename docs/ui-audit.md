@@ -95,6 +95,9 @@ Flow transaksi admin tidak diganti. Penyempurnaan UI/query yang relevan:
 | User detail | Riwayat order 10/page, sehingga profil tidak menarik seluruh transaksi user. |
 | Category detail | Tetap full-list dengan alasan data-integrity: submit saat ini replacement penuh membership. |
 | Detail/action rail | Tablet/mobile turun satu kolom; rail tidak menjadi overlay. State machine dan endpoint transaksi tetap sama. |
+| Voucher | Form CRUD/modal riwayat memiliki aksi nyata; tabel berada dalam overflow lokal, status selalu berupa teks semantik. |
+| Dana omzet | Empat kartu ringkas, form penarikan dengan batas saldo/konfirmasi, dan ledger terpaginasi; nominal memakai angka tabular serta warna tetap disertai tanda `+`/`−`. |
+| Dana Biteship | Ringkasan shadow balance, form biaya request, modal catatan manual, dan tabel CRUD; record otomatis ditandai sebagai otomatis dan tidak menawarkan aksi edit/hapus. |
 | Kontrol semu | Search/export/notifikasi tanpa handler tidak ditampilkan sebagai aksi aktif. |
 
 API JSON list admin yang dapat dipakai UI/consumer lain juga dipaginasi dan memiliki endpoint stats tersendiri. Pemetaan kontrak berada di `docs/system-map.md`.
@@ -109,6 +112,7 @@ API JSON list admin yang dapat dipakai UI/consumer lain juga dipaginasi dan memi
 | Cart | Empty/list, quantity/remove, summary | Layout client tetap; cart server sync dibatasi dan divalidasi. |
 | Detail order | Ownership, payment/fulfillment status, timeline, cancel/return/refund | Tidak lagi dapat dibuka hanya dari nomor/token URL. |
 | Payment | Pending/paid/failed/expired, sync manual | Sync customer memakai Turnstile dan rate limit. |
+| Voucher | Marquee publik setelah katalog; input cek dan diskon pada ringkasan checkout | Marquee berhenti hover/fokus dan reduced motion; total UI hanya presentasi, checkout menghitung ulang di server. |
 | Return | Step/item/evidence/review/error/success | Order ownership dan eligibility divalidasi API. |
 
 ## Aksesibilitas dan consistency contract

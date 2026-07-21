@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { serializeBigInt } from "@/lib/serialize";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { privateImageExists } from "@/lib/local-media";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const eligibleStates = ["inspection_passed", "refund_pending", "processing_refund"] as const;
 const schema = z.object({
@@ -115,6 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           after: { amount: body.data.amount, reference: body.data.reference },
         },
       });
+      await syncOrderRevenue(tx, ret.orderId, String(admin.email));
       return created;
     });
     return NextResponse.json({ success: true, refund: serializeBigInt(refund) });

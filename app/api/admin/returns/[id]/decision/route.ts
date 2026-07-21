@@ -4,6 +4,7 @@ import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { serializeBigInt } from "@/lib/serialize";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const schema=z.object({decision:z.enum(["approved","rejected"]),reason:z.string().min(3),refundAmount:z.number().int().positive().optional()});
 class ReturnDecisionConflictError extends Error {}
@@ -49,6 +50,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
         after:{reason:body.data.reason,refundAmount:body.data.refundAmount,state:nextState}
       }
     });
+    await syncOrderRevenue(tx,current.orderId,String(admin.email));
     return changed;
   });
   return NextResponse.json({success:true,return:serializeBigInt(updated)});

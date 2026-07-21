@@ -1,4 +1,4 @@
-export function rupiah(value: number) {
+export function rupiah(value: number | bigint) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",

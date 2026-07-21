@@ -275,6 +275,8 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
     : "Menunggu Resi";
   const subtotal = firstValue(order, ["subtotal"]);
   const shippingFee = firstValue(order, ["shippingFee"]);
+  const voucherCode = firstText(order, ["voucherCode"], "");
+  const discountAmount = firstValue(order, ["discountAmount"]);
   const serviceFee = firstValue(order, ["serviceFee"]);
   const grandTotal = firstValue(order, ["grandTotal"]);
   const query = await searchParams;
@@ -444,6 +446,12 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
               <dt>Ongkos Kirim</dt>
               <dd>{formatRupiah(shippingFee)}</dd>
             </div>
+            {toBigInt(discountAmount) > BigInt(0) && (
+              <div>
+                <dt>Diskon Promo{voucherCode ? ` (${voucherCode})` : ""}</dt>
+                <dd>-{formatRupiah(discountAmount)}</dd>
+              </div>
+            )}
             {toBigInt(serviceFee) > 0 && (
               <div>
                 <dt>Biaya Layanan</dt>

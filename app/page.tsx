@@ -16,6 +16,8 @@ import { ProductCatalog } from "@/components/product-catalog";
 import { StoreFooter } from "@/components/store-footer";
 import { StoreHeader } from "@/components/store-header";
 import { getCatalogProducts } from "@/lib/catalog";
+import { getPublicVouchers } from "@/lib/voucher";
+import { PublicVoucherMarquee } from "@/components/public-voucher-marquee";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +70,7 @@ export default async function Home({
 }: {
   searchParams: Promise<{ search?: string }>;
 }) {
-  const [products, query] = await Promise.all([getCatalogProducts(), searchParams]);
+  const [products, query, vouchers] = await Promise.all([getCatalogProducts(), searchParams, getPublicVouchers()]);
 
   return (
     <>
@@ -117,6 +119,7 @@ export default async function Home({
           </div>
           <ProductCatalog products={products} autoFocusSearch={query.search === "1"} />
         </section>
+        <PublicVoucherMarquee vouchers={vouchers} />
 
         <section className="values-section" id="values">
           <div className="landing-section-head">

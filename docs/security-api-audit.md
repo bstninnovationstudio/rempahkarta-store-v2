@@ -159,6 +159,10 @@ Biteship:
 - event disimpan/dideduplikasi dari event, provider order ID, dan hash payload;
 - status, harga aktual, resi, inventory restoration, issue flag, dan audit diproses dalam transaksi;
 - probe kosong/ping/test dibalas tanpa side effect untuk registrasi endpoint.
+- outbound area/rate/re-rate/booking/tracking melewati gate shadow balance lokal; debit memakai row lock dan conditional decrement dalam transaksi `Serializable`;
+- kegagalan provider membuat record reversal idempoten, sedangkan keberhasilan provider tidak dibalik hanya karena finalisasi lokal berikutnya gagal;
+- record pemakaian otomatis tidak dapat diedit/dihapus melalui API admin; CRUD dibatasi ke top up/pengurangan manual dan seluruh perubahan mencatat `AuditLog`;
+- saldo nol menutup request walaupun configured cost nol. Ini fail-closed dan memerlukan top up operasional setelah migration.
 
 Bucket webhook dipisahkan dari limit API pengguna agar traffic provider tidak menghabiskan kuota checkout.
 
@@ -196,7 +200,7 @@ Cache hanya menyimpan data katalog yang sudah dipetakan untuk storefront. User, 
 Migration history dipisahkan menjadi:
 
 1. `0_baseline`: DDL schema penuh untuk database baru.
-2. migration additive berikutnya: index/query support tanpa seed.
+2. migration additive berikutnya: index/query support, voucher, dan ledger keuangan tanpa seed.
 
 Untuk database existing yang struktur tabel/kolom/constraint/relasinya sudah sesuai baseline:
 
@@ -205,7 +209,7 @@ npm run db:baseline:existing
 npm run db:migrate
 ```
 
-`db:baseline:existing` tidak boleh dipakai pada database kosong dan tidak boleh dilakukan sebelum schema lama dibandingkan dengan baseline. `npm run setup` tidak menjalankan seed. Migration incremental menambahkan enam index idempoten tanpa mengubah/seed row aplikasi. Seed/demo hanya eksplisit untuk database disposable.
+`db:baseline:existing` tidak boleh dipakai pada database kosong dan tidak boleh dilakukan sebelum schema lama dibandingkan dengan baseline. `npm run setup` tidak menjalankan seed. Migration finance melakukan backfill ledger dari state transaksi yang sudah tersimpan dan membuat akun Biteship lokal bersaldo nol; ia tidak menambah data demo. Seed/demo hanya eksplisit untuk database disposable.
 
 Setelah migration schema, migrasikan bukti public legacy:
 
@@ -235,6 +239,10 @@ Dry-run wajib ditinjau. Apply menyalin dengan pemeriksaan hash bila destination 
 | Offset pagination | Page sangat dalam tetap mahal walau dibatasi | Pantau slow query; gunakan keyset/cursor pada tabel terbesar bila dibutuhkan. |
 | API produk memaginasi snapshot cache | Cache miss tetap membaca seluruh katalog aktif beserta relasi sebelum hasil dipotong per page | Cocok untuk katalog UMKM dan traffic tinggi berulang; jika SKU tumbuh ribuan, pindahkan cache/query ke per-page atau cached ID set. |
 | Tidak ada live DB/provider E2E pada audit source | Migration dan integrasi dapat gagal karena schema/data/credential deployment | Jalankan baseline rehearsal pada clone database, smoke test Google/Turnstile/BSTN/Biteship, dan rollback drill sebelum release. |
+| Scheduler cron voucher belum dijadwalkan | Lazy evaluation tetap menolak voucher expired, tetapi status list dapat tertunda | Jadwalkan `GET`/`POST /api/cron/vouchers` setiap hari dengan `Authorization: Bearer $CRON_SECRET`; endpoint fail-closed bila secret kosong/salah. |
+| Shadow balance Biteship tidak terhubung saldo provider | Perbedaan akibat biaya provider aktual atau koreksi cancellation tidak tersinkron otomatis | Rekonsiliasi berkala oleh admin melalui record manual; jangan menganggap saldo lokal sebagai bukti saldo provider. |
+| Saldo awal Biteship nol | Pencarian area, quote, checkout re-rate, booking, dan tracking langsung fail-closed setelah deploy | Catat top up awal di `/admin/finance/biteship` sebelum membuka traffic operasional. |
+| Refund tidak menyimpan alokasi produk/ongkir/service | Pengurangan omzet parsial bersifat konservatif terhadap seluruh refund completed | Ledger membatasi pengurangan sampai omzet produk tersisa; tambahkan komponen refund bila bisnis kelak membutuhkan alokasi lebih presisi. |
 
 ## Checklist release keamanan
 

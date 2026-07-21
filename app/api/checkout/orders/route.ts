@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { BiteshipAdapter } from "@/lib/adapters/biteship";
 import { BstnPaymentAdapter } from "@/lib/adapters/bstn";
+import { buildBstnItems } from "@/lib/bstn-items";
 import { isProduction, getAppUrl, getBstnApiKey, getBiteshipApiKey, warehouseAreaId, getWebhookBaseUrl } from "@/lib/env";
 import { releaseOrderReservation } from "@/lib/inventory";
 import { createOrderWithReservation } from "@/lib/repositories/order-repository";
@@ -11,6 +12,7 @@ import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getProfileCompleteness } from "@/lib/user-profile";
 import { invalidateCatalogCache } from "@/lib/catalog";
+import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds } from "@/lib/finance";
 
 const schema = z.object({
   turnstileToken: z.string().min(1).max(2048),
@@ -22,6 +24,7 @@ const schema = z.object({
   areaId: z.string().min(3).max(150),
   shipping: z.object({ company: z.string().min(2).max(40), type: z.string().min(1).max(60), name: z.string().min(2).max(100), price: z.number().int().nonnegative(), eta: z.string().max(120).optional() }),
   items: z.array(z.object({ variantId: z.string().min(1), quantity: z.number().int().positive().max(20) })).min(1).max(20),
+  voucherCode: z.string().trim().min(3).max(50).optional(),
   acceptPolicies: z.literal(true),
 });
 
@@ -73,7 +76,18 @@ export async function POST(request: Request) {
     });
     const biteship = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", biteshipApiKey);
     const enabledCouriers = (process.env.ENABLED_COURIERS || "jne,sicepat,anteraja,jnt").split(",").map(c => c.trim().toLowerCase()).filter(Boolean).join(",");
-    const rates = await biteship.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: parsed.data.areaId, destinationPostalCode: Number(parsed.data.postalCode), couriers: enabledCouriers, items: shippingItems });
+    const rateReservation = await reserveBiteshipFunds({
+      kind: "rate",
+      referenceId: customer.id,
+      notes: `Validasi ulang ongkir checkout oleh pelanggan ${customer.id}`,
+    });
+    let rates;
+    try {
+      rates = await biteship.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: parsed.data.areaId, destinationPostalCode: Number(parsed.data.postalCode), couriers: enabledCouriers, items: shippingItems });
+    } catch (cause) {
+      await reverseBiteshipFunds(rateReservation, "Validasi ulang ongkir checkout gagal");
+      throw cause;
+    }
     const selected = rates.pricing.find(rate => rate.company === parsed.data.shipping.company && rate.courier_type === parsed.data.shipping.type);
     if (!selected) return NextResponse.json({ error: "Layanan pengiriman sudah tidak tersedia. Silakan cek ongkir kembali." }, { status: 409 });
     const currentShipping = { company: selected.company, type: selected.courier_type, name: `${selected.courier_name} ${selected.courier_service_name}`.trim(), price: selected.price, eta: `${selected.shipment_duration_range} ${selected.shipment_duration_unit}`, collectionMethods: selected.available_collection_method };
@@ -93,15 +107,15 @@ export async function POST(request: Request) {
     try {
       if (!bstnApiKey || !process.env.BSTN_RETURN_SIGNATURE_SECRET) throw new Error("Konfigurasi pembayaran BSTN belum lengkap");
       const { calculateServiceFee } = await import("@/lib/fee");
-      const feeBreakdown = calculateServiceFee(Number(order.subtotal + order.shippingFee));
+      const feeBreakdown = calculateServiceFee(Number(order.subtotal + order.shippingFee - order.discountAmount));
       const bstn = new BstnPaymentAdapter(process.env.BSTN_BASE_URL || "https://www.bstn-innovation-studio.web.id", bstnApiKey, process.env.BSTN_RETURN_SIGNATURE_SECRET);
-      const bstnItems = [
-        ...items.map(item => ({ id: item.skuSnapshot, name: item.nameSnapshot, price: Number(item.unitPrice), quantity: item.quantity })),
-        { id: "SHIPPING", name: `Biaya Pengiriman - ${currentShipping.name}`, price: currentShipping.price, quantity: 1 },
-      ];
-      if (feeBreakdown.fixedFee > 0) {
-        bstnItems.push({ id: "SERVICE_FEE", name: "Biaya Layanan", price: feeBreakdown.fixedFee, quantity: 1 });
-      }
+      const bstnItems = buildBstnItems({
+        productItems: items.map(item => ({ id: item.skuSnapshot, name: item.nameSnapshot, price: Number(item.unitPrice), quantity: item.quantity })),
+        shippingItem: { id: "SHIPPING", name: `Biaya Pengiriman - ${currentShipping.name}`, price: currentShipping.price, quantity: 1 },
+        discountAmount: Number(order.discountAmount),
+        target: order.voucherTarget,
+        serviceFee: feeBreakdown.fixedFee,
+      });
       const result = await bstn.createPayment({ reference: order.publicNumber, amount: feeBreakdown.bstnAmount, description: `Pembayaran ${order.publicNumber}`, customer: { name: order.guestName, email: order.guestEmail, phone: order.guestPhone }, items: bstnItems, finishUrl, webhookUrl, expiryMinutes: 10 });
       const localPaymentUrl = `${base}/orders/${order.publicNumber}/payment`;
       await prisma.$transaction([
@@ -114,6 +128,10 @@ export async function POST(request: Request) {
       const errorMessage = cause instanceof Error ? cause.message : "Pembayaran belum dapat dibuat. Silakan ulangi.";
       await prisma.$transaction(async tx => {
         await tx.order.update({ where: { id: order.id }, data: { paymentState: "failed", fulfillmentState: "cancelled" } });
+        if (order.voucherId) {
+          const usage = await tx.voucherUsage.deleteMany({ where: { orderId: order.id } });
+          if (usage.count) await tx.voucher.update({ where: { id: order.voucherId }, data: { totalUsage: { decrement: 1 } } });
+        }
         await releaseOrderReservation(tx, order.id, "payment_creation_failed");
         await tx.auditLog.create({ data: { actorType: "system", action: "payment.create_failed", entityType: "order", entityId: order.id, after: { message: errorMessage } } });
       });
@@ -122,6 +140,9 @@ export async function POST(request: Request) {
     }
   } catch (cause) {
     console.error("[Checkout API Error]", cause);
+    if (cause instanceof BiteshipBalanceError) {
+      return NextResponse.json({ error: "Permintaan tidak dapat diproses" }, { status: 409 });
+    }
     const message = cause instanceof Error ? cause.message : "Checkout gagal";
     const status = /stok|varian|produk tidak tersedia|berubah/i.test(message) ? 409 : /Biteship|courier|rate|pengiriman/i.test(message) ? 502 : 500;
     const errorResponse = isProduction()

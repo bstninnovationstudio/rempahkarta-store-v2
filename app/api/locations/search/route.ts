@@ -4,6 +4,7 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBiteshipApiKey } from "@/lib/env";
+import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds, type BiteshipReservation } from "@/lib/finance";
 
 export async function GET(request: Request) {
   const rate = checkRateLimit(request, { scope: "checkout:location-search", limit: 25 });
@@ -17,8 +18,18 @@ export async function GET(request: Request) {
   if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
   const apiKey = getBiteshipApiKey();
   if (!apiKey) return NextResponse.json({ error: "BITESHIP_API_KEY belum dikonfigurasi" }, { status: 503 });
+  let reservation: BiteshipReservation | null = null;
   try {
+    reservation = await reserveBiteshipFunds({
+      kind: "area",
+      referenceId: customer.id,
+      notes: `Pencarian area Biteship oleh pelanggan ${customer.id}`,
+    });
     const data = await new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", apiKey).searchAreas(q);
     return NextResponse.json(data);
-  } catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "Pencarian lokasi Biteship gagal" }, { status: 502 }); }
+  } catch (cause) {
+    if (reservation) await reverseBiteshipFunds(reservation, "Pencarian area Biteship gagal");
+    if (cause instanceof BiteshipBalanceError) return NextResponse.json({ error: "Permintaan tidak dapat diproses" }, { status: 409 });
+    return NextResponse.json({ error: cause instanceof Error ? cause.message : "Pencarian lokasi Biteship gagal" }, { status: 502 });
+  }
 }

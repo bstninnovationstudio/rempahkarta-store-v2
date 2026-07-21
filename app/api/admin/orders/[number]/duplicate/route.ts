@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { randomToken, sha256 } from "@/lib/security";
 import { isDevToolsEnabled } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
+import { syncOrderRevenue } from "@/lib/finance";
 
 export async function POST(
   request: Request,
@@ -181,6 +182,8 @@ export async function POST(
           after: { autoPaid: true },
         },
       });
+
+      await syncOrderRevenue(tx, newOrder.id, String(admin.email));
 
       return newOrder;
     });

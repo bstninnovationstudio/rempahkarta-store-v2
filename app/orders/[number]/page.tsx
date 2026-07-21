@@ -67,6 +67,8 @@ type OrderView = {
   events: TimelineEventView[];
   items: OrderItemView[];
   shipping: number;
+  voucherCode: string | null;
+  discountAmount: number;
   serviceFee: number;
   total: number;
   courier: string;
@@ -409,6 +411,8 @@ export default async function OrderPage({
       image: product.image || "/demo/banner.webp",
     }],
     shipping: 19000,
+    voucherCode: null,
+    discountAmount: 0,
     serviceFee: 0,
     total: product.price + 19000,
     courier: "JNE Regular",
@@ -736,6 +740,8 @@ export default async function OrderPage({
         };
       }),
       shipping: Number(order.shippingFee),
+      voucherCode: order.voucherCode,
+      discountAmount: Number(order.discountAmount),
       serviceFee: Number(order.serviceFee),
       total: Number(order.grandTotal),
       courier: courierLabel,
@@ -955,6 +961,12 @@ export default async function OrderPage({
                       <th scope="row" colSpan={2}>Pengiriman ({view.courier})</th>
                       <td className="numeric-cell">{rupiah(view.shipping)}</td>
                     </tr>
+                    {view.discountAmount > 0 && (
+                      <tr>
+                        <th scope="row" colSpan={2}>Diskon promo ({view.voucherCode || "PROMO"})</th>
+                        <td className="numeric-cell tone-success">-{rupiah(view.discountAmount)}</td>
+                      </tr>
+                    )}
                     {view.serviceFee > 0 && (
                       <tr>
                         <th scope="row" colSpan={2}>Biaya Layanan</th>

@@ -12,6 +12,7 @@ import { fulfillmentFromBiteshipStatus } from "@/lib/shipping-state";
 import type { FulfillmentState } from "@prisma/client";
 import { isDevToolsEnabled } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
+import { syncOrderRevenue } from "@/lib/finance";
 
 const schema = z.object({
   type: z.enum(["fulfillment", "biteship", "issue"]),
@@ -233,6 +234,7 @@ export async function POST(
           },
         });
       }
+      await syncOrderRevenue(tx, order.id, String(admin.email));
     });
 
     invalidateCatalogCache();

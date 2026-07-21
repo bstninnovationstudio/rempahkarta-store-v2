@@ -1,4 +1,5 @@
 import { isProduction } from "@/lib/env";
+import { getAppUrl } from "@/lib/env";
 
 export async function sha256(value:string){const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(bytes)).map(b=>b.toString(16).padStart(2,"0")).join("")}
 export function constantTimeEqual(a:string,b:string){if(a.length!==b.length)return false;let out=0;for(let i=0;i<a.length;i++)out|=a.charCodeAt(i)^b.charCodeAt(i);return out===0}
@@ -20,4 +21,13 @@ export function isStrongSharedSecret(secret: string | undefined, minimumLength =
   if (!secret || secret.length < minimumLength) return false;
   return !isProduction()
     || !/(replace|change.?me|development|example|test-secret|not-for-production)/i.test(secret);
+}
+
+/** Browser mutations must originate from the configured storefront. */
+export function hasExactAppOrigin(request: Request) {
+  const expected = getAppUrl();
+  const origin = request.headers.get("origin");
+  if (!expected || !origin) return false;
+  try { return new URL(origin).origin === new URL(expected).origin; }
+  catch { return false; }
 }

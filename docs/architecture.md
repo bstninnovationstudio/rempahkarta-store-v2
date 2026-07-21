@@ -174,6 +174,16 @@ Pelanggan hanya dapat mengunggah bukti atau mengajukan retur untuk order milikny
 
 Admin menilai retur, menjalankan resolusi operasional yang sudah ada, dan mencatat refund manual dengan bukti/referensi. Mutasi penting menulis `AuditLog`; delivery webhook ditulis ke `WebhookInbox` sebelum side effect untuk idempotency.
 
+## Ledger keuangan
+
+`RevenueLedger` adalah sumber saldo omzet internal. Setiap row menyimpan delta saldo tersedia/tertahan serta snapshot subtotal penuh, ongkir, service fee, fee BSTN, diskon, dan nilai bersih. Nilai bersih produk adalah `Order.subtotal - Order.discountAmount`; fee BSTN tidak dikurangi lagi karena struktur biaya checkout telah memasukkannya ke gross-up service fee.
+
+Saat pembayaran menjadi paid, `syncOrderRevenue` menempatkan nilai bersih di posisi tertahan. Posisi menjadi tersedia hanya pada fulfillment `completed`/`finished` tanpa issue, retur aktif, atau cancellation aktif. Perubahan state berikutnya dapat memindahkan dana kembali ke tertahan atau mengurangi posisi karena refund. Helper berjalan di transaksi perubahan state, mengunci order, membaca aggregate ledger sebelumnya, dan hanya menulis selisih. Dengan demikian retry webhook/sync tidak menggandakan saldo dan metric page tidak perlu query order.
+
+`BiteshipFundAccount` adalah singleton saldo bayangan atomik; `BiteshipLedger` menyimpan riwayat signed amount. Area search, quote, authoritative re-rate checkout, booking shipment, dan tracking sync mereservasi dana dalam transaksi `Serializable`. Provider failure membuat reversal idempoten. Debit booking dideduplikasi berdasarkan nomor order agar pemulihan duplicate-reference tidak memotong ongkir dua kali. Catatan penggunaan otomatis immutable; CRUD hanya berlaku pada top up/pengurangan manual dan setiap perubahan merekonsiliasi saldo di bawah row lock.
+
+Shadow balance bukan sinkronisasi saldo nyata Biteship. Saldo awal migration nol dan harus diisi admin. Cost area/rate/tracking dikonfigurasi lokal; booking shipment selalu memakai harga quote terpilih. Flow request/payload/status Biteship tidak diubah.
+
 ## Rate limiting dan Turnstile
 
 `proxy.ts` menerapkan bucket global per IP untuk seluruh `/api/*`: 100/menit, atau 1.000/menit untuk webhook. Route mahal menambahkan bucket scope sendiri. Store in-memory dibersihkan setiap menit, membuang bucket kedaluwarsa, dan dibatasi 10.000 bucket.
@@ -184,7 +194,7 @@ Turnstile selalu diverifikasi lewat Siteverify server. Secret test hanya tersedi
 
 ## Migration dan penyimpanan
 
-Migration `0_baseline` merepresentasikan DDL schema lengkap dan `migration_lock.toml` mengunci provider MySQL. Database lama yang sudah memiliki tabel harus dibaseline satu kali dengan `npm run db:baseline:existing` **setelah** tabel/kolom/constraint/relasi diverifikasi; database kosong tidak boleh melewati baseline. Migration berikutnya menambahkan enam index query secara additive/idempoten dan tidak menjalankan seed.
+Migration `0_baseline` merepresentasikan DDL schema lengkap dan `migration_lock.toml` mengunci provider MySQL. Database lama yang sudah memiliki tabel harus dibaseline satu kali dengan `npm run db:baseline:existing` **setelah** tabel/kolom/constraint/relasi diverifikasi; database kosong tidak boleh melewati baseline. Migration incremental menambahkan index query, voucher, serta ledger keuangan secara additive dan tidak menjalankan seed. Migration keuangan melakukan backfill posisi dana order lama dan membuat akun shadow Biteship bersaldo nol.
 
 `npm run setup` menjalankan generate + migrate deploy. `setup:demo`, seed, dan `db push` hanya untuk database lokal/disposable.
 
@@ -196,6 +206,14 @@ Backup konsisten mencakup:
 - `public/uploads` dan `storage/private`;
 - `storage/private-migration-backup` selama masa verifikasi migrasi legacy;
 - konfigurasi/secret melalui secret manager terpisah, bukan dalam arsip aplikasi.
+
+## Voucher dan total pembayaran
+
+`Voucher` menyimpan aturan promo dan `VoucherUsage` menyimpan tepat satu pemakaian per order. `Order` menyimpan referensi nullable beserta snapshot kode, target, dan nominal diskon agar riwayat tidak berubah bila konfigurasi voucher diedit. Checkout menghitung ulang subtotal dari varian database dan ongkir hasil re-rate Biteship, lalu mengevaluasi voucher di transaksi MySQL `Serializable`; limit total dinaikkan secara atomik sebelum order dan usage dibuat.
+
+Target diskon adalah total (`subtotal + ongkir`), subtotal produk, atau ongkir. Nominal/persentase dibatasi `maxDiscount` dan tidak dapat melebihi nominal target. Diskon diterapkan sebelum biaya layanan; karena BSTN menolak harga negatif, diskon dipetakan ke harga item positif (unit dapat dipecah) sehingga jumlah item tetap sama dengan `bstnAmount`. Voucher tidak mengubah request ataupun booking Biteship.
+
+Masa berlaku disimpan UTC dan dimasukkan/dipresentasikan WIB. Evaluasi lazy pada cek/checkout serta `GET` atau `POST /api/cron/vouchers` bertoken `CRON_SECRET` menandai voucher expired atau kuota total habis sebagai `FINISH`. Limit harian dihitung 00:00–24:00 WIB dan limit per-user tidak mengakhiri voucher global.
 
 ## Batas arsitektur saat ini
 
