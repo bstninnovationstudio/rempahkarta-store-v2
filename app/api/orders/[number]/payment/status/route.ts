@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { checkAndExpireOrder } from "@/lib/payment-sync";
 
 export async function GET(
   request: Request,
@@ -12,6 +13,8 @@ export async function GET(
   if (!customer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  await checkAndExpireOrder(number);
 
   const order = await prisma.order.findUnique({
     where: { publicNumber: number },

@@ -217,6 +217,7 @@ model Order {
   currency         String                @default("IDR") @db.VarChar(3)
   subtotal         BigInt
   shippingFee      BigInt
+  serviceFee       BigInt                @default(0)
   grandTotal       BigInt
   paymentState     PaymentState          @default(not_created)
   fulfillmentState FulfillmentState      @default(awaiting_payment)
@@ -342,6 +343,7 @@ model Shipment {
   waybillId          String?                 @db.VarChar(120)
   courierCompany     String                  @db.VarChar(40)
   courierType        String                  @db.VarChar(60)
+  courierName        String?                 @db.VarChar(100)
   collectionMethod   String                  @db.VarChar(20)
   quotedPrice        BigInt
   actualPrice        BigInt?

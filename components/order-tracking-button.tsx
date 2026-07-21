@@ -34,20 +34,21 @@ export function OrderTrackingButton({
   }
 
   return (
-    <div className="order-tracking-container">
+    <>
       <button
         type="button"
         className="button button-light order-tracking-btn"
         onClick={handleClick}
-        title={hasResi ? "Klik untuk menyalin nomor resi" : "Menunggu resi dari kurir"}
+        aria-label={hasResi ? `${courier}, nomor resi ${tracking}. Salin nomor resi` : `${courier}, nomor resi belum tersedia`}
+        title={hasResi ? `Nomor resi ${tracking} — klik untuk menyalin` : "Menunggu resi dari kurir"}
       >
         {copied ? (
           <>
-            <Check size={15} style={{ color: "var(--success)", flexShrink: 0 }} /> <span className="tracking-btn-text">Resi disalin!</span>
+            <Check size={15} className="tracking-action-icon success" aria-hidden="true" /> <span className="tracking-btn-text">Resi disalin!</span>
           </>
         ) : (
           <>
-            {hasResi ? <Copy size={15} style={{ flexShrink: 0 }} /> : <Truck size={15} style={{ flexShrink: 0 }} />} <span className="tracking-btn-text">{courier} · {hasResi ? tracking : "Menunggu resi"}</span>
+            {hasResi ? <Copy size={15} className="tracking-action-icon" aria-hidden="true" /> : <Truck size={15} className="tracking-action-icon" aria-hidden="true" />} <span className="tracking-btn-text">{courier} · {hasResi ? tracking : "Menunggu resi"}</span>
           </>
         )}
       </button>
@@ -56,11 +57,11 @@ export function OrderTrackingButton({
         <div
           role="status"
           aria-live="polite"
-          className={`action-message ${hasResi ? "success" : "tone-warning"}`}
+          className={`action-message tracking-toast-message ${hasResi ? "success" : "tone-warning"}`}
         >
           {toastMessage}
         </div>
       )}
-    </div>
+    </>
   );
 }

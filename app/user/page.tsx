@@ -3,12 +3,15 @@ import { ArrowRight, Clock3, PackageCheck, Settings2, ShoppingBag, WalletCards }
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { checkAndExpireAllStaleOrders } from "@/lib/payment-sync";
 import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
 
 export default async function UserDashboardPage() {
   const customer = await customerFromRequest();
   if (!customer) return null;
+
+  await checkAndExpireAllStaleOrders();
 
   const accountOrderWhere: Prisma.OrderWhereInput = {
     OR: [

@@ -133,7 +133,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
         items: shippingItems,
       });
     } catch (cause) {
-      await prisma.shipment.updateMany({ where: { orderId: order.id, status: "booking_claimed" }, data: { status: "booking_failed" } });
+      await prisma.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
       throw cause;
     }
 
@@ -158,6 +158,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
           waybillId: providerResult.courier?.waybill_id || providerResult.courier?.tracking_id || null,
           courierCompany: providerResult.courier?.company || quote.courierCompany,
           courierType: providerResult.courier?.type || quote.courierType,
+          courierName: quote.courierName || null,
           collectionMethod: body.data.collectionMethod,
           quotedPrice: quote.price,
           actualPrice: BigInt(providerResult.price || quote.price),
@@ -183,6 +184,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
 
     return NextResponse.json({ success: true, shipment: serializeBigInt(shipment) });
   } catch (cause) {
+    await prisma.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
     if (cause instanceof BookingConflictError) return NextResponse.json({ error: cause.message }, { status: 409 });
     return NextResponse.json({ error: cause instanceof Error ? cause.message : "Booking Biteship gagal" }, { status: 502 });
   }

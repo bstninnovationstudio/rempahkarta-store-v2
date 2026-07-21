@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { customerFromRequest } from "@/lib/customer-auth";
 import { prisma } from "@/lib/db";
+import { checkAndExpireOrder } from "@/lib/payment-sync";
 
 import PrintInvoiceButton from "./PrintInvoiceButton";
 import styles from "./invoice.module.css";
@@ -177,6 +178,8 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
     redirect(`/login?redirect=${encodeURIComponent(returnPath)}`);
   }
 
+  await checkAndExpireOrder(number);
+
   const result = await prisma.order.findUnique({
     where: { publicNumber: number },
     include: {
@@ -256,13 +259,11 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
   ], firstText(order, ["guestPhone"], "-"));
 
   const selectedQuote = asRecordArray(order.quotes)[0] ?? {};
+  const { getCourierDisplayName } = await import("@/lib/shipping-utils");
+  const courierName = firstText(shipment, ["courierName"], firstText(selectedQuote, ["courierName"], "")).trim();
   const courierCompany = firstText(shipment, ["courierCompany"], firstText(selectedQuote, ["courierCompany"], "")).trim();
   const courierType = firstText(shipment, ["courierType"], firstText(selectedQuote, ["courierType"], "")).trim();
-  const courierLabel = courierCompany && courierType
-    ? `${courierCompany.toUpperCase()} ${courierType.toUpperCase()}`
-    : courierCompany
-      ? courierCompany.toUpperCase()
-      : "-";
+  const courierLabel = getCourierDisplayName(courierName, courierCompany, courierType);
 
   const rawWaybill = firstText(
     shipment,
@@ -274,6 +275,7 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
     : "Menunggu Resi";
   const subtotal = firstValue(order, ["subtotal"]);
   const shippingFee = firstValue(order, ["shippingFee"]);
+  const serviceFee = firstValue(order, ["serviceFee"]);
   const grandTotal = firstValue(order, ["grandTotal"]);
   const query = await searchParams;
   const autoPrint =
@@ -442,6 +444,12 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
               <dt>Ongkos Kirim</dt>
               <dd>{formatRupiah(shippingFee)}</dd>
             </div>
+            {toBigInt(serviceFee) > 0 && (
+              <div>
+                <dt>Biaya Layanan</dt>
+                <dd>{formatRupiah(serviceFee)}</dd>
+              </div>
+            )}
             <div className={styles.grandTotal}>
               <dt>Total Pembayaran</dt>
               <dd>{formatRupiah(grandTotal)}</dd>

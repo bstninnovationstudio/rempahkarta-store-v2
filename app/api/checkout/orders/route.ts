@@ -72,7 +72,8 @@ export async function POST(request: Request) {
       return { name: variant.product.name, description: [variant.option1Value, variant.option2Value].filter(Boolean).join(" / ") || undefined, category: "food_and_drink", sku: variant.sku, value: Number(variant.price), quantity: item.quantity, weight: variant.weight, length: variant.length || undefined, width: variant.width || undefined, height: variant.height || undefined };
     });
     const biteship = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", biteshipApiKey);
-    const rates = await biteship.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: parsed.data.areaId, destinationPostalCode: Number(parsed.data.postalCode), couriers: process.env.ENABLED_COURIERS || "jne", items: shippingItems });
+    const enabledCouriers = (process.env.ENABLED_COURIERS || "jne,sicepat,anteraja,jnt").split(",").map(c => c.trim().toLowerCase()).filter(Boolean).join(",");
+    const rates = await biteship.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: parsed.data.areaId, destinationPostalCode: Number(parsed.data.postalCode), couriers: enabledCouriers, items: shippingItems });
     const selected = rates.pricing.find(rate => rate.company === parsed.data.shipping.company && rate.courier_type === parsed.data.shipping.type);
     if (!selected) return NextResponse.json({ error: "Layanan pengiriman sudah tidak tersedia. Silakan cek ongkir kembali." }, { status: 409 });
     const currentShipping = { company: selected.company, type: selected.courier_type, name: `${selected.courier_name} ${selected.courier_service_name}`.trim(), price: selected.price, eta: `${selected.shipment_duration_range} ${selected.shipment_duration_unit}`, collectionMethods: selected.available_collection_method };
@@ -91,11 +92,20 @@ export async function POST(request: Request) {
 
     try {
       if (!bstnApiKey || !process.env.BSTN_RETURN_SIGNATURE_SECRET) throw new Error("Konfigurasi pembayaran BSTN belum lengkap");
+      const { calculateServiceFee } = await import("@/lib/fee");
+      const feeBreakdown = calculateServiceFee(Number(order.subtotal + order.shippingFee));
       const bstn = new BstnPaymentAdapter(process.env.BSTN_BASE_URL || "https://www.bstn-innovation-studio.web.id", bstnApiKey, process.env.BSTN_RETURN_SIGNATURE_SECRET);
-      const result = await bstn.createPayment({ reference: order.publicNumber, amount: Number(order.grandTotal), description: `Pembayaran ${order.publicNumber}`, customer: { name: order.guestName, email: order.guestEmail, phone: order.guestPhone }, items: [...items.map(item => ({ id: item.skuSnapshot, name: item.nameSnapshot, price: Number(item.unitPrice), quantity: item.quantity })), { id: "SHIPPING", name: `Biaya Pengiriman - ${currentShipping.name}`, price: currentShipping.price, quantity: 1 }], finishUrl, webhookUrl, expiryMinutes: 10 });
+      const bstnItems = [
+        ...items.map(item => ({ id: item.skuSnapshot, name: item.nameSnapshot, price: Number(item.unitPrice), quantity: item.quantity })),
+        { id: "SHIPPING", name: `Biaya Pengiriman - ${currentShipping.name}`, price: currentShipping.price, quantity: 1 },
+      ];
+      if (feeBreakdown.fixedFee > 0) {
+        bstnItems.push({ id: "SERVICE_FEE", name: "Biaya Layanan", price: feeBreakdown.fixedFee, quantity: 1 });
+      }
+      const result = await bstn.createPayment({ reference: order.publicNumber, amount: feeBreakdown.bstnAmount, description: `Pembayaran ${order.publicNumber}`, customer: { name: order.guestName, email: order.guestEmail, phone: order.guestPhone }, items: bstnItems, finishUrl, webhookUrl, expiryMinutes: 10 });
       const localPaymentUrl = `${base}/orders/${order.publicNumber}/payment`;
       await prisma.$transaction([
-        prisma.payment.create({ data: { orderId: order.id, providerPaymentId: result.data.payment_id, projectPaymentRef: order.publicNumber, amount: order.grandTotal, payableAmount: BigInt(result.data.payable_amount), feeAmount: BigInt(result.data.fee_amount), status: "pending", paymentPageUrl: localPaymentUrl, expiresAt: new Date(result.data.expires_at), raw: result.data as unknown as Prisma.InputJsonValue } }),
+        prisma.payment.create({ data: { orderId: order.id, providerPaymentId: result.data.payment_id, projectPaymentRef: order.publicNumber, amount: BigInt(feeBreakdown.bstnAmount), payableAmount: BigInt(result.data.payable_amount), feeAmount: BigInt(result.data.fee_amount), status: "pending", paymentPageUrl: localPaymentUrl, expiresAt: new Date(result.data.expires_at), raw: result.data as unknown as Prisma.InputJsonValue } }),
         prisma.order.update({ where: { id: order.id }, data: { paymentState: "pending" } }),
       ]);
       invalidateCatalogCache();
@@ -111,8 +121,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMessage }, { status: cause instanceof Error && cause.message.includes("belum lengkap") ? 503 : 502 });
     }
   } catch (cause) {
+    console.error("[Checkout API Error]", cause);
     const message = cause instanceof Error ? cause.message : "Checkout gagal";
     const status = /stok|varian|produk tidak tersedia|berubah/i.test(message) ? 409 : /Biteship|courier|rate|pengiriman/i.test(message) ? 502 : 500;
-    return NextResponse.json({ error: status === 500 ? "Checkout belum dapat diproses. Silakan coba kembali." : message }, { status });
+    const errorResponse = isProduction()
+      ? (status === 500 ? "Checkout belum dapat diproses. Silakan coba kembali." : message)
+      : (cause instanceof Error ? `${message} (${cause.stack || ""})` : message);
+    return NextResponse.json({ error: errorResponse }, { status });
   }
 }

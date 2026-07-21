@@ -7,8 +7,7 @@ function fulfillmentForUi(value:string):OrderStatus{
   if(["packed","shipment_booked"].includes(value))return "processing";
   if(["handed_over","return_in_transit"].includes(value))return "in_transit";
   if(["returned"].includes(value))return "completed";
-  if(value==="cancel_requested")return "processing";
-  return (["awaiting_payment","awaiting_processing","processing","handover_pending","completed","cancelled","finished"] as string[]).includes(value)?value as OrderStatus:"awaiting_processing";
+  return (["awaiting_payment","awaiting_processing","processing","handover_pending","completed","cancelled","cancel_requested","finished"] as string[]).includes(value)?value as OrderStatus:"awaiting_processing";
 }
 function paymentForUi(value:string):AdminOrder["payment"]{return value==="paid"?"paid":value==="refund_pending"?"refund_pending":"pending";}
 function maskName(value:string){const parts=value.split(" ");return `${parts[0]} ${parts.slice(1).map(part=>`${part[0]||""}••••`).join(" ")}`.trim();}
@@ -26,7 +25,7 @@ export type AdminPagination = {
   to: number;
 };
 
-export type AdminOrderFilter = "processing" | "active" | "pickup" | "intransit" | "issue";
+export type AdminOrderFilter = "processing" | "pickup" | "intransit" | "cancel" | "issue";
 
 function safePage(value: number | undefined) {
   return Number.isSafeInteger(value) && Number(value) > 0 ? Math.min(Number(value), 100_000) : 1;
@@ -50,17 +49,19 @@ function pagination(page: number, pageSize: number, total: number): AdminPaginat
   };
 }
 
+import { getCourierDisplayName } from "@/lib/shipping-utils";
+
 function adminDate(value: Date) {
   return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(value);
 }
 
 function adminOrderWhere(filter?: string): Prisma.OrderWhereInput {
-  if (filter === "processing") return { fulfillmentState: "awaiting_processing" };
-  if (filter === "active") return { fulfillmentState: { in: ["processing", "packed", "shipment_booked"] } };
+  if (filter === "processing") return { fulfillmentState: { in: ["awaiting_processing", "processing", "packed", "shipment_booked"] } };
   if (filter === "pickup") return { fulfillmentState: "handover_pending" };
   if (filter === "intransit") return { fulfillmentState: { in: ["handed_over", "return_in_transit"] } };
+  if (filter === "cancel" || filter === "cancellation") return { OR: [{ cancellations: { some: {} } }, { fulfillmentState: "cancelled" }] };
   if (filter === "issue") return { issueOrder: true };
-  return {};
+  return {}; // covers "all" and undefined (default processing handled in page)
 }
 
 function mapAdminOrder(order: {
@@ -72,7 +73,7 @@ function mapAdminOrder(order: {
   fulfillmentState: string;
   issueOrder: boolean;
   items: Array<{ nameSnapshot: string }>;
-  shipments: Array<{ courierCompany: string; courierType: string }>;
+  shipments: Array<{ courierCompany: string; courierType: string; courierName?: string | null }>;
 }, index: number): AdminOrder {
   return {
     number: order.publicNumber,
@@ -81,8 +82,8 @@ function mapAdminOrder(order: {
     total: Number(order.grandTotal),
     payment: paymentForUi(order.paymentState),
     fulfillment: fulfillmentForUi(order.fulfillmentState),
-    courier: order.shipments[0] ? `${order.shipments[0].courierCompany.toUpperCase()} ${order.shipments[0].courierType}` : "—",
-    sla: order.fulfillmentState === "awaiting_processing" ? "Perlu diproses" : "Terpantau",
+    courier: order.shipments[0] ? getCourierDisplayName(order.shipments[0].courierName, order.shipments[0].courierCompany, order.shipments[0].courierType) : "—",
+    sla: order.fulfillmentState === "awaiting_processing" ? "Perlu diproses" : "",
     item: order.items[0]?.nameSnapshot || "Produk REMPAHKARTA",
     image: products[index % products.length]?.image || "/main-logo.webp",
     issueOrder: order.issueOrder,
@@ -91,6 +92,8 @@ function mapAdminOrder(order: {
 
 export async function getAdminDashboardData() {
   const { prisma } = await import("@/lib/db");
+  const { checkAndExpireAllStaleOrders } = await import("@/lib/payment-sync");
+  await checkAndExpireAllStaleOrders();
   const [rows, totalOrders, paidSales, needProcess, pickup] = await prisma.$transaction([
     prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 4, include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 } } }),
     prisma.order.count(),
@@ -108,17 +111,18 @@ export async function getAdminOrdersPage(options: { page?: number; pageSize?: nu
   const requestedPage = safePage(options.page);
   const pageSize = safePageSize(options.pageSize);
   const where = adminOrderWhere(options.filter);
-  const validFilter = ["processing", "active", "pickup", "intransit", "issue"].includes(options.filter || "")
-    ? options.filter as AdminOrderFilter
+  const validFilter = ["processing", "pickup", "intransit", "cancel", "cancellation", "issue"].includes(options.filter || "")
+    ? (options.filter === "cancellation" ? "cancel" : options.filter) as AdminOrderFilter
     : undefined;
 
-
-
   const { prisma } = await import("@/lib/db");
-  const [total, fulfillmentGroups, issue] = await Promise.all([
+  const { checkAndExpireAllStaleOrders } = await import("@/lib/payment-sync");
+  await checkAndExpireAllStaleOrders();
+  const [total, fulfillmentGroups, issue, cancel] = await Promise.all([
     prisma.order.count({ where }),
     prisma.order.groupBy({ by: ["fulfillmentState"], orderBy: { fulfillmentState: "asc" }, _count: { id: true } }),
     prisma.order.count({ where: { issueOrder: true } }),
+    prisma.order.count({ where: { OR: [{ cancellations: { some: {} } }, { fulfillmentState: "cancelled" }] } }),
   ]);
   const pageInfo = pagination(requestedPage, pageSize, total);
   const rows = await prisma.order.findMany({
@@ -137,10 +141,10 @@ export async function getAdminOrdersPage(options: { page?: number; pageSize?: nu
     pagination: pageInfo,
     counts: {
       all,
-      processing: countFor("awaiting_processing"),
-      active: countFor("processing", "packed", "shipment_booked"),
+      processing: countFor("awaiting_processing", "processing", "packed", "shipment_booked"),
       pickup: countFor("handover_pending"),
       intransit: countFor("handed_over", "return_in_transit"),
+      cancel,
       issue,
     },
     filter: validFilter,
@@ -207,7 +211,7 @@ export async function getShipmentRowsPage(options: { page?: number; pageSize?: n
   ]);
   const pageInfo = pagination(requestedPage, pageSize, total);
   const rows=await prisma.shipment.findMany({skip:(pageInfo.page-1)*pageSize,take:pageSize,include:{order:true},orderBy:[{updatedAt:"desc"},{id:"desc"}]});
-  return { rows:rows.map(row=>({number:row.order.publicNumber,courier:`${row.courierCompany.toUpperCase()} ${row.courierType}`,waybill:row.waybillId||row.trackingId||"Belum tersedia",method:row.collectionMethod==="drop_off"?"Drop-off":"Pickup",status:fulfillmentForUi(row.order.fulfillmentState),updatedAt:adminDate(row.updatedAt)})), pagination: pageInfo, stats: { total, awaitingPickup, inTransit, issue } };
+  return { rows:rows.map(row=>({number:row.order.publicNumber,courier:getCourierDisplayName(row.courierName, row.courierCompany, row.courierType),waybill:row.waybillId||row.trackingId||"Belum tersedia",method:row.collectionMethod==="drop_off"?"Drop-off":"Pickup",status:fulfillmentForUi(row.order.fulfillmentState),updatedAt:adminDate(row.updatedAt)})), pagination: pageInfo, stats: { total, awaitingPickup, inTransit, issue } };
 }
 
 export async function getReturnRowsPage(options: { page?: number; pageSize?: number } = {}) {
@@ -289,6 +293,8 @@ export async function getAuditLogPage(options: { page?: number; pageSize?: numbe
 export async function getAdminOrderDetail(number:string){
 
   const {prisma}=await import("@/lib/db");
+  const { checkAndExpireOrder } = await import("@/lib/payment-sync");
+  await checkAndExpireOrder(number);
   const order=await prisma.order.findUnique({where:{publicNumber:number},include:{items:true,addresses:true,payments:{orderBy:{createdAt:"desc"},take:1},quotes:{where:{selectedAt:{not:null}},orderBy:{createdAt:"desc"},take:1},shipments:{include:{events:{orderBy:{occurredAt:"desc"}}},orderBy:{createdAt:"desc"},take:1},cancellations:{orderBy:{requestedAt:"desc"}},returns:{include:{refunds:{orderBy:{createdAt:"desc"},take:1}},orderBy:{createdAt:"desc"}}}});
   if(!order)return null;
   const auditLogs = await prisma.auditLog.findMany({
@@ -299,8 +305,10 @@ export async function getAdminOrderDetail(number:string){
     },
     orderBy: { createdAt: "asc" }
   });
-  const address=order.addresses.find(item=>item.type==="shipping");const payment=order.payments[0];const shipment=order.shipments[0];const cancellation=order.cancellations[0];
-  return{number:order.publicNumber,userId:order.userId,createdAt:new Intl.DateTimeFormat("id-ID",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Jakarta"}).format(order.createdAt),customer:order.guestName,email:order.guestEmail,phone:order.guestPhone,address:address?.address||"—",note:address?.note||"",paymentState:order.paymentState,fulfillmentState:order.fulfillmentState,subtotal:Number(order.subtotal),shippingFee:Number(order.shippingFee),grandTotal:Number(order.grandTotal),payableAmount:Number(payment?.payableAmount||order.grandTotal),items:order.items.map((item,index)=>({id:item.id,sku:item.skuSnapshot,name:item.nameSnapshot,options:Object.values(item.optionsSnapshot as Record<string,string>).filter(Boolean).join(" · "),quantity:item.quantity,price:Number(item.unitPrice),image:products[index%products.length].image})),shipment:shipment?{status:shipment.status,courier:`${shipment.courierCompany.toUpperCase()} ${shipment.courierType}`,collectionMethod:shipment.collectionMethod,trackingId:shipment.trackingId,waybillId:shipment.waybillId,quotedPrice:Number(shipment.quotedPrice),actualPrice:Number(shipment.actualPrice||shipment.quotedPrice),priceAdjustment:Number(shipment.priceAdjustment),lastProviderSyncAt:shipment.lastProviderSyncAt?.toISOString()||null}:null,cancellation:cancellation?{state:cancellation.state,reason:cancellation.reason,decisionReason:cancellation.decisionReason}:null,events:(() => {
+  const address=order.addresses.find(item=>item.type==="shipping");const payment=order.payments[0];const shipment=order.shipments[0];const cancellation=order.cancellations[0];const quote=order.quotes[0];
+  const { getCourierDisplayName } = await import("@/lib/shipping-utils");
+  const quoteCourier = quote ? getCourierDisplayName(quote.courierName, quote.courierCompany, quote.courierType) : null;
+  return{number:order.publicNumber,userId:order.userId,createdAt:new Intl.DateTimeFormat("id-ID",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Jakarta"}).format(order.createdAt),customer:order.guestName,email:order.guestEmail,phone:order.guestPhone,address:address?.address||"—",note:address?.note||"",paymentState:order.paymentState,fulfillmentState:order.fulfillmentState,subtotal:Number(order.subtotal),shippingFee:Number(order.shippingFee),serviceFee:Number(order.serviceFee),grandTotal:Number(order.grandTotal),payableAmount:Number(payment?.payableAmount||order.grandTotal),quoteCourier,items:order.items.map((item,index)=>({id:item.id,sku:item.skuSnapshot,name:item.nameSnapshot,options:Object.values(item.optionsSnapshot as Record<string,string>).filter(Boolean).join(" · "),quantity:item.quantity,price:Number(item.unitPrice),image:products[index%products.length].image})),shipment:shipment?{status:shipment.status,courier:getCourierDisplayName(shipment.courierName, shipment.courierCompany, shipment.courierType),collectionMethod:shipment.collectionMethod,trackingId:shipment.trackingId,waybillId:shipment.waybillId,quotedPrice:Number(shipment.quotedPrice),actualPrice:Number(shipment.actualPrice||shipment.quotedPrice),priceAdjustment:Number(shipment.priceAdjustment),lastProviderSyncAt:shipment.lastProviderSyncAt?.toISOString()||null}:null,cancellation:cancellation?{state:cancellation.state,reason:cancellation.reason,decisionReason:cancellation.decisionReason}:null,events:(() => {
     const list: Array<{ time: Date; title: string; note: string }> = [];
     
     // 1. Add cancellation state events if any

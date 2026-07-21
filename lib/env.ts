@@ -95,3 +95,18 @@ export function warehouseAreaId() {
   const value = process.env.WAREHOUSE_AREA_ID?.trim();
   return value && !value.startsWith("replace_") ? value : undefined;
 }
+
+/** Biaya layanan toko tetap (default: 500 IDR) */
+export function getDefaultServiceFee(): number {
+  const raw = process.env.NEXT_PUBLIC_SERVICE_FEE || process.env.DEFAULT_SERVICE_FEE || process.env.SERVICE_FEE;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 500;
+}
+
+/** Rate fee QRIS BSTN (default: 0.007 / 0.7%) */
+export function getBstnQrisFeeRate(): number {
+  const raw = process.env.BSTN_QRIS_FEE_RATE;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed < 1 ? parsed : 0.007;
+}
+

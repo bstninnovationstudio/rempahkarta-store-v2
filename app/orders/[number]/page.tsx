@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { AlertCircle, ArrowLeft, Download, MapPin, Truck } from "lucide-react";
+import type { ReactNode } from "react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Download, MapPin, PackageOpen, RotateCcw, Truck } from "lucide-react";
 import { StatusPill, type StatusKey } from "@/components/status-pill";
 import { StoreHeader } from "@/components/store-header";
 import { OrderCancelButton } from "@/components/order-cancel-button";
@@ -13,20 +14,360 @@ import { getBiteshipStatusDetail } from "@/lib/shipping-state";
 import { customerFromRequest } from "@/lib/customer-auth";
 
 const demoEvents = [
-  { at: "13 Jul\n14.32", title: "Paket dalam perjalanan ke kota tujuan", note: "JNE Jakarta Gateway" },
-  { at: "13 Jul\n12.08", title: "Paket telah diambil kurir", note: "Gudang AMK, Jakarta Selatan" },
-  { at: "13 Jul\n10.17", title: "Pesanan selesai dikemas", note: "Menunggu pickup JNE Regular" },
-  { at: "13 Jul\n09.44", title: "Pembayaran QRIS berhasil", note: "Pesanan diteruskan ke tim fulfillment" },
+  { at: "13 Jul\n14.32", title: "Paket dalam perjalanan ke kota tujuan", note: "JNE Jakarta Gateway", tone: "info" as const },
+  { at: "13 Jul\n12.08", title: "Paket telah diambil kurir", note: "Gudang AMK, Jakarta Selatan", tone: "info" as const },
+  { at: "13 Jul\n10.17", title: "Pesanan selesai dikemas", note: "Menunggu pickup JNE Regular", tone: "info" as const },
+  { at: "13 Jul\n09.44", title: "Pembayaran QRIS berhasil", note: "Pesanan diteruskan ke tim fulfillment", tone: "success" as const },
 ];
 
-function maskEmail(value: string) {
-  const [name, domain = ""] = value.split("@");
-  return `${name.slice(0, 2)}••@${domain}`;
-}
-function maskPhone(value: string) { return `${value.slice(0, 4)}••••${value.slice(-3)}`; }
-function maskName(value: string) { return `${value.split(" ")[0]} ${value.split(" ").slice(1).map(() => "S••••").join(" ")}`.trim(); }
-
 type AuditLogView = { action: string; after: unknown; createdAt: Date };
+type SemanticTone = "success" | "info" | "warning" | "danger";
+type TimelineEventView = {
+  at: string;
+  dateTime?: string;
+  title: string;
+  note: string;
+  tone: SemanticTone;
+};
+type OrderItemView = {
+  id: string;
+  sku: string;
+  name: string;
+  options: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  image?: string | null;
+};
+type ReturnItemView = OrderItemView;
+type ReturnView = {
+  id: string;
+  state: string;
+  reason: string;
+  description: string;
+  decisionReason: string | null;
+  refundAmount: number;
+  source: string;
+  cause: string | null;
+  evidence: string[];
+  items: ReturnItemView[];
+  refund: {
+    amount: number;
+    method: string | null;
+    reference: string | null;
+    proofObjectKey: string | null;
+    processedAt: string | null;
+  } | null;
+};
+type OrderView = {
+  created: string;
+  expiresAtFormatted?: string | null;
+  status: OrderStatus;
+  displayStatus: StatusKey;
+  events: TimelineEventView[];
+  items: OrderItemView[];
+  shipping: number;
+  serviceFee: number;
+  total: number;
+  courier: string;
+  tracking: string;
+  hasResi: boolean;
+  recipient: string;
+  address: string;
+  phone: string;
+  canReturn: boolean;
+  canCancel: boolean;
+  isPast7Days: boolean;
+  hasRefundInfo: boolean;
+  userId: string | null;
+  paymentState: StatusKey;
+  paymentUrl: string | null;
+  returnState: string | null;
+  cancellationState: string | null;
+  cancellationReason: string | null;
+  cancellationDecisionReason: string | null;
+  isSellerCancelled: boolean;
+  issueOrder: boolean;
+  returnObj: ReturnView | null;
+};
+
+const returnStateMeta: Record<string, { label: string; description: string; tone: SemanticTone }> = {
+  requested: { label: "Menunggu peninjauan", description: "Pengajuan sudah diterima dan menunggu pemeriksaan dari tim toko.", tone: "warning" },
+  under_review: { label: "Sedang ditinjau", description: "Tim toko sedang memeriksa detail pengajuan dan bukti yang dikirim.", tone: "info" },
+  approved: { label: "Pengajuan disetujui", description: "Pengajuan diterima. Ikuti instruksi berikutnya yang diberikan oleh tim toko.", tone: "success" },
+  awaiting_handover: { label: "Menunggu pengembalian barang", description: "Barang menunggu diserahkan untuk proses pengembalian.", tone: "warning" },
+  waiting_waybill: { label: "Menunggu resi pengembalian", description: "Nomor resi pengembalian belum tersedia.", tone: "warning" },
+  in_transit: { label: "Dalam perjalanan kembali", description: "Barang sedang dikirim kembali kepada penjual.", tone: "info" },
+  processing_return: { label: "Pengembalian diproses", description: "Barang pengembalian sedang diproses oleh penjual.", tone: "info" },
+  received: { label: "Barang diterima penjual", description: "Barang pengembalian telah diterima dan menunggu pemeriksaan.", tone: "info" },
+  return_complete: { label: "Pengembalian selesai", description: "Proses pengembalian barang telah selesai.", tone: "success" },
+  inspection_passed: { label: "Lolos pemeriksaan", description: "Barang telah lolos pemeriksaan dan refund dapat dilanjutkan.", tone: "success" },
+  inspection_failed: { label: "Tidak lolos pemeriksaan", description: "Barang tidak lolos pemeriksaan. Lihat alasan keputusan bila tersedia.", tone: "danger" },
+  awaiting_approval: { label: "Menunggu persetujuan", description: "Rincian resolusi menunggu persetujuan tim toko.", tone: "warning" },
+  refund_pending: { label: "Menunggu transfer refund", description: "Nominal refund telah disetujui dan menunggu proses transfer.", tone: "warning" },
+  processing_refund: { label: "Refund sedang ditransfer", description: "Pengembalian dana sedang diproses ke rekening atau e-wallet tersimpan.", tone: "info" },
+  refunded: { label: "Refund selesai", description: "Pengembalian dana telah dikirim.", tone: "success" },
+  rejected: { label: "Pengajuan ditolak", description: "Pengajuan tidak dapat dilanjutkan. Lihat alasan keputusan bila tersedia.", tone: "danger" },
+  cancelled: { label: "Resolusi dibatalkan", description: "Proses resolusi dihentikan. Lihat alasan keputusan bila tersedia.", tone: "danger" },
+  closed: { label: "Resolusi ditutup", description: "Kasus telah ditutup dan tidak memerlukan tindakan lanjutan.", tone: "success" },
+  finished: { label: "Resolusi selesai", description: "Seluruh proses resolusi telah selesai.", tone: "success" },
+};
+
+const cancellationStateMeta: Record<string, { label: string; description: string; tone: SemanticTone }> = {
+  requested: { label: "Menunggu peninjauan", description: "Pengajuan pembatalan sedang ditinjau oleh tim toko.", tone: "warning" },
+  provider_pending: { label: "Sedang diproses", description: "Pembatalan sedang diteruskan ke penyedia pengiriman.", tone: "info" },
+  provider_failed: { label: "Perlu ditinjau ulang", description: "Pembatalan belum berhasil diproses oleh penyedia pengiriman. Tim toko akan meninjau ulang.", tone: "danger" },
+  approved: { label: "Disetujui", description: "Pengajuan pembatalan telah disetujui.", tone: "success" },
+  rejected: { label: "Ditolak", description: "Pengajuan pembatalan ditolak dan pesanan tetap mengikuti status pemrosesan di atas.", tone: "danger" },
+};
+
+const returnCauseLabels: Record<string, string> = {
+  damaged: "Produk rusak atau cacat",
+  wrong: "Produk atau varian tidak sesuai",
+  incomplete: "Pesanan tidak lengkap",
+};
+
+const machineWordLabels: Record<string, string> = {
+  allocated: "dialokasikan", cancelled: "dibatalkan", completed: "selesai", confirmed: "dikonfirmasi", courier: "kurir", created: "dibuat",
+  delivered: "terkirim", delivery: "pengiriman", disposed: "dimusnahkan", driver: "kurir", dropping: "pengantaran", failed: "gagal",
+  found: "ditemukan", handover: "serah terima", hold: "ditahan", in: "dalam", not: "tidak", pending: "menunggu",
+  order: "pesanan", picked: "dijemput", picking: "penjemputan", pickup: "penjemputan",
+  price: "ongkir", rejected: "ditolak", return: "pengembalian", returned: "dikembalikan",
+  scheduled: "dijadwalkan", success: "berhasil", transit: "perjalanan", updated: "diperbarui", waybill: "resi",
+};
+
+const defaultSystemReasons = new Set([
+  "dibatalkan langsung oleh admin",
+  "dibatalkan oleh penjual",
+  "kebijakan penjual",
+  "kebijakan penjual.",
+  "pesanan tetap diproses",
+  "pesanan tetap diproses.",
+  "proses refund sedang disiapkan",
+  "proses refund sedang disiapkan.",
+  "tidak memenuhi kriteria kebijakan",
+  "tidak memenuhi kriteria kebijakan.",
+]);
+
+function humanizeMachineValue(value: string) {
+  const words = value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => machineWordLabels[word] || word);
+  const label = words.join(" ");
+  return label ? label.charAt(0).toUpperCase() + label.slice(1) : "Pembaruan pengiriman";
+}
+
+function meaningfulReason(value?: string | null) {
+  const cleaned = value?.trim();
+  return cleaned && !defaultSystemReasons.has(cleaned.toLowerCase()) ? cleaned : null;
+}
+
+function getCustomerShipmentStatusDetail(status?: string | null) {
+  const detail = getBiteshipStatusDetail(status);
+  if (detail.category !== "Lainnya") return detail;
+  const label = humanizeMachineValue(status || "");
+  return {
+    category: "Pembaruan",
+    label,
+    meaning: `Kurir memperbarui status pengiriman: ${label.toLowerCase()}.`,
+  };
+}
+
+function cleanShipmentNote(note: string | null, rawStatus: string, fallback: string) {
+  if (!note || note.trim() === rawStatus || note.trim() === `Status ${rawStatus}` || /^[\[{]/.test(note.trim())) return fallback;
+  return note
+    .replace(/Booking Biteship dikonfirmasi/gi, "Pesanan memasuki proses pengiriman")
+    .replace(/Sinkronisasi manual Biteship/gi, "Pembaruan status pengiriman")
+    .replace(/Biteship/gi, "kurir")
+    .replace(/courier_not_found/gi, "kurir tidak tersedia")
+    .replace(/return_in_transit/gi, "dalam perjalanan kembali")
+    .replace(/dropping_off/gi, "sedang diantar")
+    .replace(/picking_up/gi, "menuju lokasi penjemputan")
+    .replace(/on_hold/gi, "pengiriman ditahan");
+}
+
+function getTimelineTone(title: string): SemanticTone {
+  const normalized = title.toLowerCase();
+  if (/gagal|ditolak|dibatalkan|kadaluwarsa|dimusnahkan|tidak tersedia|bermasalah/.test(normalized)) return "danger";
+  if (/menunggu|diajukan|ditahan|dijadwalkan/.test(normalized)) return "warning";
+  if (/selesai|berhasil|diterima|terkirim|dikembalikan/.test(normalized)) return "success";
+  return "info";
+}
+
+function StatusBadge({ label, tone }: { label: string; tone: SemanticTone }) {
+  return <span className={`status-pill status-tone-${tone}`} aria-label={`Status: ${label}`}>{label}</span>;
+}
+
+function OrderInfoTable({ rows, label }: { rows: Array<{ label: string; value: ReactNode; className?: string }>; label: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="order-info-table-wrap">
+      <table className="order-info-table" aria-label={label}>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <th scope="row">{row.label}</th>
+              <td className={row.className}>{row.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TrackingProgress({ steps, activeIndex, tone, label }: { steps: string[]; activeIndex: number; tone: SemanticTone; label: string }) {
+  const safeActiveIndex = Math.max(0, Math.min(activeIndex, steps.length - 1));
+  return (
+    <div className="tracking-progress-wrap">
+      <ol className={`tracking-progress steps-${steps.length} progress-tone-${tone} ${steps.length === 1 ? "no-line" : ""}`} aria-label={label}>
+        {steps.map((step, index) => (
+          <li
+            className={`tracking-step ${index < safeActiveIndex ? "done" : ""} ${index === safeActiveIndex ? "active" : ""}`}
+            aria-current={index === safeActiveIndex ? "step" : undefined}
+            key={step}
+          >
+            <span className="tracking-step-label">{step}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function getOrderProgress(view: OrderView) {
+  if (view.returnObj) {
+    const state = view.returnObj.state;
+    const isRejected = ["rejected", "inspection_failed", "cancelled"].includes(state);
+    const isFinished = ["refunded", "closed", "finished", "return_complete"].includes(state);
+    const isRefundOnly = view.returnObj.reason === "refund";
+    const steps = ["Pengajuan", "Peninjauan", isRefundOnly ? "Proses refund" : "Pengembalian", isRejected ? "Ditolak" : "Selesai"];
+    const activeIndex = isRejected || isFinished
+      ? 3
+      : ["requested", "under_review", "awaiting_approval"].includes(state)
+        ? 1
+        : 2;
+    const tone: SemanticTone = isRejected ? "danger" : isFinished ? "success" : ["requested", "awaiting_approval", "waiting_waybill", "refund_pending"].includes(state) ? "warning" : "info";
+    return { steps, activeIndex, tone, label: "Tahap resolusi pesanan" };
+  }
+
+  if (view.cancellationState) {
+    const state = view.cancellationState;
+    const needsRefund = ["paid", "refund_pending", "refunded", "partially_refunded"].includes(view.paymentState);
+    if (state === "approved" && needsRefund) {
+      const activeIndex = view.paymentState === "refunded" ? 3 : 2;
+      return { steps: ["Pembatalan", "Disetujui", "Proses refund", "Selesai"], activeIndex, tone: activeIndex === 3 ? "success" as const : "info" as const, label: "Tahap pembatalan dan refund" };
+    }
+    if (state === "approved") {
+      return { steps: ["Pembatalan", "Disetujui", "Selesai"], activeIndex: 2, tone: "success" as const, label: "Tahap pembatalan pesanan" };
+    }
+    if (state !== "rejected") {
+      return {
+        steps: ["Pengajuan", "Peninjauan", "Keputusan"],
+        activeIndex: 1,
+        tone: state === "provider_failed" ? "danger" as const : "warning" as const,
+        label: "Tahap pengajuan pembatalan",
+      };
+    }
+  }
+
+  if (view.displayStatus === "cancel_requested") {
+    return {
+      steps: ["Pengajuan", "Peninjauan", "Keputusan"],
+      activeIndex: 1,
+      tone: "warning" as const,
+      label: "Tahap pengajuan pembatalan",
+    };
+  }
+
+  if (view.issueOrder) {
+    const isRefunded = view.paymentState === "refunded";
+    const hasRefund = ["refund_pending", "refunded", "partially_refunded"].includes(view.paymentState);
+    return {
+      steps: ["Kendala", "Investigasi", hasRefund ? "Proses refund" : "Resolusi", "Selesai"],
+      activeIndex: isRefunded ? 3 : hasRefund ? 2 : 1,
+      tone: isRefunded ? "success" as const : "danger" as const,
+      label: "Tahap penanganan kendala pesanan",
+    };
+  }
+
+  if (view.status === "cancelled" || view.displayStatus === "cancelled") {
+    const needsRefund = ["paid", "refund_pending", "refunded", "partially_refunded"].includes(view.paymentState);
+    if (needsRefund) {
+      const activeIndex = view.paymentState === "refunded" ? 2 : 1;
+      return {
+        steps: ["Dibatalkan", "Proses refund", "Selesai"],
+        activeIndex,
+        tone: activeIndex === 2 ? "success" as const : "danger" as const,
+        label: "Tahap pembatalan dan refund",
+      };
+    }
+    return { steps: ["Pesanan dibatalkan"], activeIndex: 0, tone: "danger" as const, label: "Status akhir pesanan" };
+  }
+
+  if (["refund_pending", "refunded", "partially_refunded"].includes(view.paymentState)) {
+    const activeIndex = view.paymentState === "refunded" ? 2 : 1;
+    return {
+      steps: ["Refund diajukan", "Diproses", "Selesai"],
+      activeIndex,
+      tone: activeIndex === 2 ? "success" as const : "warning" as const,
+      label: "Tahap pengembalian dana",
+    };
+  }
+
+  if (["expired", "canceled", "failed", "denied"].includes(view.paymentState)) {
+    const labels: Partial<Record<StatusKey, string>> = {
+      expired: "Pembayaran kedaluwarsa",
+      canceled: "Pembayaran dibatalkan",
+      failed: "Pembayaran gagal",
+      denied: "Pembayaran ditolak",
+    };
+    return { steps: [labels[view.paymentState] || "Pesanan dihentikan"], activeIndex: 0, tone: "danger" as const, label: "Status akhir pesanan" };
+  }
+
+  if (view.displayStatus === "awaiting_payment") {
+    return { steps: ["Pembayaran", "Diproses", "Dikirim", "Terkirim"], activeIndex: 0, tone: "warning" as const, label: "Tahap pemrosesan pesanan" };
+  }
+
+  if (["return_requested", "return_in_transit", "returned"].includes(view.displayStatus)) {
+    const returnIndex: Partial<Record<StatusKey, number>> = { return_requested: 0, return_in_transit: 2, returned: 3 };
+    const activeIndex = returnIndex[view.displayStatus] ?? 0;
+    return {
+      steps: ["Retur diajukan", "Disiapkan", "Dalam perjalanan", "Diterima"],
+      activeIndex,
+      tone: activeIndex === 3 ? "success" as const : "info" as const,
+      label: "Tahap pengembalian barang",
+    };
+  }
+
+  const fulfillmentIndex: Partial<Record<StatusKey, number>> = {
+    awaiting_processing: 0,
+    processing: 0,
+    packed: 1,
+    shipment_booked: 1,
+    handover_pending: 1,
+    handed_over: 2,
+    in_transit: 2,
+    completed: 3,
+    delivered: 3,
+    finished: 3,
+    return_requested: 1,
+    return_in_transit: 2,
+    returned: 3,
+  };
+  const activeIndex = fulfillmentIndex[view.displayStatus] ?? 0;
+  return {
+    steps: ["Diproses", "Dikemas", "Diserahkan ke kurir", "Terkirim"],
+    activeIndex,
+    tone: activeIndex === 3 ? "success" as const : "info" as const,
+    label: "Tahap pemrosesan dan pengiriman pesanan",
+  };
+}
 
 function hasFulfillmentState(value: unknown, state: string) {
   return typeof value === "object"
@@ -35,49 +376,6 @@ function hasFulfillmentState(value: unknown, state: string) {
     && (value as { fulfillmentState?: unknown }).fulfillmentState === state;
 }
 
-function getPaymentLabel(state: string): string {
-  switch (state) {
-    case "pending": return "Menunggu Pembayaran";
-    case "paid": return "Lunas";
-    case "not_created": return "Belum dibuat";
-    case "canceled": return "Dibatalkan";
-    case "expired": return "Kadaluwarsa";
-    case "failed": return "Gagal";
-    case "denied": return "Ditolak";
-    case "refund_pending": return "Refund Diproses";
-    case "refunded": return "Refund Selesai";
-    case "partially_refunded": return "Refund Sebagian";
-    default: return state;
-  }
-}
-
-function getPaymentBadgeStyle(state: string): React.CSSProperties {
-  const base: React.CSSProperties = {
-    padding: "3px 8px",
-    borderRadius: "6px",
-    fontSize: "11px",
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: "0.03em",
-    display: "inline-block"
-  };
-  switch (state) {
-    case "paid":
-    case "refunded":
-      return { ...base, background: "rgba(40, 115, 78, 0.08)", color: "var(--success)" };
-    case "pending":
-    case "refund_pending":
-    case "partially_refunded":
-      return { ...base, background: "rgba(167, 107, 23, 0.08)", color: "var(--warning)" };
-    case "canceled":
-    case "expired":
-    case "failed":
-    case "denied":
-      return { ...base, background: "rgba(181, 67, 59, 0.08)", color: "var(--danger)" };
-    default:
-      return { ...base, background: "var(--surface-muted)", color: "var(--ink-muted)" };
-  }
-}
 function uiStatus(value: string): OrderStatus {
   if (["packed", "shipment_booked"].includes(value)) return "processing";
   if (["handed_over", "return_in_transit"].includes(value)) return "in_transit";
@@ -95,16 +393,23 @@ export default async function OrderPage({
 }) {
   const { number } = await params;
   const product = products[0];
-  let view = {
+  let view: OrderView = {
     created: "13 Juli 2026, 09.42 WIB",
-    email: "bu••@email.com",
     status: "in_transit" as OrderStatus,
     displayStatus: "in_transit" as StatusKey,
     events: demoEvents,
-    itemName: product.name,
-    itemOptions: "Regular · 100 g · 1 item",
-    itemPrice: product.price,
+    items: [{
+      id: "demo-item",
+      sku: "REMPAH-DEMO",
+      name: product.name,
+      options: "Regular · 100 g",
+      quantity: 1,
+      unitPrice: product.price,
+      lineTotal: product.price,
+      image: product.image || "/demo/banner.webp",
+    }],
     shipping: 19000,
+    serviceFee: 0,
     total: product.price + 19000,
     courier: "JNE Regular",
     tracking: "AMK128732198",
@@ -117,31 +422,15 @@ export default async function OrderPage({
     isPast7Days: false,
     hasRefundInfo: false,
     userId: null as string | null,
-    paymentState: "paid",
-    paymentUrl: null as string | null,
-    returnState: null as string | null,
-    cancellationState: null as string | null,
-    cancellationReason: null as string | null,
-    cancellationDecisionReason: null as string | null,
+    paymentState: "paid" as StatusKey,
+    paymentUrl: null,
+    returnState: null,
+    cancellationState: null,
+    cancellationReason: null,
+    cancellationDecisionReason: null,
     isSellerCancelled: false,
     issueOrder: false,
-    returnObj: null as {
-      id: string;
-      state: string;
-      reason: string;
-      description: string;
-      decisionReason: string | null;
-      refundAmount: number;
-      source: string;
-      cause: string | null;
-      refund: {
-        amount: number;
-        method: string | null;
-        reference: string | null;
-        proofObjectKey: string | null;
-        processedAt: string | null;
-      } | null;
-    } | null,
+    returnObj: null,
   };
 
   let auditLogs: AuditLogView[] = [];
@@ -152,6 +441,9 @@ export default async function OrderPage({
       redirect(`/login?redirect=/orders/${number}`);
     }
     const { prisma } = await import("@/lib/db");
+    const { checkAndExpireOrder } = await import("@/lib/payment-sync");
+    await checkAndExpireOrder(number);
+
     const order = await prisma.order.findUnique({
       where: { publicNumber: number },
       include: {
@@ -160,11 +452,35 @@ export default async function OrderPage({
         shipments: { include: { events: { orderBy: { occurredAt: "desc" } } }, take: 1 },
         quotes: { where: { selectedAt: { not: null } }, orderBy: { createdAt: "desc" }, take: 1 },
         payments: { orderBy: { createdAt: "desc" }, take: 1 },
-        returns: { include: { refunds: { orderBy: { createdAt: "desc" }, take: 1 } }, orderBy: { createdAt: "desc" } },
+        returns: {
+          include: {
+            refunds: { orderBy: { createdAt: "desc" }, take: 1 },
+            items: { include: { orderItem: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        },
         cancellations: { orderBy: { requestedAt: "desc" } },
       },
     });
     if (!order) notFound();
+    const variantIds = Array.from(new Set(order.items.map((i) => i.variantId).filter((id): id is string => Boolean(id))));
+    const variantRecords = variantIds.length > 0
+      ? await prisma.productVariant.findMany({
+          where: { id: { in: variantIds } },
+          select: {
+            id: true,
+            imageKey: true,
+            product: {
+              select: {
+                images: { orderBy: { position: "asc" }, take: 1, select: { objectKey: true } },
+              },
+            },
+          },
+        })
+      : [];
+    const variantImageMap = new Map(
+      variantRecords.map((v) => [v.id, v.imageKey || v.product?.images[0]?.objectKey || null])
+    );
     auditLogs = await prisma.auditLog.findMany({
       where: {
         entityType: "order",
@@ -175,7 +491,6 @@ export default async function OrderPage({
     });
     const isOwner = order.userId === customer.id || (order.userId === null && order.guestEmail.toLowerCase() === customer.email.toLowerCase());
     if (!isOwner) notFound();
-    const item = order.items[0];
     const address = order.addresses.find((entry) => entry.type === "shipping");
     const shipment = order.shipments[0];
     const deliveredEvent = shipment?.events.find(
@@ -197,19 +512,24 @@ export default async function OrderPage({
     const isPast7Days = order.fulfillmentState === "completed" && (new Date().getTime() - deliveryDate.getTime() > 7 * 24 * 60 * 60 * 1000);
     
     const selectedQuote = order.quotes[0];
-    const courierLabel = shipment
-      ? `${shipment.courierCompany.toUpperCase()} ${shipment.courierType.toUpperCase()}`
-      : selectedQuote
-        ? `${selectedQuote.courierCompany.toUpperCase()} ${selectedQuote.courierType.toUpperCase()}`
-        : "Kurir Pilihan";
+    const { getCourierDisplayName } = await import("@/lib/shipping-utils");
+    const courierLabel = getCourierDisplayName(
+      shipment?.courierName || selectedQuote?.courierName,
+      shipment?.courierCompany || selectedQuote?.courierCompany,
+      shipment?.courierType || selectedQuote?.courierType,
+    );
     const rawWaybill = shipment?.waybillId || shipment?.trackingId;
     const isRealWaybill = Boolean(rawWaybill && !rawWaybill.startsWith("claim_"));
     const hasResi = isRealWaybill;
     const trackingResi = isRealWaybill ? rawWaybill! : "Menunggu resi";
-    
+    const paymentExpiresAt = order.payments[0]?.expiresAt;
+    const expiresAtFormatted = paymentExpiresAt
+      ? new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(paymentExpiresAt)
+      : null;
+
     view = {
       created: new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(order.createdAt),
-      email: maskEmail(order.guestEmail),
+      expiresAtFormatted,
       status: uiStatus(order.fulfillmentState),
       displayStatus: order.fulfillmentState,
       events: (() => {
@@ -218,6 +538,8 @@ export default async function OrderPage({
         // 1. Add cancellation state events if any
         order.cancellations.forEach(cancel => {
           const isSeller = cancel.reason === "Dibatalkan langsung oleh admin" || cancel.reason === "Dibatalkan oleh penjual";
+          const requestReason = meaningfulReason(cancel.reason);
+          const decisionReason = meaningfulReason(cancel.decisionReason);
           
           if (cancel.state === "approved") {
             const isAutoApproved = cancel.decidedBy === "system" || cancel.reason.includes("Kadaluwarsa") || cancel.reason.includes("otomatis");
@@ -225,28 +547,34 @@ export default async function OrderPage({
               time: cancel.decidedAt || cancel.requestedAt,
               title: isSeller ? "Dibatalkan oleh Penjual" : "Pembatalan Disetujui",
               note: isSeller
-                ? `Alasan penjual: ${cancel.decisionReason || "Kebijakan penjual."}`
+                ? decisionReason ? `Alasan penjual: ${decisionReason}` : "Pesanan dibatalkan oleh penjual."
                 : isAutoApproved
                   ? "Pengajuan pembatalan telah disetujui otomatis."
-                  : `Pengajuan pembatalan telah disetujui. Alasan penjual: ${cancel.decisionReason || "Proses refund sedang disiapkan."}`
+                  : decisionReason ? `Pengajuan disetujui. Keputusan penjual: ${decisionReason}` : "Pengajuan pembatalan telah disetujui."
             });
           } else if (cancel.state === "rejected") {
             list.push({
               time: cancel.decidedAt || cancel.requestedAt,
               title: "Pengajuan Pembatalan Ditolak",
-              note: `Ditolak oleh penjual. Alasan: ${cancel.decisionReason || "Pesanan tetap diproses."}`
+              note: decisionReason ? `Keputusan penjual: ${decisionReason}` : "Pengajuan ditolak dan pesanan tetap diproses."
+            });
+          } else if (cancel.state === "provider_pending") {
+            list.push({
+              time: cancel.decidedAt || cancel.requestedAt,
+              title: "Pembatalan Sedang Diproses",
+              note: "Permintaan pembatalan sedang diteruskan ke penyedia pengiriman."
             });
           } else if (cancel.state === "provider_failed") {
             list.push({
               time: cancel.decidedAt || cancel.requestedAt,
               title: "Pembatalan Bermasalah",
-              note: "Gagal memproses pembatalan ke provider pengiriman. Menunggu tinjauan ulang admin."
+              note: decisionReason || "Pembatalan belum berhasil diproses oleh penyedia pengiriman dan menunggu tinjauan ulang."
             });
           } else if (cancel.state === "requested") {
             list.push({
               time: cancel.requestedAt,
               title: "Pembatalan Diajukan",
-              note: `Alasan pembeli: ${cancel.reason}`
+              note: requestReason ? `Alasan pembeli: ${requestReason}` : "Pengajuan pembatalan diterima."
             });
           }
           
@@ -255,44 +583,35 @@ export default async function OrderPage({
             list.push({
               time: cancel.requestedAt,
               title: "Pembatalan Diajukan",
-              note: `Alasan pembeli: ${cancel.reason}`
+              note: requestReason ? `Alasan pembeli: ${requestReason}` : "Pengajuan pembatalan diterima."
             });
           }
         });
 
         // 1.5. Add return/refund state events if any
         order.returns.forEach(ret => {
-          if (ret.state === "awaiting_approval" || ret.state === "requested") {
+          if (ret.state !== "requested") {
+            const meta = returnStateMeta[ret.state] || {
+              label: "Pembaruan resolusi",
+              description: "Status resolusi pesanan telah diperbarui.",
+              tone: "info" as const,
+            };
+            const decisionReason = meaningfulReason(ret.decisionReason);
             list.push({
               time: ret.updatedAt,
-              title: "Proses Refund Didaftarkan",
-              note: "Menunggu persetujuan Tim pengembalian dana."
-            });
-          } else if (["processing_refund", "refund_pending"].includes(ret.state)) {
-            list.push({
-              time: ret.updatedAt,
-              title: "Proses Refund Disetujui",
-              note: "Pengembalian dana sedang diproses."
-            });
-          } else if (["refunded", "finished", "closed"].includes(ret.state)) {
-            list.push({
-              time: ret.updatedAt,
-              title: "Proses Refund Selesai",
-              note: "Pengembalian dana telah dikirimkan."
-            });
-          } else if (ret.state === "rejected" || ret.state === "cancelled") {
-            list.push({
-              time: ret.updatedAt,
-              title: "Proses Refund Tidak Disetuji",
-              note: `Pengembalian dana tidak diproses. Alasan: ${ret.decisionReason || "Tidak memenuhi kriteria kebijakan."}`
+              title: meta.label,
+              note: decisionReason && ["rejected", "cancelled", "inspection_failed"].includes(ret.state)
+                ? `${meta.description} Alasan: ${decisionReason}`
+                : meta.description,
             });
           }
 
           // Always show the original request creation
+          const causeLabel = ret.cause ? (returnCauseLabels[ret.cause] || humanizeMachineValue(ret.cause)) : "Masalah pada pesanan";
           list.push({
             time: ret.createdAt,
-            title: "Refund Diajukan",
-            note: `Alasan: ${ret.cause === "damaged" ? "Produk rusak/cacat" : ret.cause === "wrong" ? "Produk tidak sesuai" : "Pesanan tidak lengkap"}. Deskripsi: ${ret.description}`
+            title: ret.reason === "refund" ? "Refund Diajukan" : "Resolusi Diajukan",
+            note: `${causeLabel}. ${ret.description}`
           });
         });
         
@@ -309,17 +628,19 @@ export default async function OrderPage({
             title: "Pembayaran Dibatalkan",
             note: "Pembayaran untuk pesanan ini telah dibatalkan."
           });
+        } else if (["failed", "denied"].includes(order.paymentState)) {
+          list.push({
+            time: order.updatedAt,
+            title: order.paymentState === "denied" ? "Pembayaran Ditolak" : "Pembayaran Gagal",
+            note: "Pembayaran belum berhasil dikonfirmasi."
+          });
         }
         
         // 3. Add Biteship shipment tracking events (most recent first)
         if (shipment?.events.length) {
-          const statusEvents = shipment.events.filter(event => {
-            const detail = getBiteshipStatusDetail(event.providerStatus);
-            return detail.category !== "Lainnya";
-          });
-          list.push(...statusEvents.map((event) => {
-            const detail = getBiteshipStatusDetail(event.providerStatus);
-            let note = event.note || detail.meaning || `${shipment.courierCompany.toUpperCase()} ${shipment.courierType}`;
+          list.push(...shipment.events.map((event) => {
+            const detail = getCustomerShipmentStatusDetail(event.providerStatus);
+            let note = cleanShipmentNote(event.note, event.providerStatus, detail.meaning || `${shipment.courierCompany.toUpperCase()} ${shipment.courierType}`);
             
             if (event.providerStatus === "order.price") {
               const payloadObj = event.payload as Record<string, unknown> | null;
@@ -335,12 +656,6 @@ export default async function OrderPage({
               }
             }
 
-            if (note.includes("Biteship")) {
-              note = note.replace(/Booking Biteship dikonfirmasi/gi, "Pesanan memasuki proses pengiriman.")
-                         .replace(/Sinkronisasi manual Biteship/gi, "Pembaruan status pengiriman.")
-                         .replace(/Biteship/g, "kurir");
-            }
-
             return {
               time: event.occurredAt,
               title: detail.label,
@@ -348,7 +663,7 @@ export default async function OrderPage({
             };
           }));
         } else if (shipment) {
-          const detail = getBiteshipStatusDetail(shipment.status);
+          const detail = getCustomerShipmentStatusDetail(shipment.status);
           list.push({
             time: shipment.createdAt,
             title: detail.label === "Pesanan dikonfirmasi" ? "Pengiriman dikonfirmasi" : (detail.label || "Pengiriman di-booking"),
@@ -357,15 +672,6 @@ export default async function OrderPage({
         }
 
         // 4. Add fulfillment state events (processing / packed)
-        const actualState = order.fulfillmentState === "cancelled" || order.fulfillmentState === "cancel_requested"
-          ? (order.cancellations[0]?.fulfillmentBefore || "awaiting_processing")
-          : order.fulfillmentState;
-
-        const wasProcessed = ["processing", "packed", "shipment_booked", "handed_over", "in_transit", "completed", "return_requested", "return_in_transit", "returned"].includes(actualState);
-        const wasPacked = ["packed", "shipment_booked", "handed_over", "in_transit", "completed", "return_requested", "return_in_transit", "returned"].includes(actualState);
-
-        const paidTime = order.payments[0]?.paidAt || order.createdAt;
-
         // Extract real timestamps from AuditLogs if available
         const processingLog = auditLogs.find(l => 
           l.action === "order.processing" || 
@@ -376,29 +682,27 @@ export default async function OrderPage({
           (l.action === "order.manual_status" && hasFulfillmentState(l.after, "packed"))
         );
 
-        if (wasProcessed) {
-          const processedTime = processingLog?.createdAt || new Date(paidTime.getTime() + 1000);
-          if (wasPacked) {
-            // Deduct 1 second from shipment creation time if it exists, to ensure packing event is older than booking event
-            const packedTime = packedLog?.createdAt || (shipment ? new Date(shipment.createdAt.getTime() - 1000) : new Date(processedTime.getTime() + 1000));
-            list.push({
-              time: packedTime,
-              title: "Pesanan sudah dikemas",
-              note: "Paket telah selesai dikemas dan siap dikirim."
-            });
-          }
+        if (packedLog) {
           list.push({
-            time: processedTime,
+            time: packedLog.createdAt,
+            title: "Pesanan sudah dikemas",
+            note: "Paket telah selesai dikemas dan siap dikirim."
+          });
+        }
+        if (processingLog) {
+          list.push({
+            time: processingLog.createdAt,
             title: "Pesanan sedang diproses",
             note: "Pesanan dikonfirmasi dan sedang disiapkan oleh penjual."
           });
         }
 
         // 5. Payment / created entry at the bottom
+        const paymentCompleted = ["paid", "refund_pending", "refunded", "partially_refunded"].includes(order.paymentState);
         list.push({
-          time: order.createdAt,
-          title: order.paymentState === "paid" ? "Pembayaran QRIS berhasil" : "Menunggu pembayaran QRIS",
-          note: order.paymentState === "paid" ? "Pesanan diteruskan ke tim fulfillment." : "Status akan diperbarui otomatis."
+          time: paymentCompleted ? (order.payments[0]?.paidAt || order.createdAt) : order.createdAt,
+          title: paymentCompleted ? "Pembayaran QRIS berhasil" : "Menunggu pembayaran QRIS",
+          note: paymentCompleted ? "Pesanan diteruskan ke tim fulfillment." : "Status akan diperbarui otomatis."
         });
         
         // Sort chronologically descending
@@ -409,15 +713,30 @@ export default async function OrderPage({
           const t = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "Asia/Jakarta" }).format(event.time).replace(/\./g, ":");
           return {
             at: `${d}\n${t}`,
+            dateTime: event.time.toISOString(),
             title: event.title,
-            note: event.note
+            note: event.note,
+            tone: getTimelineTone(event.title),
           };
         });
       })(),
-      itemName: item?.nameSnapshot || "Produk AMK",
-      itemOptions: `${Object.values((item?.optionsSnapshot || {}) as Record<string, string>).filter(Boolean).join(" · ")} · ${item?.quantity || 1} item`,
-      itemPrice: Number(item?.unitPrice || order.subtotal),
+      items: order.items.map((orderItem) => {
+        const fallbackImage = products.find((p) => p.name === orderItem.nameSnapshot)?.image || "/demo/banner.webp";
+        const dbImage = orderItem.variantId ? variantImageMap.get(orderItem.variantId) : null;
+        const itemImage = dbImage || fallbackImage;
+        return {
+          id: orderItem.id,
+          sku: orderItem.skuSnapshot,
+          name: orderItem.nameSnapshot,
+          options: Object.values(orderItem.optionsSnapshot as Record<string, string>).filter(Boolean).join(" · "),
+          quantity: orderItem.quantity,
+          unitPrice: Number(orderItem.unitPrice),
+          lineTotal: Number(orderItem.unitPrice) * orderItem.quantity,
+          image: itemImage,
+        };
+      }),
       shipping: Number(order.shippingFee),
+      serviceFee: Number(order.serviceFee),
       total: Number(order.grandTotal),
       courier: courierLabel,
       tracking: trackingResi,
@@ -447,6 +766,24 @@ export default async function OrderPage({
         refundAmount: Number(order.returns[0].refundAmount || 0),
         source: order.returns[0].source,
         cause: order.returns[0].cause,
+        evidence: Array.isArray(order.returns[0].evidence)
+          ? order.returns[0].evidence.filter((entry): entry is string => typeof entry === "string")
+          : [],
+        items: order.returns[0].items.map((returnItem) => {
+          const fallbackImage = products.find((p) => p.name === returnItem.orderItem.nameSnapshot)?.image || "/demo/banner.webp";
+          const dbImage = returnItem.orderItem.variantId ? variantImageMap.get(returnItem.orderItem.variantId) : null;
+          const itemImage = dbImage || fallbackImage;
+          return {
+            id: returnItem.orderItem.id,
+            sku: returnItem.orderItem.skuSnapshot,
+            name: returnItem.orderItem.nameSnapshot,
+            options: Object.values(returnItem.orderItem.optionsSnapshot as Record<string, string>).filter(Boolean).join(" · "),
+            quantity: returnItem.quantity,
+            unitPrice: Number(returnItem.orderItem.unitPrice),
+            lineTotal: Number(returnItem.orderItem.unitPrice) * returnItem.quantity,
+            image: itemImage,
+          };
+        }),
         refund: order.returns[0].refunds[0] ? {
           amount: Number(order.returns[0].refunds[0].amount),
           method: order.returns[0].refunds[0].method,
@@ -458,440 +795,409 @@ export default async function OrderPage({
     };
   }
 
+  const progress = getOrderProgress(view);
+  const hasResolution = Boolean(
+    view.issueOrder
+    || view.cancellationState
+    || view.returnObj
+    || (view.status === "cancelled" && view.paymentState !== "expired")
+    || ["cancel_requested", "return_requested", "return_in_transit", "returned"].includes(view.displayStatus)
+  );
+  const cancellationMeta = view.isSellerCancelled
+    ? { label: "Dibatalkan oleh penjual", description: "Pesanan dibatalkan oleh penjual.", tone: "danger" as const }
+    : view.cancellationState
+      ? cancellationStateMeta[view.cancellationState] || { label: "Status pembatalan diperbarui", description: "Status pembatalan pesanan telah diperbarui.", tone: "info" as const }
+      : (view.status === "cancelled" && view.paymentState !== "expired")
+        ? { label: "Pesanan dibatalkan", description: "Pesanan ini telah dibatalkan.", tone: "danger" as const }
+        : null;
+  const cancellationRequestReason = meaningfulReason(view.cancellationReason);
+  const cancellationDecisionReason = meaningfulReason(view.cancellationDecisionReason);
+  const returnMeta = view.returnObj
+    ? returnStateMeta[view.returnObj.state] || { label: "Status resolusi diperbarui", description: "Status resolusi pesanan telah diperbarui.", tone: "info" as const }
+    : null;
+  const returnDecisionReason = meaningfulReason(view.returnObj?.decisionReason);
+  const returnCause = view.returnObj?.cause
+    ? returnCauseLabels[view.returnObj.cause] || humanizeMachineValue(view.returnObj.cause)
+    : null;
+
   return (
     <>
       <StoreHeader />
-      <main className="simple-page">
-        <Link href="/" className="eyebrow"><ArrowLeft size={13} /> Kembali ke toko</Link>
-        <div className="order-header-card">
+      <main className="simple-page order-detail-page">
+        <Link href="/" className="eyebrow order-back-link"><ArrowLeft size={13} /> Kembali ke toko</Link>
+
+        <header className="order-header-card">
           <div className="order-header-top">
             <div className="order-number-box">
-              <span className="order-header-label">Nomor Pesanan</span>
+              <span className="order-header-label">Nomor pesanan</span>
               <h1 className="order-header-number">{number}</h1>
               <p className="order-time-text">
-                <span className="order-time-label">Waktu Pemesanan:</span>
-                <span className="order-time-value">{view.created}</span>
+                <span className="order-time-label">Dibuat</span>
+                <time className="order-time-value">{view.created}</time>
               </p>
+              {view.expiresAtFormatted && view.paymentState === "pending" && (
+                <p className="order-time-text">
+                  <span className="order-time-label">Batas pembayaran</span>
+                  <time className="order-time-value">{view.expiresAtFormatted}</time>
+                </p>
+              )}
             </div>
-            <div className="order-header-statuses">
+            <div className="order-header-statuses" aria-label="Ringkasan status pesanan">
               <div className="order-header-status-item">
-                <span className="order-header-label">Status Pemrosesan</span>
+                <span className="order-header-label">Status pemrosesan</span>
                 <StatusPill status={view.displayStatus} />
               </div>
               <div className="order-header-status-item">
-                <span className="order-header-label">Status Pembayaran</span>
-                <StatusPill status={view.paymentState as StatusKey} />
+                <span className="order-header-label">Status pembayaran</span>
+                <StatusPill status={view.paymentState} />
               </div>
             </div>
           </div>
-        </div>
+        </header>
+
         {view.issueOrder && (
-          <section className="panel notice-card notice-danger">
-            <strong>Pesanan dalam proses peninjauan</strong>
-            <p>
-              Kami mendeteksi kendala pada pengiriman atau pemrosesan pesanan Anda. Tim toko kami sedang menyelesaikan masalah ini. Status akan diperbarui secara otomatis setelah diselesaikan. Terima kasih atas kesabaran Anda.
-            </p>
+          <section className="panel notice-card notice-danger order-priority-notice" aria-labelledby="order-review-title">
+            <strong id="order-review-title">Pesanan dalam peninjauan</strong>
+            <p>Tim toko sedang menangani kendala pada pemrosesan atau pengiriman pesanan ini. Perkembangan terbaru tercatat di perjalanan paket dan pusat resolusi.</p>
           </section>
         )}
         {view.paymentUrl && (
-          <section className="panel notice-card payment-notice">
-            <strong>Pembayaran belum selesai.</strong>
-            <p>Lanjutkan melalui halaman pembayaran yang sudah dibuat agar referensi pesanan tetap sama.</p>
+          <section className="panel notice-card payment-notice" aria-labelledby="payment-notice-title">
+            <div>
+              <strong id="payment-notice-title">Pembayaran belum selesai</strong>
+              <p>Lanjutkan melalui halaman pembayaran yang sudah dibuat agar referensi pesanan tetap sama.</p>
+            </div>
             <a className="button button-dark" href={view.paymentUrl}>Lanjutkan pembayaran</a>
           </section>
         )}
+
         <div className="order-layout">
-          <section className="panel">
-            <h2>Perjalanan paket</h2>
-            
-            {(() => {
-              const is4BarProgress = view.issueOrder || 
-                (view.cancellationState && view.cancellationState !== "rejected") || 
-                view.returnObj || 
-                (view.status === "cancelled" && view.isSellerCancelled) || 
-                ["refund_pending", "refunded"].includes(view.paymentState);
-
-              const active4BarStep = (() => {
-                if (view.returnObj) {
-                  if (view.returnObj.state === "rejected") {
-                    return "ditolak";
-                  }
-                  if (["refunded", "closed", "finished"].includes(view.returnObj.state)) {
-                    return "selesai";
-                  }
-                  if (["processing_refund", "refund_pending", "awaiting_approval", "requested", "under_review", "approved", "awaiting_handover", "in_transit", "received", "inspection_passed", "inspection_failed", "processing_return", "return_complete"].includes(view.returnObj.state)) {
-                    return "retur_refund";
-                  }
-                }
-                if (view.paymentState === "refunded") return "selesai";
-                if (view.paymentState === "refund_pending") return "retur_refund";
-                return "investigasi";
-              })();
-
-              if (is4BarProgress) {
-                const firstStepLabel = (view.returnObj || ["refund_pending", "refunded"].includes(view.paymentState)) ? "Refund Diajukan" : "Pembatalan Diajukan";
-                const lastStepLabel = (view.returnObj?.state === "rejected") ? "Ditolak" : "Selesai";
-
-                return (
-                  <div className="tracking-progress issue-progress steps-4">
-                    <div className="tracking-step done">{firstStepLabel}</div>
-                    <div className={`tracking-step ${active4BarStep === "investigasi" ? "active" : "done"}`}>Investigasi</div>
-                    <div className={`tracking-step ${active4BarStep === "retur_refund" ? "active" : (["selesai", "ditolak"].includes(active4BarStep) ? "done" : "")}`}>Refund Dana</div>
-                    <div className={`tracking-step ${["selesai", "ditolak"].includes(active4BarStep) ? "active" : ""}`}>{lastStepLabel}</div>
-                  </div>
-                );
-              }
-
-              return null;
-            })() || (view.paymentState === "expired" ? (
-              <div className="tracking-progress steps-1 no-line">
-                <div className="tracking-step done tone-danger">
-                  Kadaluwarsa
-                </div>
+          <section className="panel order-journey-panel" aria-labelledby="order-journey-title">
+            <div className="order-section-heading">
+              <div>
+                <h2 id="order-journey-title"><Truck size={18} aria-hidden="true" /> Perjalanan paket</h2>
+                <span className="order-section-kicker">Status dan riwayat</span>
               </div>
-            ) : view.cancellationState === "requested" ? (
-              <div className="tracking-progress steps-2">
-                <div className="tracking-step done">Pesanan diproses</div>
-                <div className="tracking-step done tone-warning">
-                  Pembatalan Diajukan
-                </div>
-              </div>
-            ) : view.cancellationState === "approved" || view.status === "cancelled" || view.paymentState === "canceled" ? (
-              view.paymentState === "paid" || view.paymentState === "refund_pending" || view.paymentState === "refunded" ? (
-                <div className="tracking-progress steps-2">
-                  <div className="tracking-step done">{view.isSellerCancelled ? "Dibatalkan oleh Penjual" : "Pembatalan disetujui"}</div>
-                  <div className="tracking-step done tone-info">
-                    Proses Refund
-                  </div>
-                </div>
-              ) : (
-                <div className="tracking-progress steps-1 no-line">
-                  <div className="tracking-step done tone-danger">
-                    {view.isSellerCancelled ? "Dibatalkan oleh Penjual" : "Pesanan Dibatalkan"}
-                  </div>
-                </div>
-              )
-            ) : (
-              <div className="tracking-progress">
-                <div className="tracking-step done">Pesanan diproses</div>
-                <div className={`tracking-step ${["in_transit", "completed"].includes(view.status) ? "done" : ""}`}>Diambil kurir</div>
-                <div className={`tracking-step ${["in_transit", "completed"].includes(view.status) ? "done" : ""}`}>Dalam perjalanan</div>
-                <div className={`tracking-step ${view.status === "completed" ? "done" : ""}`}>Terkirim</div>
-              </div>
-            ))}
+            </div>
 
-            <div className="timeline">
+            <TrackingProgress {...progress} />
+
+            <div className="timeline" aria-label="Riwayat pesanan">
               {view.events.map((event, index) => (
-                <div className="timeline-item" key={`${event.at}-${index}`}>
-                  <div className="timeline-time">{event.at.split("\n").map(part => <span key={part}>{part}<br /></span>)}</div>
-                  <div className="timeline-marker" />
+                <article className={`timeline-item timeline-tone-${event.tone}`} key={`${event.dateTime || event.at}-${index}`}>
+                  <time className="timeline-time" dateTime={event.dateTime}>
+                    {event.at.split("\n").map((part) => <span key={part}>{part}</span>)}
+                  </time>
+                  <div className="timeline-marker" aria-hidden="true" />
                   <div className="timeline-content">
                     <strong>{event.title}</strong>
                     <p>{event.note}</p>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
+
             <div className="order-actions">
-              <a href={`/orders/${number}/invoice?print=1`} target="_blank" className="button button-light">
-                <Download size={15} /> Unduh invoice
+              <a href={`/orders/${number}/invoice?print=1`} target="_blank" rel="noopener noreferrer" className="button button-light">
+                <Download size={15} aria-hidden="true" /> Unduh invoice
               </a>
               <OrderTrackingButton courier={view.courier} tracking={view.tracking} hasResi={view.hasResi} />
             </div>
           </section>
-          <aside>
-            <section className="panel">
-              <h2>Isi paket</h2>
-              <div className="order-item-mini">
-                <div className="order-item-mini-image"><Image unoptimized src={product.image} alt={view.itemName} fill /></div>
+
+          <aside className="order-detail-rail" aria-label="Ringkasan pesanan">
+            <section className="panel order-package-panel" aria-labelledby="package-title">
+              <div className="order-section-heading compact">
                 <div>
-                  <h3>{view.itemName}</h3>
-                  <p>{view.itemOptions}</p>
-                  <strong>{rupiah(view.itemPrice)}</strong>
+                  <h2 id="package-title"><PackageOpen size={16} aria-hidden="true" /> Isi paket</h2>
+                  <span className="order-section-kicker">{view.items.length} jenis produk</span>
                 </div>
               </div>
-              <div className="detail-list">
-                <div><span>Pengiriman</span><strong>{view.courier} · {rupiah(view.shipping)}</strong></div>
-                <div><span>Total</span><strong>{rupiah(view.total)}</strong></div>
+              <div className="order-items-table-wrap">
+                <table className="order-items-table" aria-label="Daftar isi paket">
+                  <thead>
+                    <tr>
+                      <th scope="col">Produk</th>
+                      <th scope="col">Jumlah</th>
+                      <th scope="col">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.items.map((item) => (
+                      <tr key={item.id}>
+                        <td data-label="Produk">
+                          <div className="order-product-cell">
+                            {item.image && (
+                              <div className="order-product-thumb">
+                                <Image
+                                  src={item.image}
+                                  alt={item.name}
+                                  fill
+                                  sizes="48px"
+                                  className="order-product-img"
+                                  unoptimized
+                                />
+                              </div>
+                            )}
+                            <div className="order-product-meta">
+                              <strong>{item.name}</strong>
+                              <span>{item.options || "Tanpa varian"} · {rupiah(item.unitPrice)} / item</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="numeric-cell" data-label="Jumlah">{item.quantity}</td>
+                        <td className="numeric-cell" data-label="Subtotal"><strong>{rupiah(item.lineTotal)}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row" colSpan={2}>Pengiriman ({view.courier})</th>
+                      <td className="numeric-cell">{rupiah(view.shipping)}</td>
+                    </tr>
+                    {view.serviceFee > 0 && (
+                      <tr>
+                        <th scope="row" colSpan={2}>Biaya Layanan</th>
+                        <td className="numeric-cell">{rupiah(view.serviceFee)}</td>
+                      </tr>
+                    )}
+                    <tr className="order-grand-total">
+                      <th scope="row" colSpan={2}>Total pembayaran</th>
+                      <td className="numeric-cell">{rupiah(view.total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </section>
-            <section className="panel panel-spaced">
-              <h2><MapPin size={15} /> Dikirim ke</h2>
-              <div className="resolution-summary-card address-summary-card">
-                <div className="resolution-summary-row">
-                  <span className="resolution-label">Nama Penerima</span>
-                  <strong className="resolution-value">{view.recipient}</strong>
-                </div>
-                <div className="resolution-summary-row">
-                  <span className="resolution-label">No. Telepon</span>
-                  <strong className="resolution-value">{view.phone}</strong>
-                </div>
-                <div className="resolution-summary-row">
-                  <span className="resolution-label">Alamat Lengkap</span>
-                  <strong className="resolution-value address-value-text">{view.address}</strong>
+
+            <section className="panel panel-spaced order-address-panel" aria-labelledby="address-title">
+              <div className="order-section-heading compact">
+                <div>
+                  <h2 id="address-title"><MapPin size={16} aria-hidden="true" /> Dikirim ke</h2>
+                  <span className="order-section-kicker">Alamat pengiriman</span>
                 </div>
               </div>
-            </section>
-            <section className="panel panel-spaced resolution-panel">
-              {Boolean(view.issueOrder || view.cancellationState || view.returnObj || view.status === "cancelled") ? (
-                <>
-                  <h2><AlertCircle size={15} /> Pusat Resolusi</h2>
-                  
-                  {/* Group A: Case A1 - Pembatalan Diajukan */}
-                  {view.cancellationState === "requested" && (
-                    <div className="resolution-summary-card">
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Status Pembatalan</span>
-                        <strong className="resolution-value tone-warning">Menunggu Peninjauan</strong>
-                      </div>
-                      {view.cancellationReason && (
-                        <div className="resolution-summary-row">
-                          <span className="resolution-label">Alasan Pembatalan</span>
-                          <strong className="resolution-value">{view.cancellationReason}</strong>
-                        </div>
-                      )}
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Keterangan</span>
-                        <strong className="resolution-value tone-warning">Pesanan sedang diinvestigasi oleh penjual.</strong>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Group A: Case A3 - Pengajuan Pembatalan Ditolak */}
-                  {view.cancellationState === "rejected" && (
-                    <div className="resolution-summary-card">
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Status Pembatalan</span>
-                        <strong className="resolution-value tone-danger">Ditolak</strong>
-                      </div>
-                      {view.cancellationReason && (
-                        <div className="resolution-summary-row">
-                          <span className="resolution-label">Alasan Pengajuan</span>
-                          <strong className="resolution-value">{view.cancellationReason}</strong>
-                        </div>
-                      )}
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Alasan Penolakan</span>
-                        <strong className="resolution-value tone-danger">
-                          {view.cancellationDecisionReason || "Pesanan telah masuk tahap pengemasan/pengiriman."}
-                        </strong>
-                      </div>
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Keterangan</span>
-                        <strong className="resolution-value">Pesanan tetap diproses oleh penjual.</strong>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Group A: Case A2 - Pembatalan Disetujui */}
-                  {view.cancellationState === "approved" && !view.isSellerCancelled && (
-                    <div className="resolution-summary-card">
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Status Pembatalan</span>
-                        <strong className="resolution-value tone-success">Disetujui</strong>
-                      </div>
-                      {view.cancellationReason && (
-                        <div className="resolution-summary-row">
-                          <span className="resolution-label">Alasan Pembatalan</span>
-                          <strong className="resolution-value">{view.cancellationReason}</strong>
-                        </div>
-                      )}
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Keterangan</span>
-                        <strong className="resolution-value tone-danger">Refund sedang diproses.</strong>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Group B: Case B1 - Dibatalkan oleh Penjual */}
-                  {view.status === "cancelled" && view.isSellerCancelled && (
-                    <div className="resolution-summary-card">
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Status Pesanan</span>
-                        <strong className="resolution-value tone-danger">Dibatalkan oleh Penjual</strong>
-                      </div>
-                      {view.cancellationDecisionReason && (
-                        <div className="resolution-summary-row">
-                          <span className="resolution-label">Alasan Penjual</span>
-                          <strong className="resolution-value">{view.cancellationDecisionReason}</strong>
-                        </div>
-                      )}
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Keterangan</span>
-                        <strong className="resolution-value tone-danger">Refund sedang diproses.</strong>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Group C: Case C1-C4 - Return Request & Refund Status */}
-                  {view.returnObj && (
-                    (() => {
-                      const returnStateLabels: Record<string, string> = {
-                        requested: "Menunggu Peninjauan",
-                        under_review: "Sedang Ditinjau",
-                        approved: "Pengajuan Disetujui",
-                        awaiting_handover: "Menunggu Pengembalian Barang",
-                        in_transit: "Dalam Perjalanan Kembali",
-                        received: "Barang Diterima Penjual",
-                        inspection_passed: "Lolos Inspeksi",
-                        inspection_failed: "Gagal Inspeksi",
-                        refund_pending: "Menunggu Transfer Refund",
-                        processing_refund: "Proses Transfer Refund",
-                        refunded: "Refund Selesai",
-                        closed: "Ditutup",
-                        awaiting_approval: "Menunggu Persetujuan Resolusi",
-                        waiting_waybill: "Menunggu Input Resi Pengembalian",
-                        processing_return: "Barang Pengembalian Diproses",
-                        return_complete: "Barang Tiba di Penjual",
-                        cancelled: "Resolusi Ditolak",
-                        finished: "Resolusi Selesai",
-                        rejected: "Ditolak"
-                      };
-
-                      const isRejected = ["rejected", "inspection_failed", "cancelled"].includes(view.returnObj.state);
-                      const isFinished = ["refunded", "finished", "return_complete"].includes(view.returnObj.state);
-
-                      return (
-                        <div className="resolution-summary-card">
-                          <div className="resolution-summary-row">
-                            <span className="resolution-label">Status Resolusi</span>
-                            <strong className={`resolution-value ${isRejected ? "tone-danger" : isFinished ? "tone-success" : "tone-warning"}`}>
-                              {returnStateLabels[view.returnObj.state] || view.returnObj.state}
-                            </strong>
-                          </div>
-
-                          <div className="resolution-summary-row">
-                            <span className="resolution-label">Tipe Resolusi</span>
-                            <strong className="resolution-value text-capitalize">
-                              {view.returnObj.source === "issue" ? "Resolusi Pesanan Bermasalah" : "Pengajuan Refund Pelanggan"}
-                            </strong>
-                          </div>
-
-                          {view.returnObj.cause && (
-                            <div className="resolution-summary-row">
-                              <span className="resolution-label">Penyebab</span>
-                              <strong className="resolution-value text-capitalize">{view.returnObj.cause.replace(/_/g, " ")}</strong>
-                            </div>
-                          )}
-
-                          {isRejected && view.returnObj.decisionReason && (
-                            <div className="resolution-summary-row">
-                              <span className="resolution-label">Alasan Penolakan</span>
-                              <strong className="resolution-value tone-danger">{view.returnObj.decisionReason}</strong>
-                            </div>
-                          )}
-
-                          {view.returnObj.description && (
-                            <div className="resolution-summary-row">
-                              <span className="resolution-label">Deskripsi Klaim</span>
-                              <strong className="resolution-value">{view.returnObj.description}</strong>
-                            </div>
-                          )}
-                          
-                          {/* Case C4: Refund Detail Card */}
-                          {view.returnObj.refund && (
-                            <div className="refund-detail-card">
-                              <strong className="refund-detail-title">Detail Dana Refund Terkirim</strong>
-                              <div>
-                                <span>Nominal Refund:</span>
-                                <strong>{rupiah(view.returnObj.refund.amount)}</strong>
-                              </div>
-                              <div>
-                                <span>Metode Transfer:</span>
-                                <strong>Manual Transfer</strong>
-                              </div>
-                              {view.returnObj.refund.reference && (
-                                <div>
-                                  <span>Referensi:</span>
-                                  <strong className="break-all">{view.returnObj.refund.reference}</strong>
-                                </div>
-                              )}
-                              {view.returnObj.refund.processedAt && (
-                                <div>
-                                  <span>Tanggal:</span>
-                                  <strong>{view.returnObj.refund.processedAt}</strong>
-                                </div>
-                              )}
-                              {view.returnObj.refund.proofObjectKey && (
-                                <div className="refund-proof-wrap">
-                                  <span>Lampiran bukti transfer</span>
-                                  <a href={view.returnObj.refund.proofObjectKey} target="_blank" rel="noopener noreferrer" className="refund-proof">
-                                    <Image fill src={view.returnObj.refund.proofObjectKey} alt="Bukti transfer refund" unoptimized />
-                                  </a>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()
-                  )}
-
-                  {/* Warning banner: Rekening pengisian warning */}
-                  {view.returnObj && view.returnObj.state === "awaiting_approval" && view.userId && !view.hasRefundInfo && (
-                    <div className="inline-alert inline-alert-danger">
-                      <strong>Informasi rekening belum lengkap</strong>
-                      <span>Mohon lengkapi data rekening atau e-wallet untuk pengembalian dana agar refund dapat segera diproses. <Link href="/user/settings#payment">Isi data rekening →</Link></span>
-                    </div>
-                  )}
-
-                  {/* Group D: Case D1 - General Investigation Flag */}
-                  {view.issueOrder && !view.returnObj && view.cancellationState !== "requested" && (
-                    <div className="resolution-summary-card">
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Status Peninjauan</span>
-                        <strong className="resolution-value tone-danger">Investigasi Toko</strong>
-                      </div>
-                      <div className="resolution-summary-row">
-                        <span className="resolution-label">Keterangan</span>
-                        <strong className="resolution-value tone-danger">
-                          Tim toko kami sedang menyelesaikan kendala pemrosesan/pengiriman pesanan ini.
-                        </strong>
-                      </div>
-                    </div>
-                  )}
-
-                  {view.canReturn && view.returnObj?.state === "rejected" && (
-                    <Link className="button button-light button-block resolution-action" href={`/orders/${number}/return`}>Ajukan masalah lagi</Link>
-                  )}
-                </>
-              ) : (
-                <>
-                  <h2><AlertCircle size={15} /> Ada masalah?</h2>
-                  
-                  {view.status === "completed" && view.isPast7Days && (
-                    <p className="resolution-note tone-danger">
-                      Waktu klaim sudah melewati batas yang ditentukan (maksimal 7 hari setelah paket diterima).
-                    </p>
-                  )}
-                  
-                  {view.status === "completed" && !view.isPast7Days && (
-                    <p className="resolution-note">
-                      Ajukan masalah atau retur maksimal 7 hari setelah paket diterima.
-                    </p>
-                  )}
-
-                  {view.canReturn && !view.returnState && !view.returnObj && (
-                    <Link className="button button-light button-block resolution-action" href={`/orders/${number}/return`}>Ajukan masalah</Link>
-                  )}
-                  {view.canCancel && (
-                    <div className="resolution-action">
-                      <OrderCancelButton number={number} paymentState={view.paymentState} />
-                    </div>
-                  )}
-                </>
-              )}
-
-              <a
-                href="https://wa.me/628562524627"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="button button-dark button-block"
-              >
-                Chat Customer Service
-              </a>
+              <OrderInfoTable
+                label="Informasi penerima"
+                rows={[
+                  { label: "Nama penerima", value: view.recipient },
+                  { label: "Nomor telepon", value: view.phone, className: "tabular-data" },
+                  { label: "Alamat lengkap", value: view.address, className: "multiline-value" },
+                ]}
+              />
             </section>
           </aside>
+
+          <section className="panel resolution-panel" aria-labelledby="resolution-title">
+            <div className="order-section-heading compact resolution-heading">
+              <div>
+                <h2 id="resolution-title"><AlertCircle size={16} aria-hidden="true" /> {hasResolution ? "Pusat resolusi" : "Ada masalah?"}</h2>
+              </div>
+            </div>
+
+            {hasResolution && (
+              <div className="resolution-stack">
+                {cancellationMeta && (
+                  <article className={`resolution-case resolution-case-${cancellationMeta.tone}`}>
+                    <div className="resolution-case-head">
+                      <div className="resolution-case-title-row">
+                        <span className="resolution-case-label">Pembatalan pesanan</span>
+                        <StatusBadge label={cancellationMeta.label} tone={cancellationMeta.tone} />
+                      </div>
+                      <p>{cancellationMeta.description}</p>
+                    </div>
+                    <OrderInfoTable
+                      label="Rincian pembatalan"
+                      rows={[
+                        ...(cancellationRequestReason && !view.isSellerCancelled ? [{ label: "Alasan pengajuan", value: cancellationRequestReason }] : []),
+                        ...(cancellationDecisionReason ? [{ label: view.isSellerCancelled ? "Alasan penjual" : "Alasan keputusan", value: cancellationDecisionReason }] : []),
+                        ...(["refund_pending", "refunded", "partially_refunded"].includes(view.paymentState)
+                          ? [{ label: "Status refund", value: <StatusPill status={view.paymentState} /> }]
+                          : view.cancellationState === "approved" && view.paymentState === "paid"
+                            ? [{ label: "Status refund", value: <StatusBadge label="Menunggu proses refund" tone="warning" /> }]
+                            : []),
+                      ]}
+                    />
+                  </article>
+                )}
+
+                {view.returnObj && returnMeta && (
+                  <article className={`resolution-case resolution-case-${returnMeta.tone}`}>
+                    <div className="resolution-case-head">
+                      <div className="resolution-case-title-row">
+                        <span className="resolution-case-label">Pengajuan masalah</span>
+                        <StatusBadge label={returnMeta.label} tone={returnMeta.tone} />
+                      </div>
+                      <p>{returnMeta.description}</p>
+                    </div>
+
+                    <OrderInfoTable
+                      label="Ringkasan pengajuan masalah"
+                      rows={[
+                        { label: "Solusi diminta", value: view.returnObj.reason === "refund" ? "Pengembalian dana" : humanizeMachineValue(view.returnObj.reason) },
+                        ...(returnCause ? [{ label: "Jenis masalah", value: returnCause }] : []),
+                        { label: "Deskripsi masalah", value: view.returnObj.description },
+                        ...(returnDecisionReason ? [{ label: ["rejected", "cancelled", "inspection_failed"].includes(view.returnObj.state) ? "Alasan penolakan" : "Catatan keputusan", value: returnDecisionReason }] : []),
+                        ...(view.returnObj.refundAmount > 0 && !view.returnObj.refund ? [{ label: "Nominal disetujui", value: rupiah(view.returnObj.refundAmount), className: "tabular-data" }] : []),
+                        ...(view.returnObj.source === "issue" ? [{ label: "Sumber kasus", value: "Kendala terdeteksi oleh toko" }] : []),
+                      ]}
+                    />
+
+                    {view.returnObj.items.length > 0 && (
+                      <div className="resolution-subsection">
+                        <h3>Produk terdampak</h3>
+                        <div className="resolution-items-wrap">
+                          <table className="resolution-items-table" aria-label="Produk yang diajukan dalam resolusi">
+                            <thead>
+                              <tr><th scope="col">Produk</th><th scope="col">Jumlah</th><th scope="col">Nilai</th></tr>
+                            </thead>
+                            <tbody>
+                              {view.returnObj.items.map((item) => (
+                                <tr key={item.id}>
+                                  <td data-label="Produk">
+                                    <div className="order-product-cell">
+                                      {item.image && (
+                                        <div className="order-product-thumb">
+                                          <Image
+                                            src={item.image}
+                                            alt={item.name}
+                                            fill
+                                            sizes="40px"
+                                            className="order-product-img"
+                                            unoptimized
+                                          />
+                                        </div>
+                                      )}
+                                      <div className="order-product-meta">
+                                        <strong>{item.name}</strong>
+                                        <span>{item.options || item.sku}</span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="numeric-cell" data-label="Jumlah">{item.quantity}</td>
+                                  <td className="numeric-cell" data-label="Nilai">{rupiah(item.lineTotal)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {view.returnObj.evidence.length > 0 && (
+                      <div className="resolution-subsection">
+                        <h3>Bukti pengajuan <span>{view.returnObj.evidence.length} foto</span></h3>
+                        <div className="resolution-evidence-grid">
+                          {view.returnObj.evidence.map((src, index) => (
+                            <a href={src} target="_blank" rel="noopener noreferrer" className="resolution-evidence" key={src} aria-label={`Buka bukti pengajuan ${index + 1}`}>
+                              <Image fill sizes="(max-width: 640px) 40vw, 140px" src={src} alt={`Bukti pengajuan masalah ${index + 1}`} unoptimized />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {view.returnObj.refund && (
+                      <div className="resolution-subsection refund-detail-section">
+                        <div className="refund-detail-heading">
+                          <h3><CheckCircle2 size={15} aria-hidden="true" /> Dana refund terkirim</h3>
+                          <StatusBadge label="Selesai" tone="success" />
+                        </div>
+                        <OrderInfoTable
+                          label="Detail dana refund"
+                          rows={[
+                            { label: "Nominal refund", value: rupiah(view.returnObj.refund.amount), className: "tabular-data" },
+                            ...(view.returnObj.refund.method ? [{ label: "Metode transfer", value: humanizeMachineValue(view.returnObj.refund.method) }] : []),
+                            ...(view.returnObj.refund.reference ? [{ label: "Referensi", value: view.returnObj.refund.reference, className: "break-all tabular-data" }] : []),
+                            ...(view.returnObj.refund.processedAt ? [{ label: "Tanggal transfer", value: view.returnObj.refund.processedAt }] : []),
+                          ]}
+                        />
+                        {view.returnObj.refund.proofObjectKey && (
+                          <div className="refund-proof-wrap">
+                            <span>Bukti transfer</span>
+                            <a href={view.returnObj.refund.proofObjectKey} target="_blank" rel="noopener noreferrer" className="refund-proof">
+                              <Image fill sizes="220px" src={view.returnObj.refund.proofObjectKey} alt="Bukti transfer refund" unoptimized />
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                )}
+
+                {view.issueOrder && !view.returnObj && !cancellationMeta && (
+                  <article className="resolution-case resolution-case-danger">
+                    <div className="resolution-case-head">
+                      <div className="resolution-case-title-row">
+                        <span className="resolution-case-label">Peninjauan toko</span>
+                        <StatusBadge label="Dalam investigasi" tone="danger" />
+                      </div>
+                      <p>Tim toko sedang menyelesaikan kendala pemrosesan atau pengiriman pada pesanan ini.</p>
+                    </div>
+                  </article>
+                )}
+
+                {!view.issueOrder && !view.returnObj && !cancellationMeta && ["cancel_requested", "return_requested", "return_in_transit", "returned"].includes(view.displayStatus) && (
+                  <article className="resolution-case resolution-case-info">
+                    <div className="resolution-case-head">
+                      <div className="resolution-case-title-row">
+                        <span className="resolution-case-label">Status resolusi</span>
+                        <StatusPill status={view.displayStatus} />
+                      </div>
+                      <p>Proses penyelesaian pesanan sedang berjalan. Perkembangan terbaru akan tercatat pada perjalanan paket.</p>
+                    </div>
+                  </article>
+                )}
+
+                {view.returnObj && ["awaiting_approval", "refund_pending", "processing_refund"].includes(view.returnObj.state) && view.userId && !view.hasRefundInfo && (
+                  <div className="inline-alert inline-alert-danger">
+                    <strong>Informasi rekening belum lengkap</strong>
+                    <span>Lengkapi rekening atau e-wallet agar pengembalian dana dapat diproses. <Link href="/user/settings#payment">Lengkapi data rekening</Link></span>
+                  </div>
+                )}
+
+                {view.canReturn && view.returnObj?.state === "rejected" && (
+                  <Link className="button button-light button-block resolution-action" href={`/orders/${number}/return`}><RotateCcw size={15} aria-hidden="true" /> Ajukan masalah lagi</Link>
+                )}
+              </div>
+            )}
+
+            {!hasResolution && view.paymentState !== "expired" && (
+              <div className="resolution-support resolution-primary-action">
+                <div>
+                  <strong>Ada masalah yang dialami?</strong>
+                  <span>
+                    {view.status === "completed" && !view.isPast7Days
+                      ? "Ajukan peninjauan masalah maksimal 7 hari setelah paket diterima."
+                      : "Ajukan peninjauan masalah."}
+                  </span>
+                </div>
+
+                {((view.canReturn && !view.returnState && !view.returnObj) || view.canCancel) && (
+                  <div className="resolution-actions-wrapper">
+                    {view.canReturn && !view.returnState && !view.returnObj && (
+                      <Link className="button button-light button-block resolution-action" href={`/orders/${number}/return`}>
+                        <AlertCircle size={15} aria-hidden="true" /> Ajukan masalah
+                      </Link>
+                    )}
+                    {view.canCancel && (
+                      <OrderCancelButton number={number} paymentState={view.paymentState} />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+              <div className="resolution-support">
+                <div>
+                  <strong>Butuh bantuan langsung?</strong>
+                  <span>Sertakan nomor pesanan saat menghubungi tim kami.</span>
+                </div>
+                <a href="https://wa.me/628562524627" target="_blank" rel="noopener noreferrer" className="button button-dark button-block">
+                  Chat Customer Service
+                </a>
+              </div>
+            </section>
         </div>
       </main>
     </>

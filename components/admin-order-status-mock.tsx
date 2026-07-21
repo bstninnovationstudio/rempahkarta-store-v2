@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, RefreshCw } from "lucide-react";
+import { Copy, RefreshCw, Trash2 } from "lucide-react";
 
 export function AdminOrderStatusMock({
   number,
@@ -78,6 +78,36 @@ export function AdminOrderStatusMock({
     }
   }
 
+  async function handleDelete() {
+    if (!confirm(`HAPUS PESANAN PERMANEN?\n\nApakah Anda yakin ingin menghapus pesanan ${number} secara permanen?\n(Fitur ini hanya dapat dijalankan pada mode development)`)) {
+      return;
+    }
+    setBusy("delete");
+    setMessage("");
+
+    try {
+      const response = await fetch(`${baseApiUrl}/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Gagal menghapus pesanan.");
+
+      setMessage(`Pesanan ${number} berhasil dihapus! Mengalihkan ke daftar pesanan...`);
+      setTimeout(() => {
+        location.href = "/admin/orders";
+      }, 1000);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Terjadi kesalahan.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  if (process.env.NEXT_PUBLIC_APP_MODE === "production" || process.env.APP_MODE === "production") {
+    return null;
+  }
+
   return (
     <details className="developer-tools">
       <summary className="developer-tools-title">Alat simulasi developer</summary>
@@ -141,7 +171,7 @@ export function AdminOrderStatusMock({
             </button>
           </form>
 
-          <div className="developer-duplicate-action">
+          <div className="developer-duplicate-action" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <button
               type="button"
               className="button button-light button-compact"
@@ -150,6 +180,15 @@ export function AdminOrderStatusMock({
             >
               <Copy size={14} />
               {busy === "duplicate" ? "Menduplikasi…" : "Duplikasi pesanan mock"}
+            </button>
+            <button
+              type="button"
+              className="button button-danger button-compact"
+              onClick={handleDelete}
+              disabled={!!busy}
+            >
+              <Trash2 size={14} />
+              {busy === "delete" ? "Menghapus…" : "Hapus pesanan (dev)"}
             </button>
           </div>
         </div>

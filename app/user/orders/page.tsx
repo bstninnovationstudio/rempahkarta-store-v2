@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { checkAndExpireAllStaleOrders } from "@/lib/payment-sync";
 import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
 
@@ -16,6 +17,8 @@ export default async function UserOrdersHistoryPage({
 }) {
   const customer = await customerFromRequest();
   if (!customer) return null;
+
+  await checkAndExpireAllStaleOrders();
 
   const query = await searchParams;
   const parsedPage = Number.parseInt(query.page || "1", 10);
@@ -92,7 +95,6 @@ export default async function UserOrdersHistoryPage({
                       <span>Total pembayaran</span>
                       <strong>{rupiah(Number(order.grandTotal))}</strong>
                     </div>
-                    <span className="order-card-link">Lihat rincian <ChevronRight size={14} aria-hidden="true" /></span>
                   </Link>
                 </article>
               );

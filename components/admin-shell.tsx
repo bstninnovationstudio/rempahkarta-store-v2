@@ -2,9 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
-  ArrowLeft,
   Boxes,
   ClipboardList,
   FolderTree,
@@ -62,7 +61,6 @@ function getMobileSnapshot() {
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  const router = useRouter();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const isMobile = useSyncExternalStore(subscribeMobile, getMobileSnapshot, () => false);
@@ -162,7 +160,6 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 <Image src="/main-logo.webp" alt="" width={30} height={30} className="brand-logo-img" priority />
                 REMPAHKARTA
               </span>
-              <small>Commerce console</small>
             </Link>
             <button
               type="button"
@@ -238,19 +235,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               >
                 <Menu size={19} />
               </button>
-              {path !== "/admin" && (
-                <button className="icon-button admin-back-button" type="button" aria-label="Kembali" onClick={() => router.back()}>
-                  <ArrowLeft size={18} />
-                </button>
-              )}
               <div className="admin-topbar-context" aria-live="polite">
                 <span>Panel admin</span>
                 <strong>{currentLabel}</strong>
               </div>
             </div>
-            <div className="admin-top-actions">
-              <Link href="/" className="button button-light admin-store-link">Lihat toko</Link>
-            </div>
+            <div className="admin-top-actions" />
           </header>
           {children}
         </main>

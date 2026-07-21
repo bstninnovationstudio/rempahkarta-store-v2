@@ -51,7 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
     const detail = await adapter.getPayment(payment.providerPaymentId);
     if (
       detail.data.project_payment_ref !== payment.projectPaymentRef
-      || detail.data.amount !== Number(payment.amount)
+      || (detail.data.amount !== Number(payment.amount) && detail.data.amount !== Number(payment.payableAmount || 0))
     ) {
       return NextResponse.json({ error: "Data pembayaran tidak cocok" }, { status: 409 });
     }

@@ -91,3 +91,97 @@ export async function applyVerifiedPaymentStatus(
 
   return { transitioned, previousStatus: payment.status, providerStatus: input.providerStatus };
 }
+
+export async function checkAndExpireOrderTx(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+) {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true,
+      paymentState: true,
+      payments: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, expiresAt: true, status: true } },
+    },
+  });
+
+  if (!order || order.paymentState !== "pending") return false;
+  const payment = order.payments[0];
+  if (!payment || !payment.expiresAt || payment.expiresAt >= new Date()) return false;
+
+  const outcome = await applyVerifiedPaymentStatus(tx, {
+    paymentId: payment.id,
+    orderId: order.id,
+    providerStatus: "expired",
+    paidAt: null,
+    raw: { reason: "expired_past_deadline" },
+    reservationReason: "expired_past_deadline",
+  });
+
+  return outcome.transitioned;
+}
+
+export async function checkAndExpireOrder(orderIdOrPublicNumber: string) {
+  const { prisma } = await import("@/lib/db");
+  const order = await prisma.order.findFirst({
+    where: {
+      OR: [{ id: orderIdOrPublicNumber }, { publicNumber: orderIdOrPublicNumber }],
+    },
+    select: { id: true, paymentState: true, payments: { orderBy: { createdAt: "desc" }, take: 1, select: { expiresAt: true } } },
+  });
+
+  if (!order || order.paymentState !== "pending") return false;
+  const payment = order.payments[0];
+  if (!payment || !payment.expiresAt || payment.expiresAt >= new Date()) return false;
+
+  let transitioned = false;
+  await prisma.$transaction(async (tx) => {
+    transitioned = await checkAndExpireOrderTx(tx, order.id);
+  });
+
+  if (transitioned) {
+    const { invalidateCatalogCache } = await import("@/lib/catalog");
+    invalidateCatalogCache();
+  }
+
+  return transitioned;
+}
+
+export async function checkAndExpireAllStaleOrders() {
+  const { prisma } = await import("@/lib/db");
+  const now = new Date();
+  const staleOrders = await prisma.order.findMany({
+    where: {
+      paymentState: "pending",
+      payments: {
+        some: {
+          status: "pending",
+          expiresAt: { lt: now },
+        },
+      },
+    },
+    select: { id: true },
+  });
+
+  if (staleOrders.length === 0) return 0;
+
+  let expiredCount = 0;
+  for (const item of staleOrders) {
+    try {
+      let transitioned = false;
+      await prisma.$transaction(async (tx) => {
+        transitioned = await checkAndExpireOrderTx(tx, item.id);
+      });
+      if (transitioned) expiredCount++;
+    } catch {
+      // Continue processing other stale orders if one fails
+    }
+  }
+
+  if (expiredCount > 0) {
+    const { invalidateCatalogCache } = await import("@/lib/catalog");
+    invalidateCatalogCache();
+  }
+
+  return expiredCount;
+}

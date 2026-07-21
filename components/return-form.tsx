@@ -322,7 +322,7 @@ export function ReturnForm({ number, orderItems }: { number: string; orderItems:
             <p className="return-review-label">Bukti gambar ({files.length})</p>
             <div className="return-review-evidence">
               {previews.map((src, index) => (
-                <Image key={src} src={src} alt={`Bukti masalah ${index + 1}`} width={320} height={320} unoptimized />
+                <Image key={src} src={src} alt={`Bukti masalah ${index + 1}`} width={64} height={64} unoptimized />
               ))}
             </div>
           </div>

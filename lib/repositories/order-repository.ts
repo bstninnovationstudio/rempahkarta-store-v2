@@ -78,10 +78,15 @@ export async function createOrderWithReservation(input: CheckoutInput) {
     }
 
     const shipping = BigInt(input.shipping.price);
+    const { calculateServiceFee } = await import("@/lib/fee");
+    const feeBreakdown = calculateServiceFee(Number(subtotal + shipping));
+    const serviceFee = BigInt(feeBreakdown.serviceFee);
+    const grandTotal = BigInt(feeBreakdown.grandTotal);
+
     const created = await tx.order.create({
       data: {
         publicNumber,
-        userId: input.userId,
+        ...(input.userId ? { user: { connect: { id: input.userId } } } : {}),
         guestName: input.name,
         guestEmail: input.email,
         guestPhone: input.phone,
@@ -89,7 +94,8 @@ export async function createOrderWithReservation(input: CheckoutInput) {
         accessTokenHash: await sha256(token),
         subtotal,
         shippingFee: shipping,
-        grandTotal: subtotal + shipping,
+        serviceFee,
+        grandTotal,
         paymentState: "not_created",
         fulfillmentState: "awaiting_payment",
         addresses: {

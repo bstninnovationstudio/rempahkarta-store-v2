@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { releaseOrderReservation, restockCommittedOrder } from "@/lib/inventory";
-import { BstnPaymentAdapter } from "@/lib/adapters/bstn";
+import { BstnPaymentAdapter, BstnApiError } from "@/lib/adapters/bstn";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBstnApiKey } from "@/lib/env";
@@ -58,10 +58,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
       process.env.BSTN_RETURN_SIGNATURE_SECRET,
     );
     try { await bstn.cancelPayment(payment.providerPaymentId, body.data.reason); }
-    catch {
-      return NextResponse.json({
-        error: "Pembatalan pembayaran gagal. Status pesanan belum diubah; silakan coba kembali.",
-      }, { status: 502 });
+    catch (cause) {
+      const isConflict = cause instanceof BstnApiError && [400, 404, 409].includes(cause.status);
+      if (!isConflict) {
+        return NextResponse.json({
+          error: "Pembatalan pembayaran gagal. Status pesanan belum diubah; silakan coba kembali.",
+        }, { status: 502 });
+      }
     }
   }
 

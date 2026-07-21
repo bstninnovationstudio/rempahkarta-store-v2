@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { rupiah } from "@/lib/format";
 import type { Product, StoreVariant } from "@/lib/types";
 import { useTurnstile } from "@/components/use-turnstile";
+import { calculateServiceFee } from "@/lib/fee";
 
 type ShippingOption = { id: string; company: string; type: string; name: string; eta: string; price: number };
 type Area = { id: string; label: string; postalCode: string };
@@ -85,7 +86,10 @@ export function CheckoutForm({
   const subtotal = fromCart
     ? cartItems.reduce((sum, item) => sum + item.variant.price * item.quantity, 0)
     : (variant ? variant.price : 0);
-  const total = subtotal + (shipping?.price ?? 0);
+  const baseAmount = subtotal + (shipping?.price ?? 0);
+  const feeBreakdown = calculateServiceFee(baseAmount);
+  const serviceFee = shipping ? feeBreakdown.serviceFee : 0;
+  const total = shipping ? feeBreakdown.grandTotal : subtotal;
   const variantLabel = variant ? ([variant.option1Value, variant.option2Value].filter(Boolean).join(" · ") || "Produk tunggal") : "";
   const totalWeight = fromCart
     ? cartItems.reduce((sum, item) => sum + (item.variant.weight || 0) * item.quantity, 0)
@@ -360,7 +364,7 @@ export function CheckoutForm({
                     <button type="button" key={option.id} className={`shipping-option ${shipping?.id === option.id ? "active" : ""}`} onClick={() => setShipping(option)}>
                       <div>
                         <strong>{option.name}</strong>
-                        <span>Estimasi tiba {option.eta} · Pickup dari gudang</span>
+                        <span>Estimasi tiba {option.eta}</span>
                       </div>
                       <strong>{rupiah(option.price)}</strong>
                     </button>
@@ -416,6 +420,10 @@ export function CheckoutForm({
             <div className="summary-line">
               <span>Pengiriman</span>
               <span>{shipping ? rupiah(shipping.price) : "Belum dipilih"}</span>
+            </div>
+            <div className="summary-line">
+              <span>Biaya Layanan</span>
+              <span>{shipping ? rupiah(serviceFee) : "Hitung ongkir dahulu"}</span>
             </div>
             <div className="summary-line total">
               <span>Total invoice</span>

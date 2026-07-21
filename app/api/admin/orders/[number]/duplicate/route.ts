@@ -82,7 +82,7 @@ export async function POST(
       const newOrder = await tx.order.create({
         data: {
           publicNumber: newPublicNumber,
-          userId: sourceOrder.userId,
+          ...(sourceOrder.userId ? { user: { connect: { id: sourceOrder.userId } } } : {}),
           guestName: sourceOrder.guestName,
           guestEmail: sourceOrder.guestEmail,
           guestPhone: sourceOrder.guestPhone,

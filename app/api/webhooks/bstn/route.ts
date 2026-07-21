@@ -84,7 +84,7 @@ export async function POST(request: Request) {
   }
   if (
     local.projectPaymentRef !== payload.payment.project_payment_ref ||
-    Number(local.amount) !== payload.payment.amount
+    (Number(local.amount) !== payload.payment.amount && Number(local.payableAmount || 0) !== payload.payment.amount)
   ) {
     await prisma.webhookInbox.update({
       where: { source_deliveryKey: { source: "bstn", deliveryKey: deliveryId } },

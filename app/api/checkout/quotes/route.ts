@@ -60,7 +60,8 @@ export async function POST(request: Request) {
       };
     });
     const adapter = new BiteshipAdapter(process.env.BITESHIP_BASE_URL || "https://api.biteship.com", biteshipApiKey);
-    const data = await adapter.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: input.destinationAreaId, destinationPostalCode: input.destinationPostalCode, couriers: process.env.ENABLED_COURIERS || "jne", items: shippingItems });
+    const enabledCouriers = (process.env.ENABLED_COURIERS || "jne,sicepat,anteraja,jnt").split(",").map(c => c.trim().toLowerCase()).filter(Boolean).join(",");
+    const data = await adapter.rates({ originAreaId: warehouseAreaId(), originPostalCode: Number(process.env.WAREHOUSE_POSTAL_CODE) || undefined, destinationAreaId: input.destinationAreaId, destinationPostalCode: input.destinationPostalCode, couriers: enabledCouriers, items: shippingItems });
     return NextResponse.json(data);
   } catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "Tarif pengiriman gagal dimuat" }, { status: 502 }); }
 }

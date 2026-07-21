@@ -11,6 +11,9 @@ import { useTurnstile } from "@/components/use-turnstile";
 
 interface PaymentPageClientProps {
   number: string;
+  subtotal?: number;
+  shippingFee?: number;
+  serviceFee?: number;
   grandTotal: number;
   payableAmount: number;
   feeAmount: number;
@@ -23,6 +26,9 @@ interface PaymentPageClientProps {
 
 export function PaymentPageClient({
   number,
+  subtotal,
+  shippingFee,
+  serviceFee,
   grandTotal,
   payableAmount,
   feeAmount,
@@ -53,6 +59,8 @@ export function PaymentPageClient({
       return;
     }
 
+    let timerInterval: ReturnType<typeof setInterval> | null = null;
+
     const updateTimer = () => {
       const now = Date.now();
       const diff = expiryTimeRef.current - now;
@@ -61,7 +69,7 @@ export function PaymentPageClient({
         setTimeLeft("00:00");
         setIsExpired(true);
         setStatus("expired");
-        clearInterval(timerInterval);
+        if (timerInterval) clearInterval(timerInterval);
       } else {
         const minutes = Math.floor(diff / 60000);
         const seconds = Math.floor((diff % 60000) / 1000);
@@ -72,9 +80,11 @@ export function PaymentPageClient({
     };
 
     updateTimer(); // Initial call
-    const timerInterval = setInterval(updateTimer, 1000);
+    timerInterval = setInterval(updateTimer, 1000);
 
-    return () => clearInterval(timerInterval);
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
   }, [status, expiresAt]);
 
   // 2. Auto-Polling Effect (checks database only, every 3 seconds)
@@ -262,18 +272,29 @@ export function PaymentPageClient({
 
           {/* Pricing snapshot list */}
           <div className="detail-list payment-detail-list">
-            <div>
-              <span>Subtotal & Ongkir</span>
-              <span>{rupiah(grandTotal)}</span>
-            </div>
-            {feeAmount > 0 && (
+            {subtotal !== undefined && shippingFee !== undefined ? (
+              <>
+                <div>
+                  <span>Subtotal Produk</span>
+                  <span>{rupiah(subtotal)}</span>
+                </div>
+                <div>
+                  <span>Ongkos Kirim</span>
+                  <span>{rupiah(shippingFee)}</span>
+                </div>
+                <div>
+                  <span>Biaya Layanan</span>
+                  <span>{rupiah(payableAmount - (subtotal + shippingFee))}</span>
+                </div>
+              </>
+            ) : (
               <div>
-                <span>Kode Unik & Biaya Layanan</span>
-                <span>{rupiah(feeAmount)}</span>
+                <span>Subtotal & Ongkir</span>
+                <span>{rupiah(payableAmount - (serviceFee || 0))}</span>
               </div>
             )}
             <div className="payment-total">
-              <span>Total pembayaran</span>
+              <span>Total Pembayaran</span>
               <strong>{rupiah(payableAmount)}</strong>
             </div>
           </div>

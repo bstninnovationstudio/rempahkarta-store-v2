@@ -141,14 +141,14 @@ export function AdminOrderActions({
               </select>
             </label>
             <button type="button" className="button button-dark" disabled={!!busy} onClick={() => post("shipment", `${base}/shipment`, { collectionMethod: method, deliveryType: "now" })}>
-              <Truck size={16} /> {busy === "shipment" ? "Membooking…" : "Booking Biteship"}
+              <Truck size={16} /> {busy === "shipment" ? "Memproses…" : "ATUR PENGIRIMAN"}
             </button>
           </>
         )}
         {hasShipment && (
           <>
             <a href={`/admin/orders/${encodeURIComponent(number)}/resi`} target="_blank" rel="noopener noreferrer" className="button button-dark">
-              <Printer size={16} /> Cetak Resi Thermal (A6)
+              <Printer size={16} /> CETAK RESI (A6)
             </a>
             <button type="button" className="button button-light" disabled={!!busy} onClick={() => post("sync", `${base}/shipment/sync`, {})}>
               <RefreshCw size={16} /> {busy === "sync" ? "Sinkronisasi…" : "Sinkronkan Biteship"}
