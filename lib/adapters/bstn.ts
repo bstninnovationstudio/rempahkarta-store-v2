@@ -96,6 +96,14 @@ export class BstnPaymentAdapter {
         payment_id: string;
         project_payment_ref: string;
         amount: number;
+        payable_amount?: number;
+        fee_amount?: number;
+        qris_unique_code?: string;
+        qris?: {
+          payable_amount?: number;
+          unique_code?: string;
+          admin_fee?: number;
+        } | null;
         status: string;
         paid_at: string | null;
       };

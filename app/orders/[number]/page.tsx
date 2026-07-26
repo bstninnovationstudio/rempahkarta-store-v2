@@ -70,6 +70,7 @@ type OrderView = {
   voucherCode: string | null;
   discountAmount: number;
   serviceFee: number;
+  uniqueCode: number;
   total: number;
   courier: string;
   tracking: string;
@@ -414,6 +415,7 @@ export default async function OrderPage({
     voucherCode: null,
     discountAmount: 0,
     serviceFee: 0,
+    uniqueCode: 0,
     total: product.price + 19000,
     courier: "JNE Regular",
     tracking: "AMK128732198",
@@ -743,7 +745,8 @@ export default async function OrderPage({
       voucherCode: order.voucherCode,
       discountAmount: Number(order.discountAmount),
       serviceFee: Number(order.serviceFee),
-      total: Number(order.grandTotal),
+      uniqueCode: Number(order.payments[0]?.uniqueCode || 0),
+      total: order.payments[0]?.payableAmount ? Number(order.payments[0].payableAmount) : Number(order.grandTotal),
       courier: courierLabel,
       tracking: trackingResi,
       hasResi,
@@ -878,7 +881,8 @@ export default async function OrderPage({
         )}
 
         <div className="order-layout">
-          <section className="panel order-journey-panel" aria-labelledby="order-journey-title">
+          <div className="order-detail-main">
+            <section className="panel order-journey-panel" aria-labelledby="order-journey-title">
             <div className="order-section-heading">
               <div>
                 <h2 id="order-journey-title"><Truck size={18} aria-hidden="true" /> Perjalanan paket</h2>
@@ -904,101 +908,12 @@ export default async function OrderPage({
             </div>
 
             <div className="order-actions">
-              <a href={`/orders/${number}/invoice?print=1`} target="_blank" rel="noopener noreferrer" className="button button-light">
+              <a href={`/orders/${number}/invoice?print=1`} className="button button-light">
                 <Download size={15} aria-hidden="true" /> Unduh invoice
               </a>
               <OrderTrackingButton courier={view.courier} tracking={view.tracking} hasResi={view.hasResi} />
             </div>
           </section>
-
-          <aside className="order-detail-rail" aria-label="Ringkasan pesanan">
-            <section className="panel order-package-panel" aria-labelledby="package-title">
-              <div className="order-section-heading compact">
-                <div>
-                  <h2 id="package-title"><PackageOpen size={16} aria-hidden="true" /> Isi paket</h2>
-                  <span className="order-section-kicker">{view.items.length} jenis produk</span>
-                </div>
-              </div>
-              <div className="order-items-table-wrap">
-                <table className="order-items-table" aria-label="Daftar isi paket">
-                  <thead>
-                    <tr>
-                      <th scope="col">Produk</th>
-                      <th scope="col">Jumlah</th>
-                      <th scope="col">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {view.items.map((item) => (
-                      <tr key={item.id}>
-                        <td data-label="Produk">
-                          <div className="order-product-cell">
-                            {item.image && (
-                              <div className="order-product-thumb">
-                                <Image
-                                  src={item.image}
-                                  alt={item.name}
-                                  fill
-                                  sizes="48px"
-                                  className="order-product-img"
-                                  unoptimized
-                                />
-                              </div>
-                            )}
-                            <div className="order-product-meta">
-                              <strong>{item.name}</strong>
-                              <span>{item.options || "Tanpa varian"} · {rupiah(item.unitPrice)} / item</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="numeric-cell" data-label="Jumlah">{item.quantity}</td>
-                        <td className="numeric-cell" data-label="Subtotal"><strong>{rupiah(item.lineTotal)}</strong></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <th scope="row" colSpan={2}>Pengiriman ({view.courier})</th>
-                      <td className="numeric-cell">{rupiah(view.shipping)}</td>
-                    </tr>
-                    {view.discountAmount > 0 && (
-                      <tr>
-                        <th scope="row" colSpan={2}>Diskon promo ({view.voucherCode || "PROMO"})</th>
-                        <td className="numeric-cell tone-success">-{rupiah(view.discountAmount)}</td>
-                      </tr>
-                    )}
-                    {view.serviceFee > 0 && (
-                      <tr>
-                        <th scope="row" colSpan={2}>Biaya Layanan</th>
-                        <td className="numeric-cell">{rupiah(view.serviceFee)}</td>
-                      </tr>
-                    )}
-                    <tr className="order-grand-total">
-                      <th scope="row" colSpan={2}>Total pembayaran</th>
-                      <td className="numeric-cell">{rupiah(view.total)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </section>
-
-            <section className="panel panel-spaced order-address-panel" aria-labelledby="address-title">
-              <div className="order-section-heading compact">
-                <div>
-                  <h2 id="address-title"><MapPin size={16} aria-hidden="true" /> Dikirim ke</h2>
-                  <span className="order-section-kicker">Alamat pengiriman</span>
-                </div>
-              </div>
-              <OrderInfoTable
-                label="Informasi penerima"
-                rows={[
-                  { label: "Nama penerima", value: view.recipient },
-                  { label: "Nomor telepon", value: view.phone, className: "tabular-data" },
-                  { label: "Alamat lengkap", value: view.address, className: "multiline-value" },
-                ]}
-              />
-            </section>
-          </aside>
 
           <section className="panel resolution-panel" aria-labelledby="resolution-title">
             <div className="order-section-heading compact resolution-heading">
@@ -1101,7 +1016,7 @@ export default async function OrderPage({
                         <h3>Bukti pengajuan <span>{view.returnObj.evidence.length} foto</span></h3>
                         <div className="resolution-evidence-grid">
                           {view.returnObj.evidence.map((src, index) => (
-                            <a href={src} target="_blank" rel="noopener noreferrer" className="resolution-evidence" key={src} aria-label={`Buka bukti pengajuan ${index + 1}`}>
+                            <a href={src} className="resolution-evidence" key={src} aria-label={`Buka bukti pengajuan ${index + 1}`}>
                               <Image fill sizes="(max-width: 640px) 40vw, 140px" src={src} alt={`Bukti pengajuan masalah ${index + 1}`} unoptimized />
                             </a>
                           ))}
@@ -1127,7 +1042,7 @@ export default async function OrderPage({
                         {view.returnObj.refund.proofObjectKey && (
                           <div className="refund-proof-wrap">
                             <span>Bukti transfer</span>
-                            <a href={view.returnObj.refund.proofObjectKey} target="_blank" rel="noopener noreferrer" className="refund-proof">
+                            <a href={view.returnObj.refund.proofObjectKey} className="refund-proof">
                               <Image fill sizes="220px" src={view.returnObj.refund.proofObjectKey} alt="Bukti transfer refund" unoptimized />
                             </a>
                           </div>
@@ -1174,7 +1089,7 @@ export default async function OrderPage({
               </div>
             )}
 
-            {!hasResolution && view.paymentState !== "expired" && (
+            {!hasResolution && view.paymentState !== "expired" && ((view.canReturn && !view.returnState && !view.returnObj) || view.canCancel) && (
               <div className="resolution-support resolution-primary-action">
                 <div>
                   <strong>Ada masalah yang dialami?</strong>
@@ -1185,18 +1100,16 @@ export default async function OrderPage({
                   </span>
                 </div>
 
-                {((view.canReturn && !view.returnState && !view.returnObj) || view.canCancel) && (
-                  <div className="resolution-actions-wrapper">
-                    {view.canReturn && !view.returnState && !view.returnObj && (
-                      <Link className="button button-light button-block resolution-action" href={`/orders/${number}/return`}>
-                        <AlertCircle size={15} aria-hidden="true" /> Ajukan masalah
-                      </Link>
-                    )}
-                    {view.canCancel && (
-                      <OrderCancelButton number={number} paymentState={view.paymentState} />
-                    )}
-                  </div>
-                )}
+                <div className="resolution-actions-wrapper">
+                  {view.canReturn && !view.returnState && !view.returnObj && (
+                    <Link className="button button-light button-block resolution-action" href={`/orders/${number}/return`}>
+                      <AlertCircle size={15} aria-hidden="true" /> Ajukan masalah
+                    </Link>
+                  )}
+                  {view.canCancel && (
+                    <OrderCancelButton number={number} paymentState={view.paymentState} />
+                  )}
+                </div>
               </div>
             )}
 
@@ -1210,6 +1123,102 @@ export default async function OrderPage({
                 </a>
               </div>
             </section>
+          </div>
+
+          <aside className="order-detail-rail" aria-label="Ringkasan pesanan">
+            <section className="panel order-package-panel" aria-labelledby="package-title">
+              <div className="order-section-heading compact">
+                <div>
+                  <h2 id="package-title"><PackageOpen size={16} aria-hidden="true" /> Isi paket</h2>
+                  <span className="order-section-kicker">{view.items.length} jenis produk</span>
+                </div>
+              </div>
+              <div className="order-items-table-wrap">
+                <table className="order-items-table" aria-label="Daftar isi paket">
+                  <thead>
+                    <tr>
+                      <th scope="col">Produk</th>
+                      <th scope="col">Jumlah</th>
+                      <th scope="col">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.items.map((item) => (
+                      <tr key={item.id}>
+                        <td data-label="Produk">
+                          <div className="order-product-cell">
+                            {item.image && (
+                              <div className="order-product-thumb">
+                                <Image
+                                  src={item.image}
+                                  alt={item.name}
+                                  fill
+                                  sizes="48px"
+                                  className="order-product-img"
+                                  unoptimized
+                                />
+                              </div>
+                            )}
+                            <div className="order-product-meta">
+                              <strong>{item.name}</strong>
+                              <span>{item.options || "Tanpa varian"} · {rupiah(item.unitPrice)} / item</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="numeric-cell" data-label="Jumlah">{item.quantity}</td>
+                        <td className="numeric-cell" data-label="Subtotal"><strong>{rupiah(item.lineTotal)}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row" colSpan={2}>Pengiriman ({view.courier})</th>
+                      <td className="numeric-cell">{rupiah(view.shipping)}</td>
+                    </tr>
+                    {view.discountAmount > 0 && (
+                      <tr>
+                        <th scope="row" colSpan={2}>Diskon promo ({view.voucherCode || "PROMO"})</th>
+                        <td className="numeric-cell tone-success">-{rupiah(view.discountAmount)}</td>
+                      </tr>
+                    )}
+                    {view.serviceFee > 0 && (
+                      <tr>
+                        <th scope="row" colSpan={2}>Biaya Layanan</th>
+                        <td className="numeric-cell">{rupiah(view.serviceFee)}</td>
+                      </tr>
+                    )}
+                    {view.uniqueCode > 0 && (
+                      <tr>
+                        <th scope="row" colSpan={2}>Nomor Acak Unik</th>
+                        <td className="numeric-cell">{rupiah(view.uniqueCode)}</td>
+                      </tr>
+                    )}
+                    <tr className="order-grand-total">
+                      <th scope="row" colSpan={2}>Total pembayaran</th>
+                      <td className="numeric-cell">{rupiah(view.total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </section>
+
+            <section className="panel panel-spaced order-address-panel" aria-labelledby="address-title">
+              <div className="order-section-heading compact">
+                <div>
+                  <h2 id="address-title"><MapPin size={16} aria-hidden="true" /> Dikirim ke</h2>
+                  <span className="order-section-kicker">Alamat pengiriman</span>
+                </div>
+              </div>
+              <OrderInfoTable
+                label="Informasi penerima"
+                rows={[
+                  { label: "Nama penerima", value: view.recipient },
+                  { label: "Nomor telepon", value: view.phone, className: "tabular-data" },
+                  { label: "Alamat lengkap", value: view.address, className: "multiline-value" },
+                ]}
+              />
+            </section>
+          </aside>
         </div>
       </main>
     </>

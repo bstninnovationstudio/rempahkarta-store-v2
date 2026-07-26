@@ -2,6 +2,8 @@ import { products } from "@/lib/demo-data";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 import { getBiteshipStatusDetail } from "@/lib/shipping-state";
 import type { Prisma } from "@prisma/client";
+import { getPaidTotalsByUserIds } from "@/lib/payment-totals";
+import { calculatePaymentAmounts } from "@/lib/payment-amounts";
 
 function fulfillmentForUi(value:string):OrderStatus{
   if(["packed","shipment_booked"].includes(value))return "processing";
@@ -59,7 +61,7 @@ function adminOrderWhere(filter?: string): Prisma.OrderWhereInput {
   if (filter === "processing") return { fulfillmentState: { in: ["awaiting_processing", "processing", "packed", "shipment_booked"] } };
   if (filter === "pickup") return { fulfillmentState: "handover_pending" };
   if (filter === "intransit") return { fulfillmentState: { in: ["handed_over", "return_in_transit"] } };
-  if (filter === "cancel" || filter === "cancellation") return { OR: [{ cancellations: { some: {} } }, { fulfillmentState: "cancelled" }] };
+  if (filter === "cancel" || filter === "cancellation") return { OR: [{ fulfillmentState: "cancel_requested" }, { cancellations: { some: { state: { in: ["requested", "provider_pending", "provider_failed"] } } } }] };
   if (filter === "issue") return { issueOrder: true };
   return {}; // covers "all" and undefined (default processing handled in page)
 }
@@ -74,12 +76,13 @@ function mapAdminOrder(order: {
   issueOrder: boolean;
   items: Array<{ nameSnapshot: string }>;
   shipments: Array<{ courierCompany: string; courierType: string; courierName?: string | null }>;
+  payments: Array<{ payableAmount: bigint | null }>;
 }, index: number): AdminOrder {
   return {
     number: order.publicNumber,
     customer: maskName(order.guestName),
     createdAt: adminDate(order.createdAt),
-    total: Number(order.grandTotal),
+    total: Number(order.payments[0]?.payableAmount ?? order.grandTotal),
     payment: paymentForUi(order.paymentState),
     fulfillment: fulfillmentForUi(order.fulfillmentState),
     courier: order.shipments[0] ? getCourierDisplayName(order.shipments[0].courierName, order.shipments[0].courierCompany, order.shipments[0].courierType) : "—",
@@ -93,17 +96,32 @@ function mapAdminOrder(order: {
 export async function getAdminDashboardData() {
   const { prisma } = await import("@/lib/db");
   const { checkAndExpireAllStaleOrders } = await import("@/lib/payment-sync");
+  const { getRevenueStats } = await import("@/lib/finance");
   await checkAndExpireAllStaleOrders();
-  const [rows, totalOrders, paidSales, needProcess, pickup] = await prisma.$transaction([
-    prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 4, include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 } } }),
-    prisma.order.count(),
-    prisma.order.aggregate({ where: { paymentState: "paid" }, _sum: { grandTotal: true } }),
-    prisma.order.count({ where: { fulfillmentState: "awaiting_processing" } }),
-    prisma.order.count({ where: { fulfillmentState: "handover_pending" } }),
+  const [needProcess, canceledOrders, issueOrders, reviewReturns, revenueStats] = await Promise.all([
+    prisma.order.count({
+      where: { fulfillmentState: { in: ["awaiting_processing", "processing", "packed", "shipment_booked"] } },
+    }),
+    prisma.order.count({
+      where: { OR: [{ fulfillmentState: "cancel_requested" }, { cancellations: { some: { state: { in: ["requested", "provider_pending", "provider_failed"] } } } }] },
+    }),
+    prisma.order.count({
+      where: { issueOrder: true },
+    }),
+    prisma.returnRequest.count({
+      where: { state: { in: ["requested", "under_review", "awaiting_approval"] } },
+    }),
+    getRevenueStats(),
   ]);
   return {
-    latestOrders: rows.map(mapAdminOrder),
-    stats: { totalOrders, paidSales: Number(paidSales._sum.grandTotal || 0), needProcess, pickup },
+    stats: {
+      needProcess,
+      canceledOrders,
+      issueOrders,
+      reviewReturns,
+      heldBalance: Number(revenueStats.heldBalance),
+      availableBalance: Number(revenueStats.availableBalance),
+    },
   };
 }
 
@@ -122,7 +140,7 @@ export async function getAdminOrdersPage(options: { page?: number; pageSize?: nu
     prisma.order.count({ where }),
     prisma.order.groupBy({ by: ["fulfillmentState"], orderBy: { fulfillmentState: "asc" }, _count: { id: true } }),
     prisma.order.count({ where: { issueOrder: true } }),
-    prisma.order.count({ where: { OR: [{ cancellations: { some: {} } }, { fulfillmentState: "cancelled" }] } }),
+    prisma.order.count({ where: { OR: [{ fulfillmentState: "cancel_requested" }, { cancellations: { some: { state: { in: ["requested", "provider_pending", "provider_failed"] } } } }] } }),
   ]);
   const pageInfo = pagination(requestedPage, pageSize, total);
   const rows = await prisma.order.findMany({
@@ -130,7 +148,7 @@ export async function getAdminOrdersPage(options: { page?: number; pageSize?: nu
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     skip: (pageInfo.page - 1) * pageSize,
     take: pageSize,
-    include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 }, payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true } } },
   });
   const countFor = (...states: string[]) => fulfillmentGroups
     .filter(group => states.includes(group.fulfillmentState))
@@ -158,11 +176,11 @@ export async function getInventoryPage(options: { page?: number; pageSize?: numb
   const { prisma } = await import("@/lib/db");
   const [total, sums, availabilityResult] = await Promise.all([
     prisma.inventoryLevel.count(),
-    prisma.inventoryLevel.aggregate({ _sum: { onHand: true, reserved: true, safetyStock: true } }),
+    prisma.inventoryLevel.aggregate({ _sum: { onHand: true, reserved: true } }),
     prisma.$queryRaw<Array<{ available: bigint; low: bigint }>>`
       SELECT
-        COALESCE(SUM(GREATEST(0, inventory.onHand - inventory.reserved - inventory.safetyStock)), 0) AS available,
-        SUM(CASE WHEN inventory.onHand - inventory.reserved - inventory.safetyStock <= variant.lowStockThreshold THEN 1 ELSE 0 END) AS low
+        COALESCE(SUM(GREATEST(0, inventory.onHand - inventory.reserved)), 0) AS available,
+        SUM(CASE WHEN inventory.onHand - inventory.reserved <= variant.lowStockThreshold THEN 1 ELSE 0 END) AS low
       FROM InventoryLevel inventory
       INNER JOIN ProductVariant variant ON variant.id = inventory.variantId
     `,
@@ -177,41 +195,25 @@ export async function getInventoryPage(options: { page?: number; pageSize?: numb
   const onHand = sums._sum.onHand || 0;
   const reserved = sums._sum.reserved || 0;
   return {
-    rows: rows.map(row=>({id:row.id,sku:row.variant.sku,name:row.variant.product.name,color:[row.variant.option1Value,row.variant.option2Value].filter(Boolean).join(" / ")||"Produk tunggal",onHand:row.onHand,reserved:row.reserved,safety:row.safetyStock,lowStockThreshold:row.variant.lowStockThreshold})),
+    rows: rows.map(row=>({id:row.id,sku:row.variant.sku,name:row.variant.product.name,color:[row.variant.option1Value,row.variant.option2Value].filter(Boolean).join(" / ")||"Produk tunggal",onHand:row.onHand,reserved:row.reserved,lowStockThreshold:row.variant.lowStockThreshold})),
     pagination: pageInfo,
     stats: { onHand, reserved, available: Number(availabilityResult[0]?.available || 0), low: Number(availabilityResult[0]?.low || 0) },
   };
 }
 
-export async function getProductRowsPage(options: { page?: number; pageSize?: number } = {}) {
+export async function getProductRowsPage(options: { page?: number; pageSize?: number; archived?: boolean } = {}) {
   const requestedPage = safePage(options.page);
   const pageSize = safePageSize(options.pageSize);
 
   const { prisma } = await import("@/lib/db");
-  const total = await prisma.product.count();
+  const where = options.archived ? { status: "archived" as const } : { status: { not: "archived" as const } };
+  const total = await prisma.product.count({ where });
   const pageInfo = pagination(requestedPage, pageSize, total);
-  const rows = await prisma.product.findMany({skip:(pageInfo.page-1)*pageSize,take:pageSize,include:{category:true,images:{orderBy:{position:"asc"},take:1},variants:{where:{active:true},include:{inventory:true},orderBy:{position:"asc"}}},orderBy:[{updatedAt:"desc"},{id:"desc"}]});
+  const rows = await prisma.product.findMany({where,skip:(pageInfo.page-1)*pageSize,take:pageSize,include:{category:true,images:{orderBy:{position:"asc"},take:1},variants:{where:{active:true},include:{inventory:true},orderBy:{position:"asc"}}},orderBy:[{position:"asc"},{id:"asc"}]});
   return {
-    rows: rows.map((product,index)=>{const variant=product.variants[0];const stock=product.variants.reduce((total,item)=>total+item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved-level.safetyStock),0),0);const isLow=product.variants.some(item=>item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved-level.safetyStock),0)<=item.lowStockThreshold);return{id:product.id,name:product.name,category:product.category?.name||product.legacyCategory||"Tanpa kategori",color:product.hasVariants?`${product.variants.length} varian`:"Produk tunggal",sku:variant?.sku||"Belum ada detail",price:Number(variant?.price||0),stock,status:product.status,image:product.images[0]?.objectKey||products[index%products.length]?.image||"/main-logo.webp",isLow}}),
+    rows: rows.map((product,index)=>{const variant=product.variants[0];const stock=product.variants.reduce((total,item)=>total+item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved),0),0);const isLow=product.variants.some(item=>item.inventory.reduce((sum,level)=>sum+Math.max(0,level.onHand-level.reserved),0)<=item.lowStockThreshold);return{id:product.id,name:product.name,category:product.category?.name||product.legacyCategory||"Tanpa kategori",color:product.hasVariants?`${product.variants.length} varian`:"Produk tunggal",sku:variant?.sku||"Belum ada detail",price:Number(variant?.price||0),stock,status:product.status,image:product.images[0]?.objectKey||products[index%products.length]?.image||"/main-logo.webp",isLow}}),
     pagination: pageInfo,
   };
-}
-
-export async function getShipmentRowsPage(options: { page?: number; pageSize?: number } = {}) {
-  const requestedPage = safePage(options.page);
-  const pageSize = safePageSize(options.pageSize);
-
-  const { prisma } = await import("@/lib/db");
-  const issueStatuses = ["cancelled", "rejected", "courier_not_found", "disposed"];
-  const [total, awaitingPickup, inTransit, issue] = await prisma.$transaction([
-    prisma.shipment.count(),
-    prisma.shipment.count({ where: { order: { fulfillmentState: "handover_pending" } } }),
-    prisma.shipment.count({ where: { order: { fulfillmentState: { in: ["handed_over", "return_in_transit"] } } } }),
-    prisma.shipment.count({ where: { status: { in: issueStatuses } } }),
-  ]);
-  const pageInfo = pagination(requestedPage, pageSize, total);
-  const rows=await prisma.shipment.findMany({skip:(pageInfo.page-1)*pageSize,take:pageSize,include:{order:true},orderBy:[{updatedAt:"desc"},{id:"desc"}]});
-  return { rows:rows.map(row=>({number:row.order.publicNumber,courier:getCourierDisplayName(row.courierName, row.courierCompany, row.courierType),waybill:row.waybillId||row.trackingId||"Belum tersedia",method:row.collectionMethod==="drop_off"?"Drop-off":"Pickup",status:fulfillmentForUi(row.order.fulfillmentState),updatedAt:adminDate(row.updatedAt)})), pagination: pageInfo, stats: { total, awaitingPickup, inTransit, issue } };
 }
 
 export async function getReturnRowsPage(options: { page?: number; pageSize?: number } = {}) {
@@ -245,12 +247,8 @@ export async function getAdminUsersPage(options: { page?: number; pageSize?: num
     select: { id: true, name: true, email: true, avatarUrl: true, createdAt: true, _count: { select: { orders: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
-  const totals = users.length ? await prisma.order.groupBy({
-    by: ["userId"],
-    where: { userId: { in: users.map(user => user.id) }, OR: [{ paymentState: "paid" }, { fulfillmentState: "completed" }] },
-    _sum: { grandTotal: true },
-  }) : [];
-  const spentByUser = new Map(totals.map(item => [item.userId, Number(item._sum.grandTotal || 0)]));
+  const paidTotals = await getPaidTotalsByUserIds(users.map(user => user.id));
+  const spentByUser = new Map(Array.from(paidTotals, ([id, total]) => [id, Number(total)]));
   return {
     rows: users.map(user => ({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl, createdAt: user.createdAt, totalOrders: user._count.orders, totalSpent: spentByUser.get(user.id) || 0 })),
     pagination: pageInfo,
@@ -306,9 +304,11 @@ export async function getAdminOrderDetail(number:string){
     orderBy: { createdAt: "asc" }
   });
   const address=order.addresses.find(item=>item.type==="shipping");const payment=order.payments[0];const shipment=order.shipments[0];const cancellation=order.cancellations[0];const quote=order.quotes[0];
+  const paymentAmounts = calculatePaymentAmounts({ subtotal: order.subtotal, shippingFee: order.shippingFee, discountAmount: order.discountAmount, serviceFee: order.serviceFee, grandTotal: order.grandTotal, payableAmount: payment?.payableAmount, feeAmount: payment?.feeAmount, uniqueCode: payment?.uniqueCode });
   const { getCourierDisplayName } = await import("@/lib/shipping-utils");
   const quoteCourier = quote ? getCourierDisplayName(quote.courierName, quote.courierCompany, quote.courierType) : null;
-  return{number:order.publicNumber,userId:order.userId,createdAt:new Intl.DateTimeFormat("id-ID",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Jakarta"}).format(order.createdAt),customer:order.guestName,email:order.guestEmail,phone:order.guestPhone,address:address?.address||"—",note:address?.note||"",paymentState:order.paymentState,fulfillmentState:order.fulfillmentState,subtotal:Number(order.subtotal),shippingFee:Number(order.shippingFee),voucherCode:order.voucherCode,discountAmount:Number(order.discountAmount),voucherTarget:order.voucherTarget,serviceFee:Number(order.serviceFee),grandTotal:Number(order.grandTotal),payableAmount:Number(payment?.payableAmount||order.grandTotal),quoteCourier,items:order.items.map((item,index)=>({id:item.id,sku:item.skuSnapshot,name:item.nameSnapshot,options:Object.values(item.optionsSnapshot as Record<string,string>).filter(Boolean).join(" · "),quantity:item.quantity,price:Number(item.unitPrice),image:products[index%products.length].image})),shipment:shipment?{status:shipment.status,courier:getCourierDisplayName(shipment.courierName, shipment.courierCompany, shipment.courierType),collectionMethod:shipment.collectionMethod,trackingId:shipment.trackingId,waybillId:shipment.waybillId,quotedPrice:Number(shipment.quotedPrice),actualPrice:Number(shipment.actualPrice||shipment.quotedPrice),priceAdjustment:Number(shipment.priceAdjustment),lastProviderSyncAt:shipment.lastProviderSyncAt?.toISOString()||null}:null,cancellation:cancellation?{state:cancellation.state,reason:cancellation.reason,decisionReason:cancellation.decisionReason}:null,events:(() => {
+  const activeReturnObj = order.returns.find(ret => !["rejected", "closed", "cancelled", "finished", "refunded"].includes(ret.state));
+  return{number:order.publicNumber,userId:order.userId,createdAt:new Intl.DateTimeFormat("id-ID",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Jakarta"}).format(order.createdAt),customer:order.guestName,email:order.guestEmail,phone:order.guestPhone,address:address?.address||"—",note:address?.note||"",paymentState:order.paymentState,fulfillmentState:order.fulfillmentState,issueOrder:Boolean(order.issueOrder),issueReason:order.issueReason,activeReturn:activeReturnObj?{id:activeReturnObj.id,publicNumber:activeReturnObj.publicNumber,state:activeReturnObj.state}:null,subtotal:Number(order.subtotal),shippingFee:Number(order.shippingFee),voucherCode:order.voucherCode,discountAmount:Number(order.discountAmount),voucherTarget:order.voucherTarget,serviceFee:Number(order.serviceFee),storeAdminFee:Number(paymentAmounts.storeAdminFee),qrisFee:Number(paymentAmounts.qrisFee),grandTotal:Number(order.grandTotal),uniqueCode:Number(paymentAmounts.uniqueCode),payableAmount:Number(paymentAmounts.payableAmount),netRevenue:Number(paymentAmounts.revenueBeforeRefund),quoteCourier,items:order.items.map((item,index)=>({id:item.id,sku:item.skuSnapshot,name:item.nameSnapshot,options:Object.values(item.optionsSnapshot as Record<string,string>).filter(Boolean).join(" · "),quantity:item.quantity,price:Number(item.unitPrice),image:products[index%products.length].image})),shipment:shipment?{status:shipment.status,courier:getCourierDisplayName(shipment.courierName, shipment.courierCompany, shipment.courierType),collectionMethod:shipment.collectionMethod,trackingId:shipment.trackingId,waybillId:shipment.waybillId,quotedPrice:Number(shipment.quotedPrice),actualPrice:Number(shipment.actualPrice||shipment.quotedPrice),priceAdjustment:Number(shipment.priceAdjustment),lastProviderSyncAt:shipment.lastProviderSyncAt?.toISOString()||null}:null,cancellation:cancellation?{state:cancellation.state,reason:cancellation.reason,decisionReason:cancellation.decisionReason}:null,events:(() => {
     const list: Array<{ time: Date; title: string; note: string }> = [];
     
     // 1. Add cancellation state events if any

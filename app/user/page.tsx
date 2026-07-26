@@ -6,6 +6,7 @@ import { customerFromRequest } from "@/lib/customer-auth";
 import { checkAndExpireAllStaleOrders } from "@/lib/payment-sync";
 import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
+import { customerPaymentTotal, getCustomerPaidTotal } from "@/lib/payment-totals";
 
 export default async function UserDashboardPage() {
   const customer = await customerFromRequest();
@@ -22,15 +23,7 @@ export default async function UserDashboardPage() {
 
   const [totalOrders, spending, pendingPayments, recentOrders] = await Promise.all([
     prisma.order.count({ where: accountOrderWhere }),
-    prisma.order.aggregate({
-      where: {
-        AND: [
-          accountOrderWhere,
-          { OR: [{ paymentState: "paid" }, { fulfillmentState: "completed" }] },
-        ],
-      },
-      _sum: { grandTotal: true },
-    }),
+    getCustomerPaidTotal(customer.id, customer.email),
     prisma.order.count({
       where: { AND: [accountOrderWhere, { paymentState: "pending" }] },
     }),
@@ -43,19 +36,20 @@ export default async function UserDashboardPage() {
         publicNumber: true,
         createdAt: true,
         grandTotal: true,
+        payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true } },
         fulfillmentState: true,
       },
     }),
   ]);
 
-  const totalSpent = Number(spending._sum.grandTotal || 0);
+  const totalSpent = Number(spending);
 
   return (
     <div className="user-dashboard-page">
       <header className="user-page-hero dashboard-hero">
         <div>
           <span className="user-page-eyebrow">Ringkasan akun</span>
-          <h1>Halo, {customer.name.split(" ")[0]}</h1>
+          <h1>Halo, Kak {customer.name.split(" ")[0]}!</h1>
           <p>Pantau aktivitas belanja, pembayaran, dan pesanan terbaru Anda dari satu tempat.</p>
         </div>
         <Link href="/#product" className="button button-dark">
@@ -110,7 +104,7 @@ export default async function UserDashboardPage() {
                     <span>{new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(order.createdAt)}</span>
                   </div>
                   <div className="order-row-meta">
-                    <strong>{rupiah(Number(order.grandTotal))}</strong>
+                    <strong>{rupiah(Number(customerPaymentTotal(order.grandTotal, order.payments[0]?.payableAmount)))}</strong>
                     <StatusPill status={order.fulfillmentState} />
                   </div>
                   <ArrowRight className="order-row-arrow" size={15} aria-hidden="true" />

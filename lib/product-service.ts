@@ -71,6 +71,7 @@ export async function saveProduct(input: ProductInput, adminEmail: string, produ
             tokopediaLink: input.tokopediaLink || null,
             rating: input.rating,
             sold: input.sold,
+            position: ((await tx.product.aggregate({ _max: { position: true } }))._max.position || 0) + 1,
           },
         });
 

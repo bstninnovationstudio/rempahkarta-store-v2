@@ -14,12 +14,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const parsed = schema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Data kategori tidak valid", details: parsed.error.flatten() }, { status: 400 });
     const { id } = await params;
-    const [category, productCount] = await Promise.all([
+    const [category, productCount, conflictingProducts] = await Promise.all([
       prisma.productCategory.findUnique({ where: { id } }),
       prisma.product.count({ where: { id: { in: parsed.data.productIds } } }),
+      prisma.product.findMany({ where: { id: { in: parsed.data.productIds }, categoryId: { not: id } }, select: { name: true }, take: 3 }),
     ]);
     if (!category) return NextResponse.json({ error: "Kategori tidak ditemukan" }, { status: 404 });
     if (productCount !== parsed.data.productIds.length) return NextResponse.json({ error: "Salah satu produk tidak ditemukan" }, { status: 409 });
+    if (conflictingProducts.length) return NextResponse.json({ error: `Produk sudah terikat kategori lain: ${conflictingProducts.map(item => item.name).join(", ")}` }, { status: 409 });
     const nextSlug = slugify(parsed.data.name);
     const conflict = await prisma.productCategory.findFirst({ where: { id: { not: id }, OR: [{ name: parsed.data.name }, { slug: nextSlug }] } });
     if (conflict) return NextResponse.json({ error: "Nama kategori sudah digunakan" }, { status: 409 });

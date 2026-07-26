@@ -4,20 +4,23 @@ import Link from "next/link";
 import { AdminPagination } from "@/components/admin-pagination";
 import { getAdminUsersPage } from "@/lib/admin-data";
 import { rupiah } from "@/lib/format";
+import { Users, UserRound } from "lucide-react";
 
 export default async function UsersAdminPage({ searchParams }: { searchParams: Promise<{ page?: string; pageSize?: string }> }) {
   const query = await searchParams;
   const { rows, pagination } = await getAdminUsersPage({ page: Number(query.page), pageSize: Number(query.pageSize) });
 
   return (
-    <div className="admin-content">
+    <div className="admin-content admin-users-page">
       <div className="admin-page-head">
         <div>
           <p className="eyebrow">Manajemen pelanggan</p>
           <h1>Pelanggan</h1>
-          <p>Lihat data pelanggan terdaftar, buku alamat, dan riwayat belanja mereka.</p>
+          <p>Kelola profil pelanggan, alamat tersimpan, dan ringkasan riwayat belanja.</p>
         </div>
       </div>
+
+      <div className="users-summary-bar"><span className="users-summary-icon"><Users size={17} aria-hidden="true" /></span><div><strong>{pagination.total}</strong><span>pelanggan terdaftar</span></div><span className="users-summary-note">Data terbaru ditampilkan lebih dahulu</span></div>
 
       <section className="table-card">
         <div className="admin-table-wrap">
@@ -35,7 +38,7 @@ export default async function UsersAdminPage({ searchParams }: { searchParams: P
             <tbody>
               {rows.map(row => (
                 <tr key={row.id}>
-                  <td>
+                  <td data-label="Pelanggan">
                     <div className="customer-table-profile">
                       {row.avatarUrl ? (
                         <Image
@@ -60,20 +63,20 @@ export default async function UsersAdminPage({ searchParams }: { searchParams: P
                       </div>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Tanggal daftar">
                     {new Date(row.createdAt).toLocaleDateString("id-ID", {
                       dateStyle: "medium",
                     })}
                   </td>
-                  <td>
+                  <td data-label="Jumlah pesanan">
                     <strong className="admin-numeric">{row.totalOrders} pesanan</strong>
                   </td>
-                  <td>
+                  <td data-label="Total belanja">
                     <strong className="admin-numeric">{rupiah(row.totalSpent)}</strong>
                   </td>
-                  <td>
-                    <Link href={`/admin/users/${row.id}`} className="table-link">
-                      Lihat rincian<span aria-hidden="true"> →</span>
+                  <td data-label="Aksi" className="admin-table-action">
+                    <Link href={`/admin/users/${row.id}`} className="table-link user-detail-link" aria-label={`Lihat detail pelanggan ${row.name}`}>
+                      <UserRound size={15} aria-hidden="true" /> <span>Lihat detail</span>
                     </Link>
                   </td>
                 </tr>

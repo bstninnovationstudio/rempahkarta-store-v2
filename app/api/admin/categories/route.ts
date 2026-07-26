@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const exists = await prisma.productCategory.findFirst({ where: { OR: [{ name: parsed.data.name }, { slug: base }] } });
     if (exists) return NextResponse.json({ error: "Nama kategori sudah digunakan" }, { status: 409 });
     const category = await prisma.$transaction(async tx => {
-      const created = await tx.productCategory.create({ data: { name: parsed.data.name, slug: base, description: parsed.data.description || null } });
+      const created = await tx.productCategory.create({ data: { name: parsed.data.name, slug: base, description: parsed.data.description || null, position: ((await tx.productCategory.aggregate({ _max: { position: true } }))._max.position || 0) + 1 } });
       await tx.auditLog.create({ data: { actorType: "admin", actorId: String(admin.email), action: "category.created", entityType: "category", entityId: created.id, after: { name: created.name } } });
       return created;
     });

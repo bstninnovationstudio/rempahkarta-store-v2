@@ -92,11 +92,13 @@ Flow transaksi admin tidak diganti. Penyempurnaan UI/query yang relevan:
 | Dashboard | Empat order terbaru dan stats query terpisah; tidak memakai list penuh untuk menghitung metrik. |
 | Orders | Filter URL dipertahankan; list 20/page, relasi ringkas, pagination semantik. |
 | Products/inventory/shipments/returns/users/audit | Tabel berada dalam region overflow lokal dan memakai pagination 20/page; stats terpisah dari rows. |
+| Product editor | `/admin/products/[id]` dan `/admin/products/new` mengelompokkan identitas, penjualan, media, varian, dan distribusi; rail menampilkan ringkasan stok/harga langsung; payload dan route simpan tetap sama. |
+| Product actions | List memakai ikon edit/duplikat/hapus dengan konfirmasi hapus. Duplikat membuka editor tambah yang telah terisi tanpa menciptakan produk sebelum disimpan; media produk dapat ditata ulang dengan tombol kiri/kanan. |
 | User detail | Riwayat order 10/page, sehingga profil tidak menarik seluruh transaksi user. |
-| Category detail | Tetap full-list dengan alasan data-integrity: submit saat ini replacement penuh membership. |
+| Category detail | Tetap full-list dengan alasan data-integrity; produk yang sudah memiliki kategori lain disabled, preview gambar ditampilkan, dan API menolak assignment konflik. |
 | Detail/action rail | Tablet/mobile turun satu kolom; rail tidak menjadi overlay. State machine dan endpoint transaksi tetap sama. |
 | Voucher | Form CRUD/modal riwayat memiliki aksi nyata; tabel berada dalam overflow lokal, status selalu berupa teks semantik. |
-| Dana omzet | Empat kartu ringkas, form penarikan dengan batas saldo/konfirmasi, dan ledger terpaginasi; nominal memakai angka tabular serta warna tetap disertai tanda `+`/`−`. |
+| Dana omzet | Empat kartu ringkas, form penarikan dengan batas saldo/konfirmasi, dan ledger terpaginasi; rincian settlement menampilkan total QRIS, ongkir, biaya admin/layanan, fee QRIS, serta posisi bersih. |
 | Dana Biteship | Ringkasan shadow balance, form biaya request, modal catatan manual, dan tabel CRUD; record otomatis ditandai sebagai otomatis dan tidak menawarkan aksi edit/hapus. |
 | Kontrol semu | Search/export/notifikasi tanpa handler tidak ditampilkan sebagai aksi aktif. |
 

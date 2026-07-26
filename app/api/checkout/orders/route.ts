@@ -13,6 +13,7 @@ import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getProfileCompleteness } from "@/lib/user-profile";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds } from "@/lib/finance";
+import { readBstnUniqueCode } from "@/lib/payment-amounts";
 
 const schema = z.object({
   turnstileToken: z.string().min(1).max(2048),
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
       const result = await bstn.createPayment({ reference: order.publicNumber, amount: feeBreakdown.bstnAmount, description: `Pembayaran ${order.publicNumber}`, customer: { name: order.guestName, email: order.guestEmail, phone: order.guestPhone }, items: bstnItems, finishUrl, webhookUrl, expiryMinutes: 10 });
       const localPaymentUrl = `${base}/orders/${order.publicNumber}/payment`;
       await prisma.$transaction([
-        prisma.payment.create({ data: { orderId: order.id, providerPaymentId: result.data.payment_id, projectPaymentRef: order.publicNumber, amount: BigInt(feeBreakdown.bstnAmount), payableAmount: BigInt(result.data.payable_amount), feeAmount: BigInt(result.data.fee_amount), status: "pending", paymentPageUrl: localPaymentUrl, expiresAt: new Date(result.data.expires_at), raw: result.data as unknown as Prisma.InputJsonValue } }),
+        prisma.payment.create({ data: { orderId: order.id, providerPaymentId: result.data.payment_id, projectPaymentRef: order.publicNumber, amount: BigInt(feeBreakdown.bstnAmount), payableAmount: BigInt(result.data.payable_amount), feeAmount: BigInt(result.data.fee_amount), uniqueCode: readBstnUniqueCode(result.data, Math.max(0, result.data.payable_amount - Number(order.grandTotal))), status: "pending", paymentPageUrl: localPaymentUrl, expiresAt: new Date(result.data.expires_at), raw: result.data as unknown as Prisma.InputJsonValue } }),
         prisma.order.update({ where: { id: order.id }, data: { paymentState: "pending" } }),
       ]);
       invalidateCatalogCache();

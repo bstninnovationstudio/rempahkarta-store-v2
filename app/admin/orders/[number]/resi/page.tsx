@@ -22,9 +22,21 @@ export default async function AdminOrderResiPage({ params }: { params: Promise<{
   }
 
   const shipment = order.shipments[0];
-  const warehouse =
-    (await prisma.warehouse.findFirst({ where: { id: shipment.warehouseId } })) ||
-    (await prisma.warehouse.findFirst({ where: { isDefault: true } }));
+  const providerOrderId = shipment.providerOrderId?.trim() || "";
+  const waybillId = shipment.waybillId?.trim() || shipment.trackingId?.trim() || "";
+  const isSyntheticShipment = [providerOrderId, waybillId].some((value) =>
+    /^(mock_|claim_)/i.test(value),
+  );
+
+  // A printable label must never contain a local simulation or a booking claim.
+  // Wait for the real Biteship webhook/response to persist a tracking identifier.
+  if (!providerOrderId || !waybillId || isSyntheticShipment) {
+    notFound();
+  }
+
+  const warehouse = await prisma.warehouse.findUnique({
+    where: { id: shipment.warehouseId },
+  });
   const recipientAddr = order.addresses.find((a) => a.type === "shipping");
 
   if (!warehouse || !recipientAddr) {
@@ -52,7 +64,7 @@ export default async function AdminOrderResiPage({ params }: { params: Promise<{
     recipientAddr.postalCode;
 
   labelData = {
-    waybillId: shipment.waybillId || shipment.trackingId || "MENUNGGU RESI",
+    waybillId,
     courierCompany: shipment.courierCompany,
     courierService: shipment.courierType.toUpperCase(),
     routingCode: String(routingCode),
@@ -73,8 +85,6 @@ export default async function AdminOrderResiPage({ params }: { params: Promise<{
       postalCode: recipientAddr.postalCode,
     },
     itemDescription,
-    note: recipientAddr.note || undefined,
-    orderPublicNumber: order.publicNumber,
   };
 
   return <ShippingLabel data={labelData} />;

@@ -1,6 +1,7 @@
 import { AdminPagination } from "@/components/admin-pagination";
 import { getAuditLogPage } from "@/lib/admin-data";
 import Link from "next/link";
+import { ClipboardList, Filter } from "lucide-react";
 
 const filters = [
   ["order", "Pesanan"],
@@ -15,41 +16,42 @@ export default async function Audit({ searchParams }: { searchParams: Promise<{ 
   const { rows, pagination, filter } = await getAuditLogPage({ page: Number(query.page), pageSize: Number(query.pageSize), filter: query.filter });
 
   return (
-    <div className="admin-content">
+    <div className="admin-content admin-audit-page">
       <div className="admin-page-head">
         <div>
           <p className="eyebrow">Tata kelola</p>
-          <h1>Audit log</h1>
-          <p>Jejak perubahan penting pada pesanan, stok, pembayaran, dan konfigurasi.</p>
+          <h1>Log audit</h1>
+          <p>Jejak perubahan penting pada pesanan, stok, pembayaran, pengiriman, dan pengaturan.</p>
         </div>
       </div>
-      <nav className="filter-row" aria-label="Filter jenis aktivitas audit">
+      <div className="audit-toolbar"><div className="audit-toolbar-label"><Filter size={15} aria-hidden="true" /><span>Filter aktivitas</span></div><nav className="filter-row" aria-label="Filter jenis aktivitas audit">
         <Link href="/admin/audit" aria-current={!filter ? "page" : undefined} className={`filter-chip ${!filter ? "active" : ""}`}>Semua</Link>
         {filters.map(([value, label]) => (
           <Link key={value} href={`/admin/audit?filter=${value}`} aria-current={filter === value ? "page" : undefined} className={`filter-chip ${filter === value ? "active" : ""}`}>{label}</Link>
         ))}
-      </nav>
+      </nav></div>
       <section className="table-card">
         <div className="admin-table-wrap">
           <table className="admin-table">
-            <caption className="admin-table-caption">Jejak perubahan sistem</caption>
+            <caption className="admin-table-caption">Jejak perubahan sistem — {pagination.total} aktivitas</caption>
             <thead><tr><th scope="col">Waktu</th><th scope="col">Aktor</th><th scope="col">Aksi</th><th scope="col">Entitas</th><th scope="col">Ringkasan</th></tr></thead>
             <tbody>
               {rows.map(row => (
                 <tr key={row.id}>
-                  <td>{row.createdAt}</td>
-                  <td className="admin-table-cell-wrap">{row.actor}</td>
-                  <td><strong className="admin-data-code">{row.action}</strong></td>
-                  <td><span className="admin-data-code">{row.entity}</span></td>
-                  <td className="admin-table-cell-wrap">{row.summary}</td>
+                  <td data-label="Waktu">{row.createdAt}</td>
+                  <td data-label="Aktor" className="admin-table-cell-wrap">{row.actor}</td>
+                  <td data-label="Aksi"><strong className="admin-data-code">{row.action}</strong></td>
+                  <td data-label="Entitas"><span className="admin-data-code">{row.entity}</span></td>
+                  <td data-label="Ringkasan" className="admin-table-cell-wrap">{row.summary}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={5} className="admin-table-empty">
                     <div className="admin-table-empty-content">
+                      <ClipboardList size={20} aria-hidden="true" />
                       <strong>Belum ada aktivitas yang tercatat</strong>
-                      <span>Perubahan penting pada pesanan, stok, pembayaran, dan konfigurasi akan tampil di sini.</span>
+                      <span>Perubahan penting pada pesanan, stok, pembayaran, dan pengaturan akan tampil di sini.</span>
                     </div>
                   </td>
                 </tr>

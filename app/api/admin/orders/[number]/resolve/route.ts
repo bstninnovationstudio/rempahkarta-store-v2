@@ -37,6 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
         where: { id: order.id },
         data: {
           issueOrder: false,
+          issueReason: null,
           fulfillmentState: "finished",
         },
       });
@@ -53,6 +54,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
       await syncOrderRevenue(tx, order.id, String(admin.email));
     });
     return NextResponse.json({ success: true });
+  }
+
+  const terminalReturnStates = ["rejected", "closed", "cancelled", "finished", "refunded"];
+  const existingReturn = await prisma.returnRequest.findFirst({
+    where: {
+      orderId: order.id,
+      state: { notIn: terminalReturnStates },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (existingReturn) {
+    return NextResponse.json({
+      success: true,
+      redirect: `/admin/returns/${existingReturn.id}`,
+    });
   }
 
   // For refund or return resolutions: create a ReturnRequest with source: "issue"

@@ -46,7 +46,7 @@ Pesanan baru selalu menyimpan `userId`. Pesanan historis yang belum memiliki `us
 
 Admin login memverifikasi email dan hash scrypt bersalt (`N=16384`, `r=8`, `p=1`) dengan perbandingan timing-safe, dilindungi Turnstile dan limit 5 request/15 menit. Production mewajibkan `ADMIN_PASSWORD_SCRYPT`; SHA-256 legacy hanya diterima di development. JWT HS256 admin memiliki issuer yang sama, audience `rempahkarta-admin`, subject email, `jti`, `tokenUse=admin`, role `owner`, dan masa hidup 12 jam dalam cookie `amk_admin`.
 
-`app/admin/layout.tsx` memanggil `requireAdmin`; semua route mutasi/read admin juga memanggil `adminFromRequest`. Fixture/bypass demo hanya aktif bila non-production **dan** `DEMO_MODE=true` **dan** `ALLOW_INSECURE_DEMO=true`; default false dan dilarang pada preview/staging publik. Payment mock juga hanya boleh hidup pada development lokal.
+`app/admin/layout.tsx` memanggil `requireAdmin`; semua route mutasi/read admin juga memanggil `adminFromRequest`. Fixture/bypass devtools aktif secara otomatis bila `APP_MODE=development`; dilarang pada preview/staging publik. Payment mock juga hanya boleh hidup pada development lokal.
 
 Di depan route handler, `proxy.ts` menolak mutasi API non-webhook bila `Origin` tidak sama persis dengan origin `APP_URL`. Pemeriksaan production bersifat fail-closed dan mencegah origin sibling-subdomain memanfaatkan cookie SameSite. Webhook dikecualikan dari Origin check karena memiliki autentikasi provider dan tidak berasal dari browser.
 
@@ -119,14 +119,16 @@ Editor `/admin/categories/[id]` tetap memuat seluruh produk. Komponen sekarang m
 
 Tag diinvalidasi setelah perubahan produk, kategori, penyesuaian inventory, serta lifecycle stok yang memengaruhi ketersediaan. Invalidation membuat request storefront berikutnya membaca data terbaru. Walaupun snapshot belum diperbarui, checkout selalu membaca inventory dan harga langsung dari MySQL dan dapat menolak stok/harga yang sudah berubah.
 
+Katalog storefront mengurutkan produk aktif menurut `Product.position` lalu ID. Kategori yang memiliki produk aktif diurutkan menurut `ProductCategory.position`; pemindahan satu posisi dari panel admin disimpan dalam transaksi, menghasilkan audit log, lalu menginvalidasi tag katalog.
+
 Cache tidak menyimpan cart, user, order, payment, shipment, atau data PII.
 
 ## Inventory dan concurrency
 
-`ProductVariant` adalah unit jual. `InventoryLevel` menyimpan `onHand`, `reserved`, `safetyStock`, dan `version` per gudang.
+`ProductVariant` adalah unit jual. `InventoryLevel` menyimpan `onHand`, `reserved`, dan `version` per gudang. Kolom legacy `safetyStock` tetap ada untuk kompatibilitas database, tetapi tidak lagi dipakai kalkulasi aplikasi.
 
 ```text
-available = max(0, onHand - reserved - safetyStock)
+available = max(0, onHand - reserved)
 ```
 
 - Checkout: `reserved += quantity` dengan kondisi versi dan ketersediaan atomik.
@@ -167,6 +169,7 @@ awaiting_payment
 - `order.price` memperbarui biaya aktual/selisih, tidak mengubah invoice pelanggan.
 - `order.waybill_id` memperbarui resi aktif dan audit.
 - Cancel/reject sebelum handover memulihkan inventory secara idempoten; kegagalan provider tidak membatalkan order lokal.
+- Route resi admin membentuk label thermal melalui CSS paged media berukuran 100 × 150 mm. Konten yang melampaui satu label mengalir ke halaman berikutnya; blok label penting dijaga agar tidak terpotong di tengah halaman.
 
 ## Retur, refund, dan audit
 
@@ -176,9 +179,13 @@ Admin menilai retur, menjalankan resolusi operasional yang sudah ada, dan mencat
 
 ## Ledger keuangan
 
-`RevenueLedger` adalah sumber saldo omzet internal. Setiap row menyimpan delta saldo tersedia/tertahan serta snapshot subtotal penuh, ongkir, service fee, fee BSTN, diskon, dan nilai bersih. Nilai bersih produk adalah `Order.subtotal - Order.discountAmount`; fee BSTN tidak dikurangi lagi karena struktur biaya checkout telah memasukkannya ke gross-up service fee.
+`RevenueLedger` adalah sumber saldo omzet internal. Setiap row menyimpan delta saldo tersedia/tertahan serta snapshot subtotal produk, diskon, ongkir, kode unik BSTN, total QRIS, service fee, fee BSTN, dan posisi bersih. Rumus kanonisnya adalah `(Order.subtotal - Order.discountAmount) + Order.shippingFee + biaya admin toko + Payment.uniqueCode - refund completed` (setara `Total QRIS - fee QRIS - refund completed`). Biaya admin toko termasuk omzet toko, sedangkan fee QRIS BSTN bukan omzet.
 
-Saat pembayaran menjadi paid, `syncOrderRevenue` menempatkan nilai bersih di posisi tertahan. Posisi menjadi tersedia hanya pada fulfillment `completed`/`finished` tanpa issue, retur aktif, atau cancellation aktif. Perubahan state berikutnya dapat memindahkan dana kembali ke tertahan atau mengurangi posisi karena refund. Helper berjalan di transaksi perubahan state, mengunci order, membaca aggregate ledger sebelumnya, dan hanya menulis selisih. Dengan demikian retry webhook/sync tidak menggandakan saldo dan metric page tidak perlu query order.
+BSTN menentukan kode unik setelah payment dibuat. Nilai itu disalin ke `Payment.uniqueCode` dari `qris.unique_code`/`qris_unique_code`; `payableAmount - grandTotal` hanya menjadi fallback deterministik untuk respons atau data lama. Karena `Payment.feeAmount` BSTN mencakup fee QRIS dan kode unik, snapshot fee QRIS ledger memakai `max(0, feeAmount - uniqueCode)`. `Order.grandTotal` tetap merupakan total sebelum kode unik, sedangkan `Payment.payableAmount` adalah total QRIS aktual yang dipakai pada payment, invoice, detail/list pesanan, serta statistik belanja.
+
+Pada pembatalan admin, alasan AWB hanya dikirim bila `Shipment.providerOrderId` sudah ada dan pembatalan provider Biteship benar-benar diperlukan. Pembatalan sebelum booking shipment diproses lokal tanpa alasan AWB; daftar alasan provider tidak dimuat untuk kasus tersebut.
+
+Saat pembayaran menjadi paid, `syncOrderRevenue` menempatkan settlement bersih di posisi tertahan. Posisi menjadi tersedia hanya pada fulfillment `completed`/`finished` tanpa issue, retur aktif, atau cancellation aktif. Perubahan state berikutnya dapat memindahkan dana kembali ke tertahan atau mengurangi posisi karena refund. Helper berjalan di transaksi perubahan state, mengunci order, membaca aggregate ledger sebelumnya, dan hanya menulis selisih. Dengan demikian retry webhook/sync tidak menggandakan saldo dan metric page tidak perlu query order. Perubahan formula tidak mengubah pembayaran, booking Biteship, maupun saldo bayangan Biteship.
 
 `BiteshipFundAccount` adalah singleton saldo bayangan atomik; `BiteshipLedger` menyimpan riwayat signed amount. Area search, quote, authoritative re-rate checkout, booking shipment, dan tracking sync mereservasi dana dalam transaksi `Serializable`. Provider failure membuat reversal idempoten. Debit booking dideduplikasi berdasarkan nomor order agar pemulihan duplicate-reference tidak memotong ongkir dua kali. Catatan penggunaan otomatis immutable; CRUD hanya berlaku pada top up/pengurangan manual dan setiap perubahan merekonsiliasi saldo di bawah row lock.
 
@@ -194,7 +201,7 @@ Turnstile selalu diverifikasi lewat Siteverify server. Secret test hanya tersedi
 
 ## Migration dan penyimpanan
 
-Migration `0_baseline` merepresentasikan DDL schema lengkap dan `migration_lock.toml` mengunci provider MySQL. Database lama yang sudah memiliki tabel harus dibaseline satu kali dengan `npm run db:baseline:existing` **setelah** tabel/kolom/constraint/relasi diverifikasi; database kosong tidak boleh melewati baseline. Migration incremental menambahkan index query, voucher, serta ledger keuangan secara additive dan tidak menjalankan seed. Migration keuangan melakukan backfill posisi dana order lama dan membuat akun shadow Biteship bersaldo nol.
+Migration `0_baseline` merepresentasikan DDL schema lengkap dan `migration_lock.toml` mengunci provider MySQL. Database lama yang sudah memiliki tabel harus dibaseline satu kali dengan `npm run db:baseline:existing` **setelah** tabel/kolom/constraint/relasi diverifikasi; database kosong tidak boleh melewati baseline. Migration incremental menambahkan index query, voucher, serta ledger keuangan secara additive dan tidak menjalankan seed. Migration keuangan awal melakukan backfill posisi dana order lama dan membuat akun shadow Biteship bersaldo nol; migration `202607220002_reconcile_revenue_total_settlement` merekonsiliasi formula settlement lama, `202607220003_standardize_unique_code_revenue` menambah snapshot kode unik/subtotal dan menulis delta audit agar saldo historis mengikuti formula omzet kanonis, lalu `202607220004_correct_qris_fee_snapshot` memisahkan kode unik dari snapshot fee QRIS tanpa mengubah saldo.
 
 `npm run setup` menjalankan generate + migrate deploy. `setup:demo`, seed, dan `db push` hanya untuk database lokal/disposable.
 

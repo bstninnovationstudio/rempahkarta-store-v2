@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, User, CreditCard, MapPin, ClipboardList } from "lucide-react";
 import { AdminPagination } from "@/components/admin-pagination";
 import { prisma } from "@/lib/db";
+import { customerPaymentTotal, getCustomerPaidTotal } from "@/lib/payment-totals";
 import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
 import type { OrderStatus } from "@/lib/types";
@@ -48,18 +49,18 @@ export default async function UserDetailAdminPage({
 
   const [totalOrders, spent] = await Promise.all([
     prisma.order.count({ where: { userId: id } }),
-    prisma.order.aggregate({ where: { userId: id, OR: [{ paymentState: "paid" }, { fulfillmentState: "completed" }] }, _sum: { grandTotal: true } }),
+    getCustomerPaidTotal(id),
   ]);
   const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
   const page = Math.min(requestedPage, totalPages);
   const orders = await prisma.order.findMany({
     where: { userId: id },
-    select: { id: true, publicNumber: true, fulfillmentState: true, createdAt: true, grandTotal: true },
+    select: { id: true, publicNumber: true, fulfillmentState: true, createdAt: true, grandTotal: true, payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     skip: (page - 1) * pageSize,
     take: pageSize,
   });
-  const totalSpent = Number(spent._sum.grandTotal || 0);
+  const totalSpent = Number(spent);
   const orderPagination = {
     page,
     pageSize,
@@ -70,14 +71,14 @@ export default async function UserDetailAdminPage({
   };
 
   return (
-    <div className="admin-content">
+    <div className="admin-content admin-user-detail-page">
       <div className="admin-page-head">
         <div>
           <Link href="/admin/users" className="eyebrow admin-back">
             <ArrowLeft size={13} aria-hidden="true" /> Kembali ke daftar pelanggan
           </Link>
           <h1>{user.name}</h1>
-          <p>Detail profil, alamat tersimpan, rekening refund, dan riwayat belanja.</p>
+          <p>Detail profil, alamat tersimpan, rekening pengembalian dana, dan riwayat belanja.</p>
         </div>
       </div>
 
@@ -106,7 +107,7 @@ export default async function UserDetailAdminPage({
               )}
               <div>
                 <strong className="admin-customer-name">{user.name}</strong>
-                <span className="admin-data-code">ID: {user.id}</span>
+                <span className="admin-data-code">ID pelanggan: {user.id}</span>
               </div>
             </div>
 
@@ -119,7 +120,7 @@ export default async function UserDetailAdminPage({
               <strong>{user.phone || "Belum diisi"}</strong>
             </div>
             <div className="profile-row">
-              <span>Tanggal mendaftar</span>
+              <span>Terdaftar sejak</span>
               <strong>{new Date(user.createdAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}</strong>
             </div>
             <div className="profile-row">
@@ -135,7 +136,7 @@ export default async function UserDetailAdminPage({
           {/* Refund settings card */}
           <div className="detail-card">
             <h2 className="detail-card-heading">
-              <CreditCard size={16} aria-hidden="true" /> Rekening refund
+              <CreditCard size={16} aria-hidden="true" /> Rekening pengembalian dana
             </h2>
             {user.refundSetting ? (
               user.refundSetting.type === "bank" ? (
@@ -178,14 +179,14 @@ export default async function UserDetailAdminPage({
                 </>
               )
             ) : (
-              <p className="detail-empty">Pelanggan belum mengatur rekening bank atau e-wallet refund.</p>
+              <p className="detail-empty">Pelanggan belum mengatur rekening bank atau e-wallet untuk pengembalian dana.</p>
             )}
           </div>
 
           {/* Address card */}
           <div className="detail-card">
             <h2 className="detail-card-heading">
-              <MapPin size={16} aria-hidden="true" /> Alamat tersimpan ({user.addresses.length}/5)
+              <MapPin size={16} aria-hidden="true" /> Alamat pengiriman ({user.addresses.length}/5)
             </h2>
             {user.addresses.length > 0 ? (
               user.addresses.map(addr => (
@@ -199,7 +200,7 @@ export default async function UserDetailAdminPage({
                 </div>
               ))
             ) : (
-              <p className="detail-empty">Belum ada alamat pengiriman terdaftar.</p>
+              <p className="detail-empty">Belum ada alamat pengiriman tersimpan.</p>
             )}
           </div>
         </div>
@@ -224,7 +225,7 @@ export default async function UserDetailAdminPage({
                     </div>
                     <div className="admin-order-history-meta">
                       <span>{new Date(order.createdAt).toLocaleDateString("id-ID")}</span>
-                      <strong className="admin-numeric">{rupiah(Number(order.grandTotal))}</strong>
+                      <strong className="admin-numeric">{rupiah(Number(customerPaymentTotal(order.grandTotal, order.payments[0]?.payableAmount)))}</strong>
                     </div>
                   </Link>
                 ))}

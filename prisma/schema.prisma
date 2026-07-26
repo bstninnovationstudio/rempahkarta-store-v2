@@ -140,6 +140,7 @@ model Product {
   rating         Float            @default(0.0)
   sold           Int              @default(0)
   status         ProductStatus    @default(draft)
+  position       Int              @default(0)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   category       ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -149,6 +150,7 @@ model Product {
 
   @@index([categoryId, status])
   @@index([status, updatedAt])
+  @@index([status, position, id])
 }
 
 model ProductCategory {
@@ -156,9 +158,12 @@ model ProductCategory {
   slug        String    @unique @db.VarChar(120)
   name        String    @unique @db.VarChar(100)
   description String?   @db.VarChar(255)
+  position    Int       @default(0)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   products    Product[]
+
+  @@index([position, id])
 }
 
 model ProductVariant {
@@ -303,9 +308,11 @@ model RevenueLedger {
   availableDelta BigInt            @default(0)
   heldDelta      BigInt            @default(0)
   grossAmount    BigInt            @default(0)
+  productSubtotal BigInt           @default(0)
   shippingFee    BigInt            @default(0)
   serviceFee     BigInt            @default(0)
   adminFee       BigInt            @default(0)
+  uniqueCode     BigInt            @default(0)
   discountAmount BigInt            @default(0)
   netAmount      BigInt            @default(0)
   notes          String?           @db.VarChar(500)
@@ -433,6 +440,7 @@ model Payment {
   amount            BigInt
   payableAmount     BigInt?
   feeAmount         BigInt?
+  uniqueCode       BigInt         @default(0)
   status            PaymentState   @default(not_created)
   paymentPageUrl    String?        @db.Text
   expiresAt         DateTime?

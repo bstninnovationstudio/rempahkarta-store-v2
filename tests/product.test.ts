@@ -23,3 +23,19 @@ test("kombinasi variasi duplikat ditolak", () => {
   const result = productInputSchema.safeParse({ name: "Kayu Manis Premium", categoryId: null, description: "Kayu manis pilihan berkualitas.", status: "active", hasVariants: true, option1Name: "Kualitas", option2Name: "Berat", images: [], variants: [baseVariant, { ...baseVariant, sku: "RMP-KMN-DUPLIKAT" }] });
   assert.equal(result.success, false);
 });
+
+test("tautan TikTok Shop tokopedia diterima", () => {
+  const result = productInputSchema.safeParse({
+    name: "Kayu Manis Premium",
+    categoryId: null,
+    description: "Kayu manis pilihan berkualitas.",
+    status: "active",
+    hasVariants: false,
+    option1Name: null,
+    option2Name: null,
+    images: [],
+    tiktokLink: "https://shop-id.tokopedia.com/view/product/1731063262387864901",
+    variants: [{ ...baseVariant, option1Value: null, option2Value: null }],
+  });
+  assert.equal(result.success, true);
+});

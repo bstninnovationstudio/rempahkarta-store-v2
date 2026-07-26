@@ -38,7 +38,7 @@ export type ProductFormInitial = {
 export async function getCategoryOptions() {
 
   const { prisma } = await import("@/lib/db");
-  return prisma.productCategory.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
+  return prisma.productCategory.findMany({ select: { id: true, name: true }, orderBy: [{ position: "asc" }, { id: "asc" }] });
 }
 
 export async function getProductForEdit(id: string): Promise<ProductFormInitial | null> {
@@ -87,6 +87,29 @@ export async function getProductForEdit(id: string): Promise<ProductFormInitial 
     tokopediaLink: product.tokopediaLink,
     rating: Number(product.rating),
     sold: product.sold,
+  };
+}
+
+export async function getProductForDuplicate(id: string): Promise<ProductFormInitial | null> {
+  const source = await getProductForEdit(id);
+  if (!source) return null;
+  const suffix = `COPY-${Date.now().toString(36).toUpperCase()}`;
+  const skuWithSuffix = (sku: string) => `${sku.slice(0, Math.max(2, 80 - suffix.length - 1))}-${suffix}`;
+  return {
+    ...source,
+    id: undefined,
+    name: `${source.name.slice(0, 165)} (Salinan)`,
+    status: "draft",
+    rating: 0,
+    sold: 0,
+    variants: source.variants.map(variant => ({
+      ...variant,
+      id: undefined,
+      sku: skuWithSuffix(variant.sku),
+      stock: 0,
+      reserved: 0,
+      active: true,
+    })),
   };
 }
 

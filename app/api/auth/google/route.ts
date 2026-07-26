@@ -74,7 +74,8 @@ export async function POST(request: Request) {
       },
     });
     return establishSession(user, sessionId);
-  } catch {
+  } catch (error) {
+    console.error("[Google Auth Error]", error);
     return NextResponse.json({ error: "Gagal memproses autentikasi Google" }, { status: 500 });
   }
 }

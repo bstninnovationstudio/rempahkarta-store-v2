@@ -37,7 +37,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <div className="product-grid">
           {products
             .filter(item => item.id !== product.id)
-            .slice(0, 3)
+            .slice(0, 4)
             .map(item => (
               <ProductCard key={item.id} product={item} />
             ))}

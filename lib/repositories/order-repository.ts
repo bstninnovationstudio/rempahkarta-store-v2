@@ -63,14 +63,14 @@ export async function createOrderWithReservation(input: CheckoutInput) {
     for (const item of normalizedItems) {
       const variant = variantById.get(item.variantId)!;
       const inventory = inventoryByVariant.get(item.variantId);
-      if (!inventory || inventory.onHand - inventory.reserved - inventory.safetyStock < item.quantity) {
+      if (!inventory || inventory.onHand - inventory.reserved < item.quantity) {
         throw new Error(`Stok ${variant.sku} tidak mencukupi`);
       }
       const updated = await tx.inventoryLevel.updateMany({
         where: {
           id: inventory.id,
           version: inventory.version,
-          onHand: { gte: inventory.reserved + inventory.safetyStock + item.quantity },
+          onHand: { gte: inventory.reserved + item.quantity },
         },
         data: { reserved: { increment: item.quantity }, version: { increment: 1 } },
       });

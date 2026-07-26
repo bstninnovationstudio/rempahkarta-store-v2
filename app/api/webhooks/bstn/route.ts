@@ -9,6 +9,7 @@ import { Prisma } from "@prisma/client";
 import { authoritativePaidSourceStates } from "@/lib/payment-sync";
 import { getBstnApiKey } from "@/lib/env";
 import { syncOrderRevenue } from "@/lib/finance";
+import { deriveUniqueCode, readBstnUniqueCode } from "@/lib/payment-amounts";
 
 type WebhookPayload = {
   event?: string;
@@ -104,6 +105,24 @@ export async function POST(request: Request) {
     await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${local.orderId} FOR UPDATE`);
     const current = await tx.payment.findUniqueOrThrow({ where: { id: local.id } });
     const order=await tx.order.findUniqueOrThrow({where:{id:local.orderId}});
+    const providerPayable = detail.data.payable_amount !== undefined
+      ? BigInt(Math.round(detail.data.payable_amount))
+      : current.payableAmount;
+    const providerFee = detail.data.fee_amount !== undefined
+      ? BigInt(Math.round(detail.data.fee_amount))
+      : current.feeAmount;
+    const providerUnique = readBstnUniqueCode(
+      detail.data,
+      deriveUniqueCode({ uniqueCode: current.uniqueCode, payableAmount: providerPayable, grandTotal: order.grandTotal }),
+    );
+    await tx.payment.update({
+      where: { id: local.id },
+      data: {
+        ...(providerPayable !== null ? { payableAmount: providerPayable } : {}),
+        ...(providerFee !== null ? { feeAmount: providerFee } : {}),
+        uniqueCode: providerUnique,
+      },
+    });
     await tx.paymentEvent.create({
       data: {
         paymentId: local.id,

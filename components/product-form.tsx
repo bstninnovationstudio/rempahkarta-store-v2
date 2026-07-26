@@ -3,8 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ChevronLeft, ImagePlus, Plus, Save, Trash2 } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, ImagePlus, Layers3, Package, Plus, Save, Trash2 } from "lucide-react";
 import type { ProductFormInitial, ProductFormVariant } from "@/lib/product-data";
+import { rupiah } from "@/lib/format";
 
 type Category = { id: string; name: string };
 
@@ -72,6 +73,18 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
   const isEdit = Boolean(initial.id);
   const level2Enabled = Boolean(option2Name);
   const activeVariants = useMemo(() => variants.filter(item => item.active), [variants]);
+  const variantSummary = useMemo(() => {
+    const prices = activeVariants.map(item => item.price).filter(price => price > 0);
+    const totalStock = activeVariants.reduce((total, item) => total + item.stock, 0);
+    const totalReserved = activeVariants.reduce((total, item) => total + item.reserved, 0);
+    const lowStock = activeVariants.filter(item => Math.max(0, item.stock - item.reserved) <= item.lowStockThreshold).length;
+    return {
+      totalStock,
+      totalReserved,
+      lowStock,
+      minPrice: prices.length ? Math.min(...prices) : 0,
+    };
+  }, [activeVariants]);
 
   function rebuild(nextLevel1: string[], nextLevel2: string[], nextHasVariants = hasVariants, nextLevel2Enabled = Boolean(option2Name)) {
     if (!nextHasVariants) {
@@ -126,6 +139,16 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
     setVariants(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
   }
 
+  function moveImage(index: number, direction: -1 | 1) {
+    setImages(current => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
   async function uploadFiles(files: FileList | null) {
     if (!files?.length) return;
     if (images.length + files.length > 10) return setMessage("Maksimal 10 gambar per produk.");
@@ -171,11 +194,17 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
 
   return (
     <form className="admin-content product-editor" onSubmit={submit} noValidate aria-busy={busy || uploading}>
-      <div className="admin-page-head">
+      <div className="admin-page-head product-editor-head">
         <div>
           <Link href="/admin/products" className="eyebrow admin-back"><ChevronLeft size={13}/> Kembali ke produk</Link>
           <h1>{isEdit ? "Edit produk" : "Tambah produk"}</h1>
           <p>Kelola informasi, media, variasi, harga, dan ketersediaan produk.</p>
+        </div>
+        <div className="product-editor-head-meta" aria-label="Ringkasan editor">
+          <span className={`status-pill ${status === "active" ? "status-paid" : status === "archived" ? "status-cancelled" : "status-pending"}`}>
+            {status === "active" ? "Aktif" : status === "archived" ? "Diarsipkan" : "Draf"}
+          </span>
+          <span className="product-editor-save-hint">Simpan untuk menerapkan perubahan</span>
         </div>
       </div>
 
@@ -184,11 +213,11 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
       <div className="admin-detail-grid product-editor-grid">
         <div className="product-editor-main">
           <section className="admin-section" aria-labelledby="product-basic-title">
-            <h2 id="product-basic-title">Informasi dasar</h2>
+            <div className="section-heading-with-kicker"><span className="section-kicker">01 · Identitas</span><h2 id="product-basic-title">Informasi dasar</h2></div>
             <div className="field-grid">
               <div className="field full">
                 <label htmlFor="product-name">Nama produk</label>
-                <input id="product-name" value={name} onChange={event => setName(event.target.value)} required minLength={3} maxLength={180} placeholder="Contoh: Kayu Manis Batang Premium"/>
+                <input id="product-name" name="name" autoComplete="off" value={name} onChange={event => setName(event.target.value)} required minLength={3} maxLength={180} placeholder="Contoh: Kayu Manis Batang Premium"/>
               </div>
               <div className="field">
                 <label htmlFor="product-category">Kategori</label>
@@ -207,12 +236,12 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
               </div>
               <div className="field">
                 <label htmlFor="product-rating">Rating aktual (maks. 5,0)</label>
-                <input id="product-rating" type="number" min="0" max="5" step="0.1" value={rating} onChange={event => setRating(event.target.value)} required placeholder="Contoh: 4.9"/>
+                <input id="product-rating" name="rating" inputMode="decimal" type="number" min="0" max="5" step="0.1" value={rating} onChange={event => setRating(event.target.value)} required placeholder="Contoh: 4.9"/>
                 <small>Isi hanya dengan data rating yang benar-benar tercatat.</small>
               </div>
               <div className="field">
                 <label htmlFor="product-sold">Jumlah terjual aktual</label>
-                <input id="product-sold" type="number" min="0" step="1" value={sold} onChange={event => setSold(event.target.value)} required placeholder="Contoh: 1250"/>
+                <input id="product-sold" name="sold" inputMode="numeric" type="number" min="0" step="1" value={sold} onChange={event => setSold(event.target.value)} required placeholder="Contoh: 1250"/>
                 <small>Gunakan jumlah penjualan yang dapat diverifikasi.</small>
               </div>
               <div className="field full">
@@ -226,12 +255,13 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
           <section className="admin-section" aria-labelledby="product-media-title">
             <div className="section-inline-head">
               <div>
+                <span className="section-kicker">03 · Publikasi</span>
                 <h2 id="product-media-title">Media produk</h2>
                 <p>Gambar pertama menjadi gambar utama. Format JPG, PNG, atau WebP; maksimal 5 MB per file.</p>
               </div>
               <div className="media-upload-actions">
                 <span className="media-count" aria-live="polite">{images.length} / 10 gambar</span>
-                <label className={`button button-light${mediaDisabled ? " disabled" : ""}`} aria-disabled={mediaDisabled}>
+                <label className={`button button-light media-upload-control${mediaDisabled ? " disabled" : ""}`} aria-disabled={mediaDisabled}>
                   <ImagePlus size={16}/> {uploading ? "Mengunggah…" : images.length >= 10 ? "Batas gambar tercapai" : "Tambah gambar"}
                   <input aria-label="Pilih gambar produk" hidden type="file" multiple disabled={mediaDisabled} accept="image/jpeg,image/png,image/webp" onChange={event => uploadFiles(event.target.files)}/>
                 </label>
@@ -243,7 +273,11 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
                   <div key={path} className="local-media-item">
                     <Image unoptimized src={path} alt={`${name || "Produk"}, gambar ${index + 1}${index === 0 ? ", gambar utama" : ""}`} fill/>
                     <span>{index === 0 ? "Utama" : index + 1}</span>
-                    <button type="button" className="media-remove-button" aria-label={`Hapus gambar ${index + 1}${index === 0 ? " yang menjadi gambar utama" : ""}`} title="Hapus gambar" onClick={() => setImages(current => current.filter(item => item !== path))}><Trash2 size={14}/></button>
+                    <div className="local-media-actions" aria-label={`Atur posisi gambar ${index + 1}`}>
+                      <button type="button" className="media-position-button" disabled={index === 0} aria-label={`Geser gambar ${index + 1} ke kiri`} title="Geser ke kiri" onClick={() => moveImage(index, -1)}><ChevronLeft size={15} aria-hidden="true" /></button>
+                      <button type="button" className="media-position-button" disabled={index === images.length - 1} aria-label={`Geser gambar ${index + 1} ke kanan`} title="Geser ke kanan" onClick={() => moveImage(index, 1)}><ChevronRight size={15} aria-hidden="true" /></button>
+                    </div>
+                    <button type="button" className="media-remove-button" aria-label={`Hapus gambar ${index + 1}${index === 0 ? " yang menjadi gambar utama" : ""}`} title="Hapus gambar" onClick={() => setImages(current => current.filter(item => item !== path))}><Trash2 size={14} aria-hidden="true" /></button>
                   </div>
                 ))}
               </div>
@@ -254,9 +288,21 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
         </div>
 
         <aside className="product-editor-rail" aria-label="Konfigurasi penjualan">
+          <section className="product-editor-summary" aria-label="Ringkasan produk">
+            <div className="product-summary-head"><span className="section-kicker">Ringkasan langsung</span><BarChart3 size={18} aria-hidden="true" /></div>
+            <strong className="product-summary-name">{name || "Produk tanpa nama"}</strong>
+            <div className="product-summary-stats">
+              <div><span>Variasi aktif</span><strong>{activeVariants.length}</strong></div>
+              <div><span>Stok tersedia</span><strong>{Math.max(0, variantSummary.totalStock - variantSummary.totalReserved)}</strong></div>
+              <div><span>Harga mulai</span><strong>{variantSummary.minPrice ? rupiah(variantSummary.minPrice) : "—"}</strong></div>
+              <div><span>Perlu perhatian</span><strong className={variantSummary.lowStock ? "is-warning" : ""}>{variantSummary.lowStock || "—"}</strong></div>
+            </div>
+            <p className="product-summary-note">{variantSummary.totalReserved ? `${variantSummary.totalReserved} unit sedang direservasi dan tidak dapat dijual kembali.` : "Belum ada stok yang sedang direservasi."}</p>
+          </section>
           <section className="admin-section" aria-labelledby="product-sales-title">
             <div className="section-inline-head">
               <div>
+                <span className="section-kicker">02 · Penjualan</span>
                 <h2 id="product-sales-title">Informasi penjualan</h2>
                 <p>Pilih produk tunggal atau maksimal dua tingkat variasi.</p>
               </div>
@@ -384,19 +430,19 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
                         )}
                       </div>
                     </td>
-                    <td><input required aria-label={`SKU ${variantLabel}`} value={variant.sku} maxLength={80} onChange={event => updateVariant(index, { sku: event.target.value })}/></td>
-                    <td><input required aria-label={`Harga ${variantLabel}`} inputMode="numeric" type="number" min="1" step="1" value={variant.price || ""} onChange={event => updateVariant(index, { price: safeNumber(event.target.value) })}/></td>
-                    <td><input required aria-label={`Stok fisik ${variantLabel}`} inputMode="numeric" type="number" min={variant.reserved} step="1" value={variant.stock} onChange={event => updateVariant(index, { stock: safeNumber(event.target.value) })}/>{variant.reserved > 0 && <small>{variant.reserved} unit direservasi</small>}</td>
-                    <td><input required aria-label={`Berat ${variantLabel} dalam gram`} inputMode="numeric" type="number" min="1" step="1" value={variant.weight || ""} onChange={event => updateVariant(index, { weight: safeNumber(event.target.value) })}/></td>
+                    <td><input required name={`variants.${index}.sku`} aria-label={`SKU ${variantLabel}`} value={variant.sku} maxLength={80} onChange={event => updateVariant(index, { sku: event.target.value })}/></td>
+                    <td><input required name={`variants.${index}.price`} aria-label={`Harga ${variantLabel}`} inputMode="numeric" type="number" min="1" step="1" value={variant.price || ""} onChange={event => updateVariant(index, { price: safeNumber(event.target.value) })}/></td>
+                    <td><input required name={`variants.${index}.stock`} aria-label={`Stok fisik ${variantLabel}`} inputMode="numeric" type="number" min={variant.reserved} step="1" value={variant.stock} onChange={event => updateVariant(index, { stock: safeNumber(event.target.value) })}/>{variant.reserved > 0 && <small>{variant.reserved} unit direservasi</small>}</td>
+                    <td><input required name={`variants.${index}.weight`} aria-label={`Berat ${variantLabel} dalam gram`} inputMode="numeric" type="number" min="1" step="1" value={variant.weight || ""} onChange={event => updateVariant(index, { weight: safeNumber(event.target.value) })}/></td>
                     <td>
                       <div className="dimension-inputs">
                         {(["length", "width", "height"] as const).map(field => {
                           const fieldLabel = field === "length" ? "Panjang" : field === "width" ? "Lebar" : "Tinggi";
-                          return <input key={field} aria-label={`${fieldLabel} paket ${variantLabel} dalam sentimeter`} inputMode="numeric" type="number" min="1" step="1" value={variant[field] ?? ""} onChange={event => updateVariant(index, { [field]: event.target.value === "" ? null : safeNumber(event.target.value) })}/>;
+                          return <input key={field} name={`variants.${index}.${field}`} aria-label={`${fieldLabel} paket ${variantLabel} dalam sentimeter`} inputMode="numeric" type="number" min="1" step="1" value={variant[field] ?? ""} onChange={event => updateVariant(index, { [field]: event.target.value === "" ? null : safeNumber(event.target.value) })}/>;
                         })}
                       </div>
                     </td>
-                    <td><input required aria-label={`Batas stok menipis ${variantLabel}`} inputMode="numeric" type="number" min="0" step="1" value={variant.lowStockThreshold} onChange={event => updateVariant(index, { lowStockThreshold: safeNumber(event.target.value) })}/></td>
+                    <td><input required name={`variants.${index}.lowStockThreshold`} aria-label={`Batas stok menipis ${variantLabel}`} inputMode="numeric" type="number" min="0" step="1" value={variant.lowStockThreshold} onChange={event => updateVariant(index, { lowStockThreshold: safeNumber(event.target.value) })}/></td>
                     <td><input type="checkbox" aria-label={`Aktifkan ${variantLabel}`} checked={variant.active} onChange={event => updateVariant(index, { active: event.target.checked })}/></td>
                   </tr>
                 );
@@ -408,26 +454,26 @@ export function ProductForm({ initial, categories }: { initial: ProductFormIniti
       </section>
 
       <section className="admin-section product-marketplace-section" aria-labelledby="product-marketplace-title">
-        <h2 id="product-marketplace-title">Tautan toko online</h2>
+        <div className="section-heading-with-kicker"><span className="section-kicker">03 · Distribusi</span><h2 id="product-marketplace-title">Tautan toko online</h2></div>
         <p className="section-description">Opsional. Tambahkan tautan langsung ke halaman produk pada marketplace.</p>
         <div className="field-grid">
           <div className="field full">
             <label htmlFor="product-shopee-link">Tautan Shopee</label>
-            <input id="product-shopee-link" type="url" maxLength={500} value={shopeeLink} onChange={event => setShopeeLink(event.target.value)} placeholder="https://shopee.co.id/..."/>
+            <input id="product-shopee-link" name="shopeeLink" autoComplete="off" spellCheck={false} type="url" maxLength={500} value={shopeeLink} onChange={event => setShopeeLink(event.target.value)} placeholder="https://shopee.co.id/…"/>
           </div>
           <div className="field full">
             <label htmlFor="product-tiktok-link">Tautan TikTok</label>
-            <input id="product-tiktok-link" type="url" maxLength={500} value={tiktokLink} onChange={event => setTiktokLink(event.target.value)} placeholder="https://www.tiktok.com/..."/>
+            <input id="product-tiktok-link" name="tiktokLink" autoComplete="off" spellCheck={false} type="url" maxLength={500} value={tiktokLink} onChange={event => setTiktokLink(event.target.value)} placeholder="https://shop-id.tokopedia.com/…"/>
           </div>
           <div className="field full">
             <label htmlFor="product-tokopedia-link">Tautan Tokopedia</label>
-            <input id="product-tokopedia-link" type="url" maxLength={500} value={tokopediaLink} onChange={event => setTokopediaLink(event.target.value)} placeholder="https://www.tokopedia.com/..."/>
+            <input id="product-tokopedia-link" name="tokopediaLink" autoComplete="off" spellCheck={false} type="url" maxLength={500} value={tokopediaLink} onChange={event => setTokopediaLink(event.target.value)} placeholder="https://www.tokopedia.com/…"/>
           </div>
         </div>
       </section>
 
       <div className="form-footer-actions product-editor-actions">
-        <p>{activeVariants.length} detail aktif siap disimpan.</p>
+        <p><Layers3 size={15} aria-hidden="true" /> {activeVariants.length} detail aktif siap disimpan.{variantSummary.lowStock > 0 && <span className="product-editor-warning"><Package size={14} aria-hidden="true" /> {variantSummary.lowStock} perlu cek stok</span>}</p>
         <button type="submit" className="button button-dark" disabled={saveDisabled}>
           <Save size={15}/> {busy ? "Menyimpan…" : uploading ? "Menunggu unggahan…" : "Simpan produk"}
         </button>

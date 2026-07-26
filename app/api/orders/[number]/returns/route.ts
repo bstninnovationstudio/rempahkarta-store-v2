@@ -98,7 +98,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
 
       const claimed = await tx.order.updateMany({
         where: { id: order.id, fulfillmentState: "completed" },
-        data: { fulfillmentState: "return_requested" },
+        data: { fulfillmentState: "return_requested", issueOrder: true, issueReason: body.data.reason || "return_requested" },
       });
       if (claimed.count !== 1) throw new ReturnConflictError("Status pesanan berubah. Muat ulang halaman.");
 

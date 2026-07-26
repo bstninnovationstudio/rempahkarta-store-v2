@@ -13,7 +13,7 @@ Aplikasi UMKM single-brand dan single-tenant. Checkout wajib memakai customer se
 - Database baru/perubahan schema: `npm run setup` (generate + migrate deploy, tanpa seed).
 - Database lama: verifikasi kesesuaian struktur schema, jalankan `npm run db:baseline:existing` tepat satu kali, lalu `npm run db:migrate`; jangan baseline database kosong.
 - Seed/demo hanya untuk database disposable melalui perintah demo eksplisit; jangan seed atau `db push` database production.
-- Fixture/bypass demo membutuhkan `DEMO_MODE=true` dan `ALLOW_INSECURE_DEMO=true` sekaligus di non-production. Jangan aktifkan pada preview/staging publik atau database nyata.
+- Fixture/bypass demo dan dev tools aktif secara otomatis saat `APP_MODE=development` di non-production. Jangan aktifkan pada preview/staging publik atau database nyata.
 - Validasi: `npm run lint`, `npm test`, `npm run build`.
 
 ## Invariant katalog

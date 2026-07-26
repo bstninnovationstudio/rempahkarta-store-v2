@@ -5,7 +5,7 @@ Toko online D2C single-brand berbasis Next.js, Prisma, dan MySQL. Versi 1.3.0 me
 Dokumentasi aktif:
 
 - `DESIGN.md`: kontrak visual, responsivitas, dan aksesibilitas.
-- `docs/system-map.md`: peta lengkap 34 page route, 50 API route, model, dan modul.
+- `docs/system-map.md`: peta lengkap route aktif, model, dan modul.
 - `docs/architecture.md`: boundary aplikasi, query, cache, dan state flow.
 - `docs/security-api-audit.md`: kontrol keamanan/API, batas operasional, dan risiko tersisa.
 - `docs/ui-audit.md`: audit UI berbasis source; bukan hasil screenshot atau runtime database.
@@ -31,7 +31,10 @@ Dokumentasi aktif:
 - Google Identity dipakai untuk login pelanggan; aplikasi menerbitkan JWT session pelanggan sendiri setelah ID token Google diverifikasi.
 - Admin memakai kredensial server dan JWT admin terpisah.
 - BSTN menyediakan Dynamic QRIS; Biteship menyediakan area, tarif, booking, tracking, dan pembatalan pengiriman.
+- Panel inventori memisahkan stok fisik dan reservasi. Penyesuaian stok dicatat sebagai mutasi manual dan tidak boleh menurunkan stok fisik di bawah unit yang sedang direservasi.
+- Pengelolaan voucher tersedia di `/admin/vouchers`, dengan editor terpisah di `/admin/vouchers/new` dan `/admin/vouchers/[id]`. Halaman admin list shipment dihapus; pemantauan dan tindakan pengiriman tetap berada pada detail pesanan serta API operasional Biteship.
 - Cloudflare Turnstile divalidasi server-side pada aksi berisiko.
+- Resi admin dicetak sebagai label thermal 100 × 150 mm. CSS cetak memakai ukuran halaman tersebut dan membiarkan konten panjang mengalir ke label berikutnya, sehingga tidak dipotong oleh tinggi preview.
 - Rate limiter berjalan di memori proses; katalog memakai Next.js server Data Cache. Tidak ada Redis, queue, atau worker, sehingga tidak ada shared cache/limiter eksternal yang dikonfigurasi aplikasi.
 - Media produk publik disimpan di `public/uploads/products`; bukti retur/refund disimpan privat di `storage/private` dan hanya disajikan lewat API owner/admin dengan `private, no-store`. Keduanya harus persisten dan dibackup bersama MySQL.
 
@@ -64,7 +67,7 @@ npm run dev
 Data demo hanya untuk database lokal/disposable:
 
 ```bash
-DEMO_MODE=true ALLOW_INSECURE_DEMO=true npm run setup:demo
+APP_MODE=development npm run setup:demo
 ```
 
 Jangan menjalankan `setup:demo`, `db:seed`, atau `prisma db push` pada database berisi data nyata. Mode demo dilarang pada preview/staging yang dapat diakses publik.
@@ -206,9 +209,14 @@ Token dibatasi 2.048 karakter, diverifikasi dengan IP bila tersedia, menggunakan
 - Produk boleh tanpa kategori dan maksimal memiliki satu kategori.
 - Produk tanpa varian tetap memiliki satu `ProductVariant` aktif; produk bervarian mendukung maksimal dua tingkat opsi.
 - Varian lama dinonaktifkan, bukan dihapus, agar snapshot/order historis tetap aman.
+- Editor kategori menampilkan preview gambar produk dan menonaktifkan produk yang sudah terikat kategori lain; API assignment juga menolak konflik tersebut.
 - Maksimal 10 gambar JPG/PNG/WebP, masing-masing 5 MB.
 - Harga, dimensi, berat, status produk, dan stok checkout selalu dibaca ulang dari database.
-- Ketersediaan adalah `onHand - reserved - safetyStock`.
+- Editor `/admin/products/[id]` dan `/admin/products/new` memakai susunan identitas → penjualan → publikasi, ringkasan stok/harga langsung, tabel varian yang tetap dapat digeser, dan action save yang sama; perubahan ini hanya presentasi serta metadata form.
+- Tautan TikTok menerima URL TikTok Shop Indonesia pada domain `shop-id.tokopedia.com` maupun domain TikTok HTTPS yang valid.
+- Daftar produk menyediakan aksi ikon edit, duplikat, dan hapus. Duplikat membuka form tambah yang sudah terisi sebagai draf dengan SKU baru serta stok/penjualan nol; hapus mengarsipkan produk bila masih memiliki riwayat atau data operasional.
+- Daftar produk aktif/draf dan arsip dipisahkan. Tombol naik/turun menyimpan `Product.position` langsung; produk baru ditempatkan di akhir dan penyimpanan edit tidak mengubah urutan. Kategori memakai `ProductCategory.position` dengan perilaku yang sama, dan storefront mengikuti kedua urutan tersebut.
+- Ketersediaan adalah `max(0, onHand - reserved)`.
 - Reservasi checkout memakai optimistic lock `version` dan transaksi MySQL.
 - `packed` mengubah reservasi menjadi pengurangan stok fisik. Release, commit, dan restock memakai `InventoryMovement.dedupeKey` agar idempoten.
 
@@ -238,7 +246,8 @@ awaiting_payment → awaiting_processing → processing → packed
 
 ## Keuangan internal
 
-- `/admin/finance/omzet` mengelola ledger omzet bersih produk. Nilai bersih adalah `subtotal - discountAmount`; ongkir, service fee, dan fee BSTN disimpan sebagai snapshot audit dan tidak dikurangi dua kali.
+- `/admin/finance/omzet` mengelola ledger settlement pembayaran. Nilai omzet adalah `(Order.subtotal - Order.discountAmount) + Order.shippingFee + biaya admin toko + Payment.uniqueCode - refund completed` (setara `Total QRIS - fee QRIS - refund completed`). Biaya admin toko termasuk omzet toko, sedangkan fee QRIS BSTN tidak masuk saldo omzet.
+- `Payment.uniqueCode` adalah snapshot kode unik yang dikembalikan BSTN setelah payment dibuat. Untuk data lama, migration mengisinya secara deterministik dari `payableAmount - grandTotal`; rincian admin, pelanggan, payment, invoice, daftar pesanan, dan statistik belanja memakai `payableAmount` sebagai total pembayaran aktual. `Payment.feeAmount` BSTN mencakup fee QRIS + kode unik, sehingga fee QRIS bersih selalu dihitung sebagai `max(0, feeAmount - uniqueCode)`.
 - Dana order lunas masuk saldo tertahan, lalu berpindah ke saldo tersedia hanya setelah fulfillment `completed`/`finished` tanpa issue, retur aktif, atau pembatalan aktif. Refund, pembatalan, dan perubahan issue memperbarui posisi melalui delta ledger dalam transaksi state yang sama.
 - Kartu saldo tersedia, tertahan, dan total transaksi hanya mengagregasi `RevenueLedger`, bukan membaca ulang seluruh order. Penarikan adalah pencatatan manual, dibatasi saldo tersedia, memerlukan konfirmasi, dan menghasilkan audit log.
 - `/admin/finance/biteship` mengelola shadow balance lokal; nilai ini tidak membaca atau mengubah saldo nyata pada server Biteship. Admin dapat menambah/mengurangi dana, mengubah biaya per request, serta mengedit/menghapus hanya catatan manual.
@@ -268,7 +277,7 @@ Checklist production:
 
 - backup dan uji restore dump MySQL + `public/uploads` + `storage/private`;
 - pakai HTTPS dan secret acak minimal 32 karakter;
-- pastikan `DEMO_MODE=false`, `ALLOW_INSECURE_DEMO=false`, dan payment mock nonaktif; jangan aktifkan demo pada preview/staging publik;
+- pastikan `APP_MODE=production` dan payment mock nonaktif; jangan aktifkan devtools/demo pada preview/staging publik;
 - gunakan volume upload persisten dan batasi body reverse proxy sekitar 6 MB;
 - teruskan hanya header IP dari proxy/CDN tepercaya;
 - pantau 401/403/409/429, kegagalan webhook, dan status migration;

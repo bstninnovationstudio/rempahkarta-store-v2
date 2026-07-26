@@ -279,6 +279,15 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
   const discountAmount = firstValue(order, ["discountAmount"]);
   const serviceFee = firstValue(order, ["serviceFee"]);
   const grandTotal = firstValue(order, ["grandTotal"]);
+  const payableAmount = firstValue(payment, ["payableAmount"]);
+  const finalTotal = payableAmount !== undefined && payableAmount !== null ? payableAmount : grandTotal;
+  const totalServiceFee = Number(serviceFee || 0);
+
+  const storedUniqueCode = firstValue(payment, ["uniqueCode"]);
+  const uniqueCode = storedUniqueCode !== undefined
+    ? Number(storedUniqueCode)
+    : Math.max(0, Number(finalTotal || 0) - Number(grandTotal || 0));
+
   const query = await searchParams;
   const autoPrint =
     query.print === "1" ||
@@ -452,15 +461,21 @@ export default async function InvoicePage({ params, searchParams }: PageProps) {
                 <dd>-{formatRupiah(discountAmount)}</dd>
               </div>
             )}
-            {toBigInt(serviceFee) > 0 && (
+            {toBigInt(totalServiceFee) > BigInt(0) && (
               <div>
                 <dt>Biaya Layanan</dt>
-                <dd>{formatRupiah(serviceFee)}</dd>
+                <dd>{formatRupiah(totalServiceFee)}</dd>
+              </div>
+            )}
+            {toBigInt(uniqueCode) > BigInt(0) && (
+              <div>
+                <dt>Nomor Acak Unik</dt>
+                <dd>{formatRupiah(uniqueCode)}</dd>
               </div>
             )}
             <div className={styles.grandTotal}>
               <dt>Total Pembayaran</dt>
-              <dd>{formatRupiah(grandTotal)}</dd>
+              <dd>{formatRupiah(finalTotal)}</dd>
             </div>
           </dl>
         </section>

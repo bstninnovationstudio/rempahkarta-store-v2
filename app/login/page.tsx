@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { StoreHeader } from "@/components/store-header";
 import { errorMessage } from "@/lib/error-message";
 import { safeInternalPath } from "@/lib/safe-redirect";
+import Link from "next/link";
 import { LoaderCircle } from "lucide-react";
 
 type GoogleCredentialResponse = { credential: string };
@@ -137,7 +138,7 @@ function LoginContent() {
           )}
 
           <div className="login-policy-note">
-            Dengan masuk atau mendaftar, Anda menyetujui <a href="/pages/shipping">Ketentuan Layanan</a> serta <a href="/pages/returns">Kebijakan Privasi & Retur</a> kami. Sesi Anda terenkripsi dan dilindungi secara aman.
+            Dengan masuk atau mendaftar, Anda menyetujui <Link href="/pages/terms">Syarat dan Ketentuan</Link> serta <Link href="/pages/privacy">Kebijakan Privasi</Link> yang ada. Sesi Anda terenkripsi dan dilindungi secara aman.
           </div>
         </div>
       </main>

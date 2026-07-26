@@ -1,6 +1,6 @@
 # Laporan verifikasi REMPAHKARTA v1.3.0
 
-Tanggal verifikasi: 21 Juli 2026 (Asia/Jakarta)
+Tanggal verifikasi: 22 Juli 2026 (Asia/Jakarta)
 
 ## Ringkasan hasil
 
@@ -8,9 +8,8 @@ Tanggal verifikasi: 21 Juli 2026 (Asia/Jakarta)
 | --- | --- |
 | `npx tsc --noEmit` | Lulus. |
 | `npm run lint` | Lulus tanpa error; warning lama tersisa pada invoice dan payment client. |
-| `npm test` | Lulus, 28/28 test; tidak ada skip/todo/failure. |
-| `npm run build` | Tahap `prisma generate` tertahan `EPERM` karena DLL Prisma sedang dipakai dev server aktif. |
-| `npx next build` | Lulus; compile, TypeScript, page-data collection, dan 48/48 unit static generation selesai. |
+| `npm test` | Lulus, 32/32 test; tidak ada skip/todo/failure. |
+| `npm run build` | Lulus; Prisma generate, compile, TypeScript, page-data collection, dan 47/47 unit static generation selesai. |
 | `npx prisma validate` | Lulus. |
 | `npm run db:migrate` | Lulus tanpa seed; migration finance diterapkan. |
 
@@ -32,21 +31,22 @@ Test saat ini memeriksa:
 - paid provider yang datang setelah pembatalan lokal tetap authoritative;
 - Turnstile Siteverify berhasil, action mismatch, dan respons tanpa action ditolak.
 - Pemetaan voucher ke line item BSTN non-negatif, termasuk target ongkir dan nominal total yang tetap tepat.
-- Formula omzet bersih setelah diskon, posisi paid aktif sebagai held, perpindahan kembali karena issue/retur/cancellation, dan pembatasan refund agar saldo tidak negatif.
+- Formula omzet produk setelah diskon + ongkir + kode unik − refund, pemisahan kode unik dari `feeAmount` BSTN, posisi paid aktif sebagai held, perpindahan kembali karena issue/retur/cancellation, dan pembatasan refund agar saldo tidak negatif.
 
 Test tidak memakai seed, tidak menulis produk, dan tidak tersambung ke database live.
 
 ## Verifikasi schema dan migration
 
-- `prisma/schema.prisma` di-format dan divalidasi; schema kini memuat 30 model termasuk voucher dan tiga model ledger finance. Generate memperbarui type client tetapi penggantian DLL engine tidak dapat diselesaikan saat dev server Windows masih aktif.
+- `prisma/schema.prisma` divalidasi; schema memuat snapshot `Payment.uniqueCode`, `RevenueLedger.productSubtotal`, dan `RevenueLedger.uniqueCode`. Prisma Client berhasil digenerate setelah dev server dihentikan sementara lalu dijalankan kembali.
 - `prisma/migrations/0_baseline/migration.sql` dibandingkan dengan DDL yang digenerate ulang dari schema aktif. Isi DDL cocok; perbedaan diff hanya satu baris kosong terminal.
 - `prisma/migrations/202607190001_api_query_indexes/migration.sql` hanya menambah enam index query secara idempoten melalui pemeriksaan `information_schema`.
 - Migration `202607210002_add_vouchers` menambah enum/model voucher serta snapshot order secara additive; tidak menjalankan seed atau memodifikasi row order yang ada.
 - Migration `202607210003_add_financial_ledgers` menambah `RevenueLedger`, `BiteshipFundAccount`, dan `BiteshipLedger`, melakukan backfill posisi order lama, serta membuat saldo shadow Biteship awal nol tanpa seed.
+- Migration `202607220003_standardize_unique_code_revenue` menambah snapshot unique code/subtotal dan merekonsiliasi saldo historis secara delta; `202607220004_correct_qris_fee_snapshot` memisahkan kode unik dari snapshot fee QRIS tanpa mengubah saldo.
 - `npm run setup` hanya menjalankan generate + migrate deploy. Seed tetap merupakan aksi eksplisit development melalui `db:seed`/`setup:demo`.
 - `scripts/migrate-private-media.mjs` dan `scripts/hash-admin-password.mjs` lolos pemeriksaan sintaks.
 
-`npm run db:migrate` dijalankan tanpa seed dan berhasil menerapkan `202607210003_add_financial_ledgers` pada database yang dikonfigurasi. Verifikasi read-only setelah migration menemukan 7 order ter-backfill: saldo available Rp121.000, held Rp398.000, dan saldo Biteship Rp0. `npx next build` lulus. Wrapper `npm run build` berhenti sebelum Next build pada `prisma generate` dengan `EPERM` karena tiga proses dev server aktif mengunci query engine; proses tersebut sengaja tidak dihentikan.
+`npm run db:migrate` dijalankan tanpa seed dan berhasil menerapkan migration rekonsiliasi settlement, standardisasi kode unik, dan koreksi snapshot fee QRIS pada database `.env` aktif. Verifikasi read-only atas contoh Rp117.230 + ongkir Rp14.000 − diskon Rp14.000 menemukan `payableAmount` Rp118.569, `uniqueCode` Rp9, dan omzet kanonis Rp117.239 ketika pembayaran menjadi state penerimaan dana. `npm run build` lulus setelah dev server dihentikan sementara dan diaktifkan kembali.
 
 ## Verifikasi UI berbasis source
 

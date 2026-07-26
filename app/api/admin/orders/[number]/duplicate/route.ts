@@ -55,8 +55,7 @@ export async function POST(
         }
 
         // Check if stock is sufficient using the invariant formula:
-        // available = onHand - reserved - safetyStock
-        const available = inventory.onHand - inventory.reserved - inventory.safetyStock;
+        const available = inventory.onHand - inventory.reserved;
         if (available < item.quantity) {
           throw new Error(`Stok produk ${item.skuSnapshot} tidak mencukupi (Tersedia: ${available}, Dibutuhkan: ${item.quantity}).`);
         }
@@ -66,7 +65,7 @@ export async function POST(
           where: {
             id: inventory.id,
             version: inventory.version,
-            onHand: { gte: inventory.reserved + inventory.safetyStock + item.quantity },
+            onHand: { gte: inventory.reserved + item.quantity },
           },
           data: {
             reserved: { increment: item.quantity },

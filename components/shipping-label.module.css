@@ -41,8 +41,8 @@
   display: flex;
   flex-direction: column;
   width: 100mm;
-  height: 150mm;
-  overflow: hidden;
+  height: auto;
+  padding: 4mm;
   border: 1.6px solid #000;
   background: #fff;
   font-size: 10px;
@@ -51,7 +51,7 @@
 
 .header {
   display: grid;
-  grid-template-columns: 31mm 1fr;
+  grid-template-columns: 36mm 1fr;
   flex: 0 0 17mm;
   min-height: 0;
 }
@@ -76,7 +76,7 @@
   display: block;
   max-width: 100%;
   overflow: hidden;
-  font-size: 15px;
+  font-size: 19px;
   font-weight: 900;
   letter-spacing: -0.4px;
   line-height: 1;
@@ -227,8 +227,8 @@
 .addressGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  flex: 0 0 42mm;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: 32mm;
   border-top: var(--line);
 }
 
@@ -236,8 +236,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow: hidden;
-  padding: 2mm;
+  padding: 4mm;
   font-style: normal;
   font-size: 9.5px;
   line-height: 1.25;
@@ -259,9 +258,8 @@
   display: grid;
   grid-template-columns: 24mm 1fr;
   align-items: center;
-  flex: 0 0 10mm;
-  min-height: 0;
-  overflow: hidden;
+  flex: 0 0 auto;
+  min-height: 10mm;
   padding: 1.2mm 2mm;
   border-top: var(--line);
   font-size: 9.5px;
@@ -269,22 +267,18 @@
 }
 
 .infoBox span {
-  display: -webkit-box;
-  overflow: hidden;
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .footer {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 9mm;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: 14mm;
   padding: 1mm 2mm;
   border-top: var(--line);
-  font-size: 7.5px;
+  font-size: 8px;
   font-weight: 700;
   text-align: center;
 }
@@ -314,11 +308,11 @@
   :global(body) {
     width: 100mm !important;
     min-width: 100mm !important;
-    height: 150mm !important;
+    height: auto !important;
     min-height: 150mm !important;
     margin: 0 !important;
     padding: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     background: #fff !important;
   }
 
@@ -332,13 +326,13 @@
   }
 
   .printArea {
-    position: fixed;
-    inset: 0;
+    position: static;
     width: 100mm;
-    height: 150mm;
+    height: auto;
+    min-height: 0;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow: visible;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
@@ -349,9 +343,22 @@
 
   .label {
     width: 100mm;
-    height: 150mm;
+    height: auto;
+    min-height: 0;
     margin: 0;
-    page-break-after: avoid;
-    break-after: avoid-page;
+    overflow: visible;
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .header,
+  .barcodeSection,
+  .centerBox,
+  .shipmentGrid,
+  .addressGrid,
+  .infoBox,
+  .footer {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
   }
 }

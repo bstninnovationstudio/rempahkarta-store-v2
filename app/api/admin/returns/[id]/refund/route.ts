@@ -56,7 +56,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const nextReturnState = ret.source === "issue" ? "finished" : "refunded";
-  const nextFulfillmentState = ret.source === "issue" ? "finished" : ret.order.fulfillmentState;
+  const nextFulfillmentState = ret.source === "issue" ? "finished" : "completed";
   const nextIssueOrder = ret.source === "issue" ? false : ret.order.issueOrder;
 
   try {

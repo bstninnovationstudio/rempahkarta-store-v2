@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowLeft, RefreshCw, XCircle } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, RefreshCw, X } from "lucide-react";
 import { StoreHeader } from "@/components/store-header";
 import { rupiah } from "@/lib/format";
 import Link from "next/link";
@@ -16,9 +16,8 @@ interface PaymentPageClientProps {
   voucherCode?: string | null;
   discountAmount?: number;
   serviceFee?: number;
-  grandTotal: number;
   payableAmount: number;
-  feeAmount: number;
+  uniqueCode: number;
   expiresAt: string | null;
   qrisImageUrl: string | null;
   qrisString: string | null;
@@ -33,9 +32,8 @@ export function PaymentPageClient({
   voucherCode,
   discountAmount = 0,
   serviceFee,
-  grandTotal,
   payableAmount,
-  feeAmount,
+  uniqueCode,
   expiresAt,
   qrisImageUrl,
   initialStatus,
@@ -251,7 +249,7 @@ export function PaymentPageClient({
             {/* Overlays for Expired or Canceled status */}
             {(isExpired || status === "expired" || status === "expired_resolved") && (
               <div className="qris-overlay expired">
-                <XCircle size={40} />
+                <div className="qris-status-icon"><X size={24} /></div>
                 <strong>Pembayaran kedaluwarsa</strong>
                 <p>Batas waktu 10 menit telah terlampaui.</p>
               </div>
@@ -259,7 +257,7 @@ export function PaymentPageClient({
 
             {status === "canceled" && (
               <div className="qris-overlay canceled">
-                <XCircle size={40} />
+                <div className="qris-status-icon"><X size={24} /></div>
                 <strong>Pembayaran dibatalkan</strong>
                 <p>Pesanan ini telah dibatalkan.</p>
               </div>
@@ -267,7 +265,7 @@ export function PaymentPageClient({
 
             {status === "paid" && (
               <div className="qris-overlay paid">
-                <div className="qris-success-icon">✓</div>
+                <div className="qris-status-icon"><Check size={24} /></div>
                 <strong>Pembayaran berhasil</strong>
                 <p>Mengarahkan kembali ke pesanan…</p>
               </div>
@@ -275,46 +273,76 @@ export function PaymentPageClient({
           </div>
 
           {/* Pricing snapshot list */}
-          <div className="detail-list payment-detail-list">
-            {subtotal !== undefined && shippingFee !== undefined ? (
-              <>
-                <div>
-                  <span>Subtotal Produk</span>
-                  <span>{rupiah(subtotal)}</span>
-                </div>
-                <div>
-                  <span>Ongkos Kirim</span>
-                  <span>{rupiah(shippingFee)}</span>
-                </div>
-                {discountAmount > 0 && (
-                  <div>
-                    <span>Diskon Promo ({voucherCode || "PROMO"})</span>
-                    <span className="tone-success">-{rupiah(discountAmount)}</span>
-                  </div>
+          {(() => {
+            const hasItemDetails = subtotal !== undefined && shippingFee !== undefined;
+            const totalServiceFee = serviceFee || 0;
+            const fallbackBase = Math.max(0, payableAmount - totalServiceFee - uniqueCode);
+
+            return (
+              <div className="detail-list payment-detail-list">
+                {hasItemDetails ? (
+                  <>
+                    <div>
+                      <span>Subtotal Produk</span>
+                      <span>{rupiah(subtotal)}</span>
+                    </div>
+                    <div>
+                      <span>Ongkos Kirim</span>
+                      <span>{rupiah(shippingFee)}</span>
+                    </div>
+                    {discountAmount > 0 && (
+                      <div>
+                        <span>Diskon Promo ({voucherCode || "PROMO"})</span>
+                        <span className="tone-success">-{rupiah(discountAmount)}</span>
+                      </div>
+                    )}
+                    {totalServiceFee > 0 && (
+                      <div>
+                        <span>Biaya Layanan</span>
+                        <span>{rupiah(totalServiceFee)}</span>
+                      </div>
+                    )}
+                    {uniqueCode > 0 && (
+                      <div>
+                        <span>Nomor Acak Unik</span>
+                        <span>{rupiah(uniqueCode)}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <span>Subtotal & Ongkir</span>
+                      <span>{rupiah(fallbackBase)}</span>
+                    </div>
+                    {totalServiceFee > 0 && (
+                      <div>
+                        <span>Biaya Layanan</span>
+                        <span>{rupiah(totalServiceFee)}</span>
+                      </div>
+                    )}
+                    {uniqueCode > 0 && (
+                      <div>
+                        <span>Nomor Acak Unik</span>
+                        <span>{rupiah(uniqueCode)}</span>
+                      </div>
+                    )}
+                  </>
                 )}
-                <div>
-                  <span>Biaya Layanan</span>
-                  <span>{rupiah(payableAmount - (subtotal + shippingFee - discountAmount))}</span>
+                <div className="payment-total">
+                  <span>Total Pembayaran</span>
+                  <strong>{rupiah(payableAmount)}</strong>
                 </div>
-              </>
-            ) : (
-              <div>
-                <span>Subtotal & Ongkir</span>
-                <span>{rupiah(payableAmount - (serviceFee || 0))}</span>
               </div>
-            )}
-            <div className="payment-total">
-              <span>Total Pembayaran</span>
-              <strong>{rupiah(payableAmount)}</strong>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Important instructions */}
           {!isTerminalState && (
             <div className="payment-instruction">
               <AlertCircle size={16} />
               <div>
-                <strong>Penting:</strong> Pindai QRIS dengan aplikasi pembayaran pilihan Anda. Pastikan nominal pembayaran sama persis hingga digit terakhir agar transaksi terverifikasi.
+                <strong>Penting:</strong> Pindai QRIS dengan aplikasi pembayaran pilihan Anda. Pastikan nominal pembayaran sama persis hingga digit terakhir (Nomor Acak Unik) agar transaksi terverifikasi.
               </div>
             </div>
           )}

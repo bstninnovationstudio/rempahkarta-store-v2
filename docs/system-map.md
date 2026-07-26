@@ -2,7 +2,7 @@
 
 Snapshot source: 21 Juli 2026 (Asia/Jakarta)
 
-Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumlah pada snapshot ini adalah **37 page route** dan **62 API route file**. Route dinamis ditulis dengan parameter dalam kurung siku.
+Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumlah pada snapshot ini adalah **38 page route** dan **63 API route file**. Route dinamis ditulis dengan parameter dalam kurung siku.
 
 ## Legenda
 
@@ -51,7 +51,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 15 | `/user/addresses` | Customer | Route kompatibilitas | Redirect ke `/user/settings#addresses`, mempertahankan query aksi/redirect aman. |
 | 16 | `/user/payment` | Customer | Route kompatibilitas | Redirect ke `/user/settings#payment`. |
 
-## Page route: admin (20)
+## Page route: admin (21)
 
 | # | Route | Akses | Data/komponen utama | Query dan perilaku |
 | ---: | --- | --- | --- | --- |
@@ -59,25 +59,26 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 18 | `/admin` | Admin | Statistik, empat order terbaru, antrean tindakan | Stats query terpisah; relasi order terbaru dibatasi satu item/shipment. |
 | 19 | `/admin/orders` | Admin | Filter status/issue, tabel order | Pagination 20 default/50 maksimum pada UI; stats filter terpisah. |
 | 20 | `/admin/orders/[number]` | Admin | Detail item, timeline, payment, shipment, cancellation, action rail | Lookup unik; payment/quote/shipment terbaru dibatasi; histori relevan tetap dimuat. |
-| 21 | `/admin/orders/[number]/resi` | Admin | Label pengiriman A6/barcode | Lookup order unik untuk cetak resi. |
-| 22 | `/admin/products` | Admin | Daftar produk, kategori, stok, status | Pagination 20/50; image pertama dan varian aktif yang dibutuhkan. |
+| 21 | `/admin/orders/[number]/resi` | Admin | Label thermal 100 × 150 mm/barcode | Lookup order unik untuk cetak resi; CSS paged media memindahkan konten panjang ke label berikutnya. |
+| 22 | `/admin/products` | Admin | Daftar produk aktif/draf dan arsip, pengurutan tersimpan | Dua tabel terpisah; tombol naik/turun langsung menyimpan posisi. |
 | 23 | `/admin/products/new` | Admin | `ProductForm` create | Opsi kategori; mutation melalui API admin. |
 | 24 | `/admin/products/[id]` | Admin | `ProductForm` edit | Lookup produk unik beserta varian/media/inventory. |
-| 25 | `/admin/categories` | Admin | `CategoryManager` | List kategori dan `_count.products`; dataset master kecil, belum dipaginasi. |
+| 25 | `/admin/categories` | Admin | `CategoryManager`, pengurutan tersimpan | List kategori dan `_count.products`; tombol naik/turun langsung menyimpan posisi. |
 | 26 | `/admin/categories/[id]` | Admin | `CategoryEditor`, assignment produk | Sengaja memuat semua produk karena submit mengganti seluruh `selectedProductIds`. |
-| 27 | `/admin/inventory` | Admin | Stats stok, tabel SKU, adjustment | Pagination 20/50; aggregate dan query availability terpisah. |
-| 28 | `/admin/shipments` | Admin | Stats dan daftar shipment | Pagination 20/50; count per state terpisah. |
+| 27 | `/admin/inventory` | Admin | Stats stok, tabel SKU, adjustment | Pagination 20/50; ketersediaan = stok fisik dikurangi reservasi. |
 | 29 | `/admin/returns` | Admin | Stats dan daftar retur/refund | Pagination 20/50; groupBy state terpisah. |
 | 30 | `/admin/returns/[id]` | Admin | Detail kasus, bukti, rekening, keputusan/refund | Lookup unik dan relasi kasus/order yang diperlukan. |
 | 31 | `/admin/users` | Admin | Daftar customer dan total belanja | Pagination 20/50; `_count` + `groupBy` hanya untuk user pada page aktif. |
 | 32 | `/admin/users/[id]` | Admin | Profil, alamat, rekening, riwayat order | Profil unik; order dipaginasi 10/page dan total dihitung terpisah. |
 | 33 | `/admin/settings` | Admin | Readiness konfigurasi server | Membaca keberadaan konfigurasi; tidak memuat credential mentah. |
 | 34 | `/admin/audit` | Admin | Filter dan `AuditLog` | Pagination 20/50; select field minimum dan urutan deterministik. |
-| 35 | `/admin/vouchers` | Admin | `VoucherManager`, CRUD, duplikasi, riwayat pemakaian | Voucher terakhir, status semantik, form modal dan tabel overflow lokal. |
-| 36 | `/admin/finance/omzet` | Admin | Metric omzet, penarikan, `RevenueLedger` | Seluruh metric dari aggregate ledger; transaksi 20/page. |
-| 37 | `/admin/finance/biteship` | Admin | Shadow balance, biaya request, CRUD manual, `BiteshipLedger` | Akun singleton + ledger terpaginasi 20/page; record otomatis immutable. |
+| 35 | `/admin/vouchers` | Admin | `VoucherManager`, daftar, duplikasi, riwayat pemakaian | Pagination; editor tidak lagi memakai popup. |
+| 36 | `/admin/vouchers/new` | Admin | `VoucherForm` create | Form terstruktur untuk identitas, aturan, kuota, dan jadwal WIB. |
+| 37 | `/admin/vouchers/[id]` | Admin | `VoucherForm` edit/kelola | Lookup voucher unik + jumlah penggunaan. |
+| 38 | `/admin/finance/omzet` | Admin | Metric omzet, rincian produk/diskon/ongkir/admin toko/kode unik, penarikan, `RevenueLedger` | Saldo = produk setelah diskon + ongkir + admin toko + kode unik − refund; fee QRIS bukan omzet, seluruh metric dari aggregate ledger, transaksi 20/page. |
+| 39 | `/admin/finance/biteship` | Admin | Shadow balance, biaya request, CRUD manual, `BiteshipLedger` | Akun singleton + ledger terpaginasi 20/page; record otomatis immutable. |
 
-`app/admin/layout.tsx` adalah security/layout boundary untuk route 18–37: `requireAdmin()`, shell desktop, drawer tablet/mobile, dan navigasi admin. `app/user/layout.tsx` adalah boundary session/layout route akun, menampilkan progress completeness dan navigasi account.
+`app/admin/layout.tsx` adalah security/layout boundary untuk route 18–38: `requireAdmin()`, shell desktop, drawer tablet/mobile, dan navigasi admin. `app/user/layout.tsx` adalah boundary session/layout route akun, menampilkan progress completeness dan navigasi account.
 
 ## API route: autentikasi, katalog, checkout, dan customer order (16)
 
@@ -111,7 +112,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 22 | `/api/user/payment` | `GET`, `POST` | Customer | Satu setting | `POST`: 20/menit + Turnstile `user_payment` | Baca/upsert rekening refund bank/e-wallet. |
 | 23 | `/api/user/cart` | `GET`, `POST`, `PUT` | Customer | Maksimum 50 item | Write: 30/menit gabungan | Baca, tambah, atau sinkron penuh cart dengan validasi produk/varian. |
 
-## API route: admin (30)
+## API route: admin (32)
 
 | # | Route | Metode | Akses | Pagination/batas | Kontrol tambahan | Tujuan |
 | ---: | --- | --- | --- | --- | --- | --- |
@@ -121,13 +122,14 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 27 | `/api/admin/orders` | `GET` | Admin | 20 default, 100 maksimum | — | List order dengan filter/search, relasi ringkas, dan metadata page. |
 | 28 | `/api/admin/products` | `GET`, `POST` | Admin | GET 20 default, 100 maksimum | — | List/filter/search produk atau create produk/varian/media/inventory. |
 | 29 | `/api/admin/users` | `GET` | Admin | 20 default, 100 maksimum | — | List user dan count/order-spend yang dibatasi page. |
-| 30 | `/api/admin/shipments` | `GET` | Admin | 20 default, 100 maksimum | — | List shipment terurut dengan filter/search. |
 | 31 | `/api/admin/returns` | `GET` | Admin | 20 default, 100 maksimum | — | List return request dengan filter/search dan refund terbaru. |
 | 32 | `/api/admin/refunds` | `GET` | Admin | 20 default, 100 maksimum | — | List refund dengan filter status/search dan nomor order/return ringkas. |
 | 33 | `/api/admin/categories` | `POST` | Admin | — | — | Buat kategori, audit, invalidasi katalog. |
 | 34 | `/api/admin/categories/[id]` | `PUT`, `DELETE` | Admin | Assignment penuh | — | Ubah/hapus kategori dan membership produk; audit + invalidasi cache. |
 | 35 | `/api/admin/products/[id]` | `PUT` | Admin | — | — | Update produk dan menonaktifkan varian lama secara aman. |
 | 36 | `/api/admin/inventory/[id]/adjust` | `POST` | Admin | — | — | Optimistic stock adjustment, movement/audit, invalidasi cache. |
+| — | `/api/admin/products/[id]/position` | `POST` | Admin | — | exact Origin | Pindahkan satu posisi produk aktif/draf atau arsip, audit, dan invalidasi katalog. |
+| — | `/api/admin/categories/[id]/position` | `POST` | Admin | — | exact Origin | Pindahkan satu posisi kategori, audit, dan invalidasi katalog. |
 | 37 | `/api/admin/media/upload-url` | `POST` | Admin | 5 MB/file | 20/menit | Upload produk publik atau bukti refund privat untuk entity return yang valid. |
 | 38 | `/api/admin/shipping/cancellation-reasons` | `GET` | Admin | Hasil provider dibatasi | — | Ambil alasan cancellation yang didukung Biteship. |
 | 39 | `/api/admin/orders/[number]/transition` | `POST` | Admin | — | — | Jalankan transisi fulfillment yang sah melalui state machine. |
@@ -173,7 +175,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 
 | Domain | Model | Peran |
 | --- | --- | --- |
-| Katalog | `Product`, `ProductCategory`, `ProductVariant`, `ProductImage` | Master produk, satu kategori opsional, unit jual, media. |
+| Katalog | `Product`, `ProductCategory`, `ProductVariant`, `ProductImage` | Master produk/kategori dengan posisi tersimpan, satu kategori opsional, unit jual, media. |
 | Inventory | `Warehouse`, `InventoryLevel`, `InventoryMovement` | Gudang, saldo/version per varian, ledger side effect idempoten. |
 | Customer | `User`, `UserAddress`, `UserRefundSetting`, `CartItem` | Identitas Google/session lock, alamat, rekening refund, cart server. |
 | Order/voucher | `Order`, `OrderItem`, `OrderAddress`, `Voucher`, `VoucherUsage` | Header state/total/owner, snapshot item/alamat/voucher, aturan dan pemakaian promo. |
@@ -231,7 +233,7 @@ Enum state kanonis mencakup state order/retur, voucher, `RevenueLedgerType`, dan
 | Admin shell/list | `admin-shell`, `admin-pagination`, `status-pill` | Sidebar/drawer, paging, status semantik. |
 | Admin mutation | `product-form`, category editors, inventory/order/return action components | Mutasi katalog, stok, transaksi, shipment, return/refund tanpa mengganti state flow. |
 | Admin finance | `revenue-finance-manager`, `biteship-finance-manager` | Penarikan omzet, biaya request, CRUD dana manual, dan feedback mutasi. |
-| Shipping label | `shipping-label` | Label A6 dan barcode untuk route resi. |
+| Shipping label | `shipping-label` | Label thermal 100 × 150 mm, barcode, dan aturan paginasi cetak untuk route resi. |
 
 ## Boundary data penting
 

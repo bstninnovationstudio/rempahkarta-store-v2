@@ -36,7 +36,6 @@ const navigation = [
       ["/admin/categories", "Kategori", FolderTree],
       ["/admin/inventory", "Inventori", Warehouse],
       ["/admin/vouchers", "Voucher", Ticket],
-      ["/admin/shipments", "Pengiriman", PackageSearch],
       ["/admin/returns", "Retur & refund", RotateCcw],
       ["/admin/users", "Pelanggan", Users],
     ],

@@ -5,6 +5,8 @@ export type FeeBreakdown = {
   baseAmount: number;
   /** Fixed fee toko (misal Rp 500) */
   fixedFee: number;
+  /** Estimasi fee QRIS untuk membentuk total sebelum respons provider */
+  estimatedQrisFee: number;
   /** Nominal acuan yang dikirim ke API BSTN (baseAmount + fixedFee) */
   bstnAmount: number;
   /** Total Biaya Layanan yang ditampilkan di UI (termasuk kompensasi QRIS 0.7%) */
@@ -31,10 +33,12 @@ export function calculateServiceFee(
   const bstnAmount = safeBase + safeFixed;
   const grandTotal = Math.ceil(bstnAmount / (1 - safeRate));
   const serviceFee = grandTotal - safeBase;
+  const estimatedQrisFee = Math.max(0, serviceFee - safeFixed);
 
   return {
     baseAmount: safeBase,
     fixedFee: safeFixed,
+    estimatedQrisFee,
     bstnAmount,
     serviceFee,
     grandTotal,

@@ -14,7 +14,7 @@ async function loadCatalogProducts(): Promise<Product[]> {
       images: { orderBy: { position: "asc" } },
       variants: { where: { active: true }, include: { inventory: true }, orderBy: { position: "asc" } },
     },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
   });
   return rows.flatMap((product, index) => {
     const variants: StoreVariant[] = product.variants.map(variant => ({
@@ -24,7 +24,7 @@ async function loadCatalogProducts(): Promise<Product[]> {
       option2Value: variant.option2Value || undefined,
       price: Number(variant.price),
       compareAt: variant.compareAt ? Number(variant.compareAt) : undefined,
-      stock: variant.inventory.reduce((sum, level) => sum + Math.max(0, level.onHand - level.reserved - level.safetyStock), 0),
+      stock: variant.inventory.reduce((sum, level) => sum + Math.max(0, level.onHand - level.reserved), 0),
       weight: variant.weight,
       length: variant.length || undefined,
       width: variant.width || undefined,
@@ -81,6 +81,27 @@ const getCachedCatalogProducts = unstable_cache(
 
 export async function getCatalogProducts(): Promise<Product[]> {
   return getCachedCatalogProducts();
+}
+
+async function loadCatalogCategoryNames(): Promise<string[]> {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL belum dikonfigurasi");
+  const { prisma } = await import("@/lib/db");
+  const categories = await prisma.productCategory.findMany({
+    where: { products: { some: { status: "active" } } },
+    select: { name: true },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+  });
+  return categories.map(category => category.name);
+}
+
+const getCachedCatalogCategoryNames = unstable_cache(
+  loadCatalogCategoryNames,
+  ["storefront-catalog-categories-v1"],
+  { revalidate: 30 * 60, tags: [CATALOG_CACHE_TAG] },
+);
+
+export async function getCatalogCategoryNames(): Promise<string[]> {
+  return getCachedCatalogCategoryNames();
 }
 
 export function invalidateCatalogCache() {

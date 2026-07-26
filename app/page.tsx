@@ -15,7 +15,7 @@ import {
 import { ProductCatalog } from "@/components/product-catalog";
 import { StoreFooter } from "@/components/store-footer";
 import { StoreHeader } from "@/components/store-header";
-import { getCatalogProducts } from "@/lib/catalog";
+import { getCatalogCategoryNames, getCatalogProducts } from "@/lib/catalog";
 import { getPublicVouchers } from "@/lib/voucher";
 import { PublicVoucherMarquee } from "@/components/public-voucher-marquee";
 
@@ -70,7 +70,7 @@ export default async function Home({
 }: {
   searchParams: Promise<{ search?: string }>;
 }) {
-  const [products, query, vouchers] = await Promise.all([getCatalogProducts(), searchParams, getPublicVouchers()]);
+  const [products, categories, query, vouchers] = await Promise.all([getCatalogProducts(), getCatalogCategoryNames(), searchParams, getPublicVouchers()]);
 
   return (
     <>
@@ -102,9 +102,21 @@ export default async function Home({
         </section>
 
         <section className="trust-strip" aria-label="Keunggulan toko">
-          <div><ShieldCheck /><span>100% Produk Asli</span></div>
-          <div><Truck /><span>Pengiriman otomatis</span></div>
-          <div><RotateCcw /><span>Jaminan Pengembalian</span></div>
+          <div>
+            <ShieldCheck />
+            <span className="trust-text-desktop">100% Produk Asli</span>
+            <span className="trust-text-mobile">100% Asli</span>
+          </div>
+          <div>
+            <Truck />
+            <span className="trust-text-desktop">Pengiriman otomatis</span>
+            <span className="trust-text-mobile">Otomatis</span>
+          </div>
+          <div>
+            <RotateCcw />
+            <span className="trust-text-desktop">Jaminan Pengembalian</span>
+            <span className="trust-text-mobile">Garansi</span>
+          </div>
         </section>
 
         <section className="catalog-section" id="product">
@@ -117,7 +129,7 @@ export default async function Home({
               Untuk semua kalangan dan untuk kesehatan semua orang! Dapatkan dalam harga terbaik langsung dari produsennya!
             </p>
           </div>
-          <ProductCatalog products={products} autoFocusSearch={query.search === "1"} />
+          <ProductCatalog products={products} categoryNames={categories} autoFocusSearch={query.search === "1"} />
         </section>
         <PublicVoucherMarquee vouchers={vouchers} />
 

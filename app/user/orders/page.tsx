@@ -7,6 +7,7 @@ import { customerFromRequest } from "@/lib/customer-auth";
 import { checkAndExpireAllStaleOrders } from "@/lib/payment-sync";
 import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
+import { customerPaymentTotal } from "@/lib/payment-totals";
 
 const PAGE_SIZE = 10;
 
@@ -42,6 +43,7 @@ export default async function UserOrdersHistoryPage({
         publicNumber: true,
         createdAt: true,
         grandTotal: true,
+        payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true } },
         paymentState: true,
         fulfillmentState: true,
       },
@@ -93,7 +95,7 @@ export default async function UserOrdersHistoryPage({
                     </div>
                     <div className="order-card-total">
                       <span>Total pembayaran</span>
-                      <strong>{rupiah(Number(order.grandTotal))}</strong>
+                      <strong>{rupiah(Number(customerPaymentTotal(order.grandTotal, order.payments[0]?.payableAmount)))}</strong>
                     </div>
                   </Link>
                 </article>

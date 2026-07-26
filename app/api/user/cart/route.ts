@@ -26,8 +26,8 @@ const cartSchema = z.object({
   }
 });
 
-function availableStock(levels: Array<{ onHand: number; reserved: number; safetyStock: number }>) {
-  return levels.reduce((total, level) => total + Math.max(0, level.onHand - level.reserved - level.safetyStock), 0);
+function availableStock(levels: Array<{ onHand: number; reserved: number }>) {
+  return levels.reduce((total, level) => total + Math.max(0, level.onHand - level.reserved), 0);
 }
 
 async function readCart(userId: string) {
@@ -43,7 +43,7 @@ async function readCart(userId: string) {
         select: {
           active: true,
           price: true,
-          inventory: { select: { onHand: true, reserved: true, safetyStock: true } },
+          inventory: { select: { onHand: true, reserved: true } },
           product: { select: { status: true } },
         },
       },
@@ -68,7 +68,7 @@ async function validateCartItems(items: z.infer<typeof cartItemSchema>[]) {
     select: {
       id: true,
       productId: true,
-      inventory: { select: { onHand: true, reserved: true, safetyStock: true } },
+      inventory: { select: { onHand: true, reserved: true } },
     },
   });
   const map = new Map(variants.map(variant => [variant.id, {

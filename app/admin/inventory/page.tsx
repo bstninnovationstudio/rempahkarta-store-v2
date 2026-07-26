@@ -13,7 +13,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
         <div>
           <p className="eyebrow">Buku stok</p>
           <h1>Inventori</h1>
-          <p>Stok fisik, reservasi, stok pengaman, dan ketersediaan setiap SKU.</p>
+          <p>Stok fisik, reservasi, dan ketersediaan setiap SKU.</p>
         </div>
       </div>
 
@@ -31,7 +31,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
         <article className="metric-card">
           <div className="metric-card-head"><span>Siap dijual</span></div>
           <strong className="admin-numeric">{stats.available}</strong>
-          <span className="metric-trend">Setelah stok pengaman</span>
+          <span className="metric-trend">Setelah reservasi pesanan</span>
         </article>
         <article className="metric-card">
           <div className="metric-card-head"><span>Stok menipis</span><AlertTriangle size={15} aria-hidden="true" /></div>
@@ -49,7 +49,6 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
                 <th scope="col">SKU / Produk</th>
                 <th scope="col">Stok fisik</th>
                 <th scope="col">Direservasi</th>
-                <th scope="col">Stok pengaman</th>
                 <th scope="col">Tersedia</th>
                 <th scope="col">Status</th>
                 <th scope="col">Aksi</th>
@@ -57,7 +56,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             </thead>
             <tbody>
               {rows.map(row => {
-                const rowAvailable = Math.max(0, row.onHand - row.reserved - row.safety);
+                const rowAvailable = Math.max(0, row.onHand - row.reserved);
                 const isLow = rowAvailable <= row.lowStockThreshold;
                 const statusClass = rowAvailable === 0 ? "status-cancelled" : isLow ? "status-pending" : "status-paid";
 
@@ -69,15 +68,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
                     </td>
                     <td><span className="inventory-number admin-numeric">{row.onHand}</span></td>
                     <td className="admin-numeric">{row.reserved}</td>
-                    <td className="admin-numeric">{row.safety}</td>
                     <td><strong className="admin-numeric">{rowAvailable}</strong></td>
                     <td><span className={`status-pill ${statusClass}`}>{rowAvailable === 0 ? "Stok habis" : isLow ? "Stok menipis" : "Aman"}</span></td>
-                    <td><InventoryAdjustButton id={row.id} reserved={row.reserved} /></td>
+                    <td><InventoryAdjustButton id={row.id} sku={row.sku} name={`${row.name} · ${row.color}`} onHand={row.onHand} reserved={row.reserved} /></td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
-                <tr><td className="table-empty-state" colSpan={7}>Belum ada data inventori.</td></tr>
+                <tr><td className="table-empty-state" colSpan={6}>Belum ada data inventori.</td></tr>
               )}
             </tbody>
           </table>

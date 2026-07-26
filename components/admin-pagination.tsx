@@ -3,12 +3,12 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { AdminPagination as PaginationData } from "@/lib/admin-data";
 import styles from "./admin-pagination.module.css";
 
-function pageHref(basePath: string, page: number, query: Record<string, string | undefined>) {
+function pageHref(basePath: string, page: number, query: Record<string, string | undefined>, pageParam: string) {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
     if (value) params.set(key, value);
   });
-  if (page > 1) params.set("page", String(page));
+  if (page > 1) params.set(pageParam, String(page));
   const value = params.toString();
   return value ? `${basePath}?${value}` : basePath;
 }
@@ -17,11 +17,13 @@ export function AdminPagination({
   data,
   basePath,
   query = {},
+  pageParam = "page",
   itemLabel = "data",
 }: {
   data: PaginationData;
   basePath: string;
   query?: Record<string, string | undefined>;
+  pageParam?: string;
   itemLabel?: string;
 }) {
   if (data.total === 0) return null;
@@ -35,7 +37,7 @@ export function AdminPagination({
       </p>
       <div className={styles.controls}>
         {hasPrevious ? (
-          <Link className={styles.link} href={pageHref(basePath, data.page - 1, query)} rel="prev">
+          <Link className={styles.link} href={pageHref(basePath, data.page - 1, query, pageParam)} rel="prev">
             <ChevronLeft size={14} aria-hidden="true" /> Sebelumnya
           </Link>
         ) : (
@@ -43,7 +45,7 @@ export function AdminPagination({
         )}
         <span className={styles.pageLabel}>Halaman {data.page} / {data.totalPages}</span>
         {hasNext ? (
-          <Link className={styles.link} href={pageHref(basePath, data.page + 1, query)} rel="next">
+          <Link className={styles.link} href={pageHref(basePath, data.page + 1, query, pageParam)} rel="next">
             Berikutnya <ChevronRight size={14} aria-hidden="true" />
           </Link>
         ) : (

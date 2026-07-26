@@ -46,7 +46,8 @@ export const productInputSchema = z.object({
   option2Name: z.string().trim().min(1).max(80).nullable(),
   images: z.array(z.string().regex(/^\/uploads\/products\/[a-zA-Z0-9.-]+$/)).max(10),
   shopeeLink: marketplaceUrl(["shopee.co.id", "shopee.com"], "Tautan Shopee"),
-  tiktokLink: marketplaceUrl(["tiktok.com"], "Tautan TikTok"),
+  // TikTok Shop Indonesia uses shop-id.tokopedia.com links in addition to tiktok.com.
+  tiktokLink: marketplaceUrl(["tiktok.com", "tokopedia.com"], "Tautan TikTok"),
   tokopediaLink: marketplaceUrl(["tokopedia.com"], "Tautan Tokopedia"),
   rating: z.number().min(0).max(5).default(0),
   sold: z.number().int().nonnegative().default(0),

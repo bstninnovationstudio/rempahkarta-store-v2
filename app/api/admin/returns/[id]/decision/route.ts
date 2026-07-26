@@ -37,7 +37,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
     if(body.data.decision==="rejected"){
       await tx.order.update({
         where:{id:current.orderId},
-        data:{fulfillmentState:"completed"}
+        data:{fulfillmentState:"completed",issueOrder:false,issueReason:null}
       });
     }
     await tx.auditLog.create({

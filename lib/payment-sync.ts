@@ -1,6 +1,7 @@
 import { Prisma, type PaymentState } from "@prisma/client";
 import { releaseOrderReservation } from "@/lib/inventory";
 import { syncOrderRevenue } from "@/lib/finance";
+import { deriveUniqueCode, readBstnUniqueCode } from "@/lib/payment-amounts";
 
 const failedProviderStatuses = new Set(["expired", "canceled", "failed", "denied"]);
 export const authoritativePaidSourceStates = [
@@ -25,10 +26,36 @@ export async function applyVerifiedPaymentStatus(
   await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Payment\` WHERE id = ${input.paymentId} FOR UPDATE`);
   await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${input.orderId} FOR UPDATE`);
   const [payment, order] = await Promise.all([
-    tx.payment.findUniqueOrThrow({ where: { id: input.paymentId }, select: { status: true } }),
-    tx.order.findUniqueOrThrow({ where: { id: input.orderId }, select: { fulfillmentState: true } }),
+    tx.payment.findUniqueOrThrow({ where: { id: input.paymentId }, select: { status: true, payableAmount: true, feeAmount: true, uniqueCode: true } }),
+    tx.order.findUniqueOrThrow({ where: { id: input.orderId }, select: { fulfillmentState: true, grandTotal: true } }),
   ]);
   let transitioned = false;
+  const raw = input.raw && typeof input.raw === "object" && !Array.isArray(input.raw)
+    ? input.raw as Record<string, unknown>
+    : {};
+  const qris = raw.qris && typeof raw.qris === "object" && !Array.isArray(raw.qris)
+    ? raw.qris as Record<string, unknown>
+    : {};
+  const payableValue = raw.payable_amount ?? qris.payable_amount;
+  const feeValue = raw.fee_amount ?? qris.admin_fee;
+  const providerPayable = typeof payableValue === "number" && Number.isFinite(payableValue)
+    ? BigInt(Math.round(payableValue))
+    : payment.payableAmount;
+  const providerFee = typeof feeValue === "number" && Number.isFinite(feeValue)
+    ? BigInt(Math.round(feeValue))
+    : payment.feeAmount;
+  const providerUnique = readBstnUniqueCode(
+    raw,
+    deriveUniqueCode({ uniqueCode: payment.uniqueCode, payableAmount: providerPayable, grandTotal: order.grandTotal }),
+  );
+  await tx.payment.update({
+    where: { id: input.paymentId },
+    data: {
+      ...(providerPayable !== null ? { payableAmount: providerPayable } : {}),
+      ...(providerFee !== null ? { feeAmount: providerFee } : {}),
+      uniqueCode: providerUnique,
+    },
+  });
 
   if (input.providerStatus === "paid") {
     const changed = await tx.payment.updateMany({

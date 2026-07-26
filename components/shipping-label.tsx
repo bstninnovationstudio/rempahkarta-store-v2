@@ -28,8 +28,6 @@ export interface ShippingLabelProps {
       postalCode: string;
     };
     itemDescription: string;
-    note?: string;
-    orderPublicNumber: string;
   };
 }
 
@@ -115,7 +113,7 @@ export default function ShippingLabel({ data }: ShippingLabelProps) {
           <div className={styles.brandBlock}>
             <div className={styles.brandName}>REMPAHKARTA</div>
             <div className={styles.brandMeta}>
-              via Biteship · Order {data.orderPublicNumber}
+              Hangatkan Keluarga Indonesia!
             </div>
           </div>
         </header>
@@ -190,13 +188,9 @@ export default function ShippingLabel({ data }: ShippingLabelProps) {
           <span>{data.itemDescription}</span>
         </section>
 
-        <section className={styles.infoBox}>
-          <strong>Catatan :</strong>
-          <span>{data.note?.trim() || "Tidak Ada"}</span>
-        </section>
-
         <footer className={styles.footer}>
-          Pengiriman melalui platform Biteship / REMPAHKARTA
+          MOHON MELAKUKAN PEREKAMAN SAAT MEMBUKA PAKET SEBAGAI BUKTI JIKA
+          TERJADI MASALAH DENGAN PESANAN!
         </footer>
       </article>
     </section>

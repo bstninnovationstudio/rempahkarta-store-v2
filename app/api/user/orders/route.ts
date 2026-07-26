@@ -26,6 +26,7 @@ export async function GET(request: Request) {
         publicNumber: true,
         createdAt: true,
         grandTotal: true,
+        payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true } },
         paymentState: true,
         fulfillmentState: true,
         items: { take: 1, select: { nameSnapshot: true, quantity: true } },
@@ -35,10 +36,10 @@ export async function GET(request: Request) {
   return NextResponse.json({
     data: orders.map(order => ({
       ...order,
-      grandTotal: Number(order.grandTotal),
+      grandTotal: Number(order.payments[0]?.payableAmount ?? order.grandTotal),
+      payments: undefined,
       createdAt: order.createdAt.toISOString(),
     })),
     pagination: paginationMeta(total, page, pageSize),
   });
 }
-

@@ -86,9 +86,8 @@ export function getBiteshipApiKey(): string | undefined {
     : (process.env.BITESHIP_API_KEY_DEV || process.env.BITESHIP_API_KEY);
 }
 
-/** Apakah development tools (manual-status, duplicate order) tersedia */
 export function isDevToolsEnabled(): boolean {
-  return !isProduction();
+  return process.env.APP_MODE === "development";
 }
 
 export function warehouseAreaId() {
@@ -109,4 +108,3 @@ export function getBstnQrisFeeRate(): number {
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0 && parsed < 1 ? parsed : 0.007;
 }
-

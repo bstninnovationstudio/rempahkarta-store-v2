@@ -141,7 +141,7 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ n
                   <span>Resi aktif</span>
                   <strong className="admin-data-code">
                     {order.shipment.waybillId || "Menunggu resi"}{" "}
-                    <Link href={`/admin/orders/${order.number}/resi`} target="_blank" rel="noopener noreferrer" className="admin-data-link" style={{ fontSize: "12px", marginLeft: "6px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    <Link href={`/admin/orders/${order.number}/resi`} className="admin-data-link" style={{ fontSize: "12px", marginLeft: "6px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
                       <Printer size={13} aria-hidden="true" /> Cetak
                     </Link>
                   </strong>
@@ -161,9 +161,12 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ n
               <div><span>Subtotal</span><strong className="admin-numeric">{rupiah(order.subtotal)}</strong></div>
               <div><span>Pengiriman</span><strong className="admin-numeric">{rupiah(order.shippingFee)}</strong></div>
               {order.discountAmount > 0 && <div><span>Diskon voucher ({order.voucherCode || "PROMO"})</span><strong className="admin-numeric tone-success">-{rupiah(order.discountAmount)}</strong></div>}
-              <div><span>Biaya Layanan</span><strong className="admin-numeric">{rupiah(order.serviceFee)}</strong></div>
-              <div><span>Total invoice</span><strong className="admin-numeric">{rupiah(order.grandTotal)}</strong></div>
-              <div><span>QRIS dibayar</span><strong className="admin-numeric">{rupiah(order.payableAmount)}</strong></div>
+              <div><span>Biaya admin toko</span><strong className="admin-numeric">{rupiah(order.storeAdminFee)}</strong></div>
+              <div><span>Fee QRIS BSTN</span><strong className="admin-numeric">{rupiah(order.qrisFee)}</strong></div>
+              <div><span>Total sebelum kode unik</span><strong className="admin-numeric">{rupiah(order.grandTotal)}</strong></div>
+              {order.uniqueCode > 0 && <div><span>Nomor Acak Unik</span><strong className="admin-numeric">{rupiah(order.uniqueCode)}</strong></div>}
+              <div><span>Total pembayaran QRIS</span><strong className="admin-numeric">{rupiah(order.payableAmount)}</strong></div>
+              <div><span>Total terima bersih</span><strong className="admin-numeric">{rupiah(order.netRevenue)}</strong></div>
               <div><span>Pembayaran</span><StatusPill status={paymentUiStatus(order.paymentState)} /></div>
               <div className="detail-list-courier-row">
                 <strong className="admin-numeric">{(order.shipment?.courier || order.quoteCourier || "Kurir Pilihan").toUpperCase()}</strong>
@@ -193,6 +196,7 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ n
               cancellationDecisionReason={order.cancellation?.decisionReason}
               issueOrder={Boolean(order.issueOrder)}
               issueReason={order.issueReason}
+              activeReturn={order.activeReturn}
             />
           </section>
         </aside>

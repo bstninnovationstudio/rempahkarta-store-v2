@@ -242,12 +242,12 @@ Dry-run wajib ditinjau. Apply menyalin dengan pemeriksaan hash bila destination 
 | Scheduler cron voucher belum dijadwalkan | Lazy evaluation tetap menolak voucher expired, tetapi status list dapat tertunda | Jadwalkan `GET`/`POST /api/cron/vouchers` setiap hari dengan `Authorization: Bearer $CRON_SECRET`; endpoint fail-closed bila secret kosong/salah. |
 | Shadow balance Biteship tidak terhubung saldo provider | Perbedaan akibat biaya provider aktual atau koreksi cancellation tidak tersinkron otomatis | Rekonsiliasi berkala oleh admin melalui record manual; jangan menganggap saldo lokal sebagai bukti saldo provider. |
 | Saldo awal Biteship nol | Pencarian area, quote, checkout re-rate, booking, dan tracking langsung fail-closed setelah deploy | Catat top up awal di `/admin/finance/biteship` sebelum membuka traffic operasional. |
-| Refund tidak menyimpan alokasi produk/ongkir/service | Pengurangan omzet parsial bersifat konservatif terhadap seluruh refund completed | Ledger membatasi pengurangan sampai omzet produk tersisa; tambahkan komponen refund bila bisnis kelak membutuhkan alokasi lebih presisi. |
+| Refund tidak menyimpan alokasi produk/ongkir/service | Seluruh refund completed mengurangi settlement omzet tanpa membedakan komponennya | Ledger membatasi posisi minimal nol; tambahkan komponen refund bila bisnis kelak membutuhkan pelaporan per komponen. |
 
 ## Checklist release keamanan
 
-- [ ] `NODE_ENV=production`, `DEMO_MODE=false`, dan payment mock nonaktif.
-- [ ] `ALLOW_INSECURE_DEMO=false`; fixture/bypass demo tidak pernah diaktifkan pada preview/staging publik.
+- [ ] `APP_MODE=production` dan payment mock nonaktif.
+- [ ] Devtools dan fixture/bypass demo tidak pernah diaktifkan di production (`APP_MODE=development` hanya untuk lokal/disposable).
 - [ ] `AUTH_SECRET`/`CUSTOMER_JWT_SECRET` acak, berbeda, minimal 32 karakter.
 - [ ] `ADMIN_PASSWORD_SCRYPT` dibuat dengan generator, salt unik, dan tidak ada password plaintext/SHA-256 legacy di production.
 - [ ] `APP_URL` HTTPS dan origin tidak dapat diakses melewati proxy tepercaya.

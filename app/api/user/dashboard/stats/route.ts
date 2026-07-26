@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { prisma } from "@/lib/db";
 import { getProfileCompleteness } from "@/lib/user-profile";
+import { getCustomerPaidTotal } from "@/lib/payment-totals";
 
 export async function GET() {
   const customer = await customerFromRequest();
@@ -13,19 +14,15 @@ export async function GET() {
   const [totalOrders, pendingPayments, spent, completion] = await Promise.all([
     prisma.order.count({ where }),
     prisma.order.count({ where: { AND: [where, { paymentState: "pending" }] } }),
-    prisma.order.aggregate({
-      where: { AND: [where, { OR: [{ paymentState: "paid" }, { fulfillmentState: "completed" }] }] },
-      _sum: { grandTotal: true },
-    }),
+    getCustomerPaidTotal(customer.id, customer.email),
     getProfileCompleteness(customer.id),
   ]);
   return NextResponse.json({
     data: {
       totalOrders,
       pendingPayments,
-      totalSpent: Number(spent._sum.grandTotal || 0),
+      totalSpent: Number(spent),
       completion,
     },
   });
 }
-

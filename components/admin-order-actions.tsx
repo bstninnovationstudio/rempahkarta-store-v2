@@ -32,6 +32,7 @@ export function AdminOrderActions({
   cancellationDecisionReason,
   issueOrder = false,
   issueReason = null,
+  activeReturn = null,
 }:{
   number: string;
   paymentState: string;
@@ -43,6 +44,7 @@ export function AdminOrderActions({
   cancellationDecisionReason?: string | null;
   issueOrder?: boolean;
   issueReason?: string | null;
+  activeReturn?: { id: string; publicNumber: string; state: string } | null;
 }){
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
@@ -65,8 +67,8 @@ export function AdminOrderActions({
   const { containerRef, token: getTurnstileToken } = useTurnstile(turnstileSiteKey);
 
   useEffect(() => {
-    // Load Biteship cancellation reasons if cancellation request is active or if order has shipment
-    if (["requested", "provider_failed"].includes(cancellationState || "") || hasShipment) {
+    // Biteship cancellation reasons are only relevant after a shipment/order exists.
+    if (hasShipment && (["requested", "provider_failed"].includes(cancellationState || "") || showDirectCancel)) {
       fetch("/api/admin/shipping/cancellation-reasons")
         .then(r => r.json())
         .then(data => {
@@ -79,7 +81,7 @@ export function AdminOrderActions({
         })
         .catch(() => {});
     }
-  }, [cancellationState, hasShipment]);
+  }, [cancellationState, hasShipment, showDirectCancel]);
 
   async function post(action: string, url: string, payload: unknown, turnstileAction?: string) {
     setBusy(action);
@@ -147,7 +149,7 @@ export function AdminOrderActions({
         )}
         {hasShipment && (
           <>
-            <a href={`/admin/orders/${encodeURIComponent(number)}/resi`} target="_blank" rel="noopener noreferrer" className="button button-dark">
+            <a href={`/admin/orders/${encodeURIComponent(number)}/resi`} className="button button-dark">
               <Printer size={16} /> CETAK RESI (A6)
             </a>
             <button type="button" className="button button-light" disabled={!!busy} onClick={() => post("sync", `${base}/shipment/sync`, {})}>
@@ -163,18 +165,18 @@ export function AdminOrderActions({
             {cancellationReason && <p className="action-context"><strong>Alasan pelanggan:</strong> {cancellationReason}</p>}
             {cancellationDecisionReason && <p className="action-context"><strong>Catatan keputusan sebelumnya:</strong> {cancellationDecisionReason}</p>}
             
-            {/* Approve Block */}
+            {/* Approve Block: a pre-shipment cancellation is local only. */}
             <div className="action-subsection bordered">
-              <label className="field">
+              {hasShipment && <label className="field">
                 <span>Alasan pembatalan ke Biteship (AWB)</span>
                 <select value={reasonCode} onChange={e => setReasonCode(e.target.value)}>
                   {(reasons.length ? reasons : [{ code: "others", reason: "Alasan lainnya" }]).map(item => (
                     <option key={item.code} value={item.code}>{item.reason}</option>
                   ))}
                 </select>
-              </label>
-              <button type="button" className="button button-dark" disabled={!!busy} onClick={() => post("approve", `${base}/cancellation`, { decision: "approved", reason: "Disetujui admin", cancellationReasonCode: reasonCode })}>
-                <CheckCircle2 size={15} /> {busy === "approve" ? "Memproses…" : cancellationState === "provider_failed" ? "Coba pembatalan lagi" : "Setujui & batalkan pesanan"}
+              </label>}
+              <button type="button" className="button button-dark" disabled={!!busy} onClick={() => post("approve", `${base}/cancellation`, { decision: "approved", reason: "Disetujui admin", ...(hasShipment ? { cancellationReasonCode: reasonCode } : {}) })}>
+                <CheckCircle2 size={15} /> {busy === "approve" ? "Memproses…" : cancellationState === "provider_failed" ? "Coba pembatalan lagi" : "Setujui Pembatalan"}
               </button>
             </div>
 
@@ -275,7 +277,17 @@ export function AdminOrderActions({
           </div>
         )}
 
-        {issueOrder && (
+        {activeReturn ? (
+          <div className="action-review action-review-warning">
+            <h4 className="action-review-title">Proses Refund Didaftarkan</h4>
+            <p className="action-context">
+              Pengajuan refund <strong>{activeReturn.publicNumber}</strong> sedang aktif/diproses.
+            </p>
+            <a href={`/admin/returns/${activeReturn.id}`} className="button button-dark">
+              Lihat & Kelola Refund
+            </a>
+          </div>
+        ) : issueOrder ? (
           <div className="action-review action-review-danger">
             <h4 className="action-review-title">Aksi resolusi</h4>
             {issueReason && <p className="action-context"><strong>Masalah:</strong> {issueReason}</p>}
@@ -287,11 +299,8 @@ export function AdminOrderActions({
               {busy === "resolve-finish" ? "Menyimpan…" : "Tandai selesai"}
             </button>
           </div>
-        )}
+        ) : null}
 
-        <button type="button" className="button button-light" onClick={() => window.print()}>
-          <Printer size={16} /> Cetak picking list
-        </button>
       </div>
       {message && (
         <p role={message.includes("berhasil") ? "status" : "alert"} className={`action-message ${message.includes("berhasil") ? "success" : "error"}`}>

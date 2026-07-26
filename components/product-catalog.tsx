@@ -7,12 +7,15 @@ import type { Product } from "@/lib/types";
 
 interface ProductCatalogProps {
   products: Product[];
+  categoryNames?: string[];
   autoFocusSearch?: boolean;
 }
 
-export function ProductCatalog({ products, autoFocusSearch = false }: ProductCatalogProps) {
-  // Extract unique categories from actual products, fallback to "Tanpa kategori" if null
-  const categories = ["Semua", ...Array.from(new Set(products.map(p => p.category || "Tanpa kategori").filter(Boolean)))];
+export function ProductCatalog({ products, categoryNames = [], autoFocusSearch = false }: ProductCatalogProps) {
+  const productCategories = new Set(products.map(product => product.category || "Tanpa kategori"));
+  const orderedCategories = categoryNames.filter(category => productCategories.has(category));
+  const remainingCategories = [...productCategories].filter(category => category !== "Tanpa kategori" && !orderedCategories.includes(category));
+  const categories = ["Semua", ...orderedCategories, ...remainingCategories, ...(productCategories.has("Tanpa kategori") ? ["Tanpa kategori"] : [])];
 
   const [activeCategory, setActiveCategory] = useState("Semua");
   const [query, setQuery] = useState("");

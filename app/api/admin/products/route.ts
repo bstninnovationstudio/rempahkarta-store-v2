@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     prisma.product.count({ where }),
     prisma.product.findMany({
       where,
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      orderBy: [{ position: "asc" }, { id: "asc" }],
       skip,
       take: pageSize,
       select: {
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
           select: {
             sku: true,
             price: true,
-            inventory: { select: { onHand: true, reserved: true, safetyStock: true } },
+            inventory: { select: { onHand: true, reserved: true } },
           },
         },
       },
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
       variants: row.variants.map(variant => ({
         sku: variant.sku,
         price: Number(variant.price),
-        available: variant.inventory.reduce((sum, level) => sum + Math.max(0, level.onHand - level.reserved - level.safetyStock), 0),
+        available: variant.inventory.reduce((sum, level) => sum + Math.max(0, level.onHand - level.reserved), 0),
       })),
     })),
     pagination: paginationMeta(total, page, pageSize),

@@ -1,5 +1,6 @@
 import { Prisma, type BiteshipLedgerType, type RevenueLedgerType } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { calculatePaymentAmounts } from "@/lib/payment-amounts";
 
 const ACCOUNT_ID = "primary";
 const moneyReceivedStates = new Set(["paid", "refund_pending", "partially_refunded"]);
@@ -14,8 +15,7 @@ const blockingCancellationStates = new Set(["requested", "approved", "provider_p
 export class BiteshipBalanceError extends Error {}
 
 export function calculateRevenuePosition(input: {
-  subtotal: bigint;
-  discountAmount: bigint;
+  revenueAmount: bigint;
   refundedAmount: bigint;
   paymentState: string;
   fulfillmentState: string;
@@ -23,7 +23,7 @@ export function calculateRevenuePosition(input: {
   returnStates: string[];
   cancellationStates: string[];
 }) {
-  const originalNet = input.subtotal > input.discountAmount ? input.subtotal - input.discountAmount : BigInt(0);
+  const originalNet = input.revenueAmount > BigInt(0) ? input.revenueAmount : BigInt(0);
   const remainingNet = originalNet > input.refundedAmount ? originalNet - input.refundedAmount : BigInt(0);
   const hasMoney = moneyReceivedStates.has(input.paymentState);
   const canBecomeAvailable = hasMoney
@@ -46,7 +46,7 @@ export async function syncOrderRevenue(tx: Prisma.TransactionClient, orderId: st
     select: {
       id: true, publicNumber: true, subtotal: true, discountAmount: true, shippingFee: true,
       serviceFee: true, grandTotal: true, paymentState: true, fulfillmentState: true, issueOrder: true,
-      payments: { orderBy: { createdAt: "desc" }, take: 1, select: { feeAmount: true } },
+      payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true, feeAmount: true, uniqueCode: true } },
       returns: { select: { state: true } }, cancellations: { select: { state: true } },
     },
   });
@@ -56,7 +56,18 @@ export async function syncOrderRevenue(tx: Prisma.TransactionClient, orderId: st
     tx.revenueLedger.aggregate({ where: { orderId }, _sum: { availableDelta: true, heldDelta: true } }),
   ]);
   const refunded = refunds._sum.amount || BigInt(0);
-  const position = calculateRevenuePosition({ subtotal: order.subtotal, discountAmount: order.discountAmount, refundedAmount: refunded, paymentState: order.paymentState, fulfillmentState: order.fulfillmentState, issueOrder: order.issueOrder, returnStates: order.returns.map(item => item.state), cancellationStates: order.cancellations.map(item => item.state) });
+  const payment = order.payments[0];
+  const amounts = calculatePaymentAmounts({
+    subtotal: order.subtotal,
+    shippingFee: order.shippingFee,
+    discountAmount: order.discountAmount,
+    serviceFee: order.serviceFee,
+    grandTotal: order.grandTotal,
+    payableAmount: payment?.payableAmount,
+    feeAmount: payment?.feeAmount,
+    uniqueCode: payment?.uniqueCode,
+  });
+  const position = calculateRevenuePosition({ revenueAmount: amounts.revenueBeforeRefund, refundedAmount: refunded, paymentState: order.paymentState, fulfillmentState: order.fulfillmentState, issueOrder: order.issueOrder, returnStates: order.returns.map(item => item.state), cancellationStates: order.cancellations.map(item => item.state) });
   const remainingNet = position.remainingNet;
   const desiredAvailable = position.available;
   const desiredHeld = position.held;
@@ -78,10 +89,12 @@ export async function syncOrderRevenue(tx: Prisma.TransactionClient, orderId: st
       type,
       availableDelta,
       heldDelta,
-      grossAmount: order.grandTotal,
+      grossAmount: amounts.payableAmount,
+      productSubtotal: order.subtotal,
       shippingFee: order.shippingFee,
       serviceFee: order.serviceFee,
-      adminFee: order.payments[0]?.feeAmount || BigInt(0),
+      adminFee: amounts.qrisFee,
+      uniqueCode: amounts.uniqueCode,
       discountAmount: order.discountAmount,
       netAmount: remainingNet,
       notes: `${order.publicNumber} · ${order.paymentState}/${order.fulfillmentState}`,

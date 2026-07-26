@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { PaymentPageClient } from "./payment-page-client";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { turnstileSiteKey } from "@/lib/turnstile";
+import { deriveUniqueCode } from "@/lib/payment-amounts";
 
 export default async function PaymentPage({
   params,
@@ -52,9 +53,8 @@ export default async function PaymentPage({
       voucherCode={order.voucherCode}
       discountAmount={Number(order.discountAmount)}
       serviceFee={Number(order.serviceFee)}
-      grandTotal={Number(order.grandTotal)}
       payableAmount={Number(payment.payableAmount || order.grandTotal)}
-      feeAmount={Number(payment.feeAmount || 0)}
+      uniqueCode={Number(deriveUniqueCode({ uniqueCode: payment.uniqueCode, payableAmount: payment.payableAmount, grandTotal: order.grandTotal }))}
       expiresAt={payment.expiresAt ? payment.expiresAt.toISOString() : null}
       qrisImageUrl={qrisDetails?.image_data_url || null}
       qrisString={qrisDetails?.qris_string || null}

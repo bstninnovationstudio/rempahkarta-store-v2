@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
-import { LockKeyhole, Search, Loader2 } from "lucide-react";
+import { LockKeyhole, Search, Loader2, Tag } from "lucide-react";
 import { useEffect, useState } from "react";
 import { rupiah } from "@/lib/format";
 import type { Product, StoreVariant } from "@/lib/types";
@@ -95,7 +95,6 @@ export function CheckoutForm({
   const voucherDiscount = activeVoucher?.discountAmount ?? 0;
   const discountedBaseAmount = Math.max(0, baseAmount - voucherDiscount);
   const feeBreakdown = calculateServiceFee(discountedBaseAmount);
-  const serviceFee = shipping ? feeBreakdown.serviceFee : 0;
   const total = shipping ? feeBreakdown.grandTotal : subtotal;
   const variantLabel = variant ? ([variant.option1Value, variant.option2Value].filter(Boolean).join(" · ") || "Produk tunggal") : "";
   const totalWeight = fromCart
@@ -103,23 +102,57 @@ export function CheckoutForm({
     : (variant ? (variant.weight || 0) : 0);
   const formattedWeight = totalWeight >= 1000 ? `${(totalWeight / 1000).toFixed(2)} kg` : `${totalWeight} g`;
 
+  const hasUncheckedVoucher = Boolean(voucherCode.trim()) && (!activeVoucher || activeVoucher.code !== voucherCode.trim());
+  const isPayDisabled =
+    busy ||
+    voucherCheckBusy ||
+    hasUncheckedVoucher ||
+    !accepted ||
+    !area ||
+    !shipping ||
+    (fromCart ? cartItems.length === 0 : !variant || variant.stock <= 0);
+
+  function handleVoucherChange(val: string) {
+    const formatted = val.toUpperCase().trimStart();
+    setVoucherCode(formatted);
+    if (activeVoucher && activeVoucher.code !== formatted.trim()) {
+      setAppliedVoucher(null);
+    }
+    if (!formatted.trim()) {
+      setAppliedVoucher(null);
+      setVoucherMessage("");
+    } else if (voucherMessage && !activeVoucher) {
+      setVoucherMessage("");
+    }
+  }
+
+  function handleRemoveVoucher() {
+    setVoucherCode("");
+    setAppliedVoucher(null);
+    setVoucherMessage("");
+  }
+
   async function checkVoucher() {
     if (!shipping) return setVoucherMessage("Pilih ongkir terlebih dahulu sebelum mengecek promo.");
-    if (!voucherCode.trim()) return setVoucherMessage("Masukkan kode promo.");
+    const codeToTest = voucherCode.trim();
+    if (!codeToTest) return setVoucherMessage("Masukkan kode promo.");
     setVoucherCheckBusy(true); setVoucherMessage(""); setAppliedVoucher(null);
     try {
       const token = await turnstileToken("voucher_check");
       const response = await fetch("/api/vouchers/check", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ turnstileToken: token, code: voucherCode, subtotal, shippingFee: shipping.price }),
+        body: JSON.stringify({ turnstileToken: token, code: codeToTest, subtotal, shippingFee: shipping.price }),
       });
       const data = await readJson(response);
-      if (!response.ok || !data.voucher) throw new Error(String(data.error || "Voucher tidak dapat digunakan"));
+      if (!response.ok || !data.voucher) throw new Error(String(data.error || "Data voucher tidak valid, hapus kode untuk melanjutkan pesanan tanpa voucher."));
       const voucher = data.voucher as { code: string; name: string; target: string; discountAmount: number };
       setVoucherCode(voucher.code);
       setAppliedVoucher({ ...voucher, subtotal, shippingFee: shipping.price });
       setVoucherMessage(`Promo ${voucher.code} diterapkan.`);
-    } catch (cause) { setVoucherMessage(cause instanceof Error ? cause.message : "Voucher tidak dapat diperiksa"); }
+    } catch (cause) {
+      setAppliedVoucher(null);
+      setVoucherMessage(cause instanceof Error ? cause.message : "Data voucher tidak valid, hapus kode untuk melanjutkan pesanan tanpa voucher.");
+    }
     finally { setVoucherCheckBusy(false); }
   }
 
@@ -175,6 +208,7 @@ export function CheckoutForm({
   }
 
   function handleAddressSelect(addressId: string) {
+    if (busy) return;
     if (selectedAddressId === addressId) {
       // Toggle off to custom if clicking the active one
       setSelectedAddressId("custom");
@@ -215,6 +249,7 @@ export function CheckoutForm({
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (hasUncheckedVoucher) return setError("Verifikasi kode promo sebelum bayar, atau hapus kode promo.");
     if (!accepted) return setError("Anda harus menyetujui kebijakan pengiriman serta retur/refund.");
     if (!area || !shipping) return setError("Pilih alamat hasil pencarian dan layanan pengiriman terlebih dahulu.");
     setBusy(true); setError("");
@@ -276,6 +311,7 @@ export function CheckoutForm({
                 <button
                   type="button"
                   key={addr.id}
+                  disabled={busy}
                   className={`address-card ${selectedAddressId === addr.id ? "active" : ""}`}
                   onClick={() => handleAddressSelect(addr.id)}
                 >
@@ -289,6 +325,7 @@ export function CheckoutForm({
               
               <button
                 type="button"
+                disabled={busy}
                 className={`address-card ${selectedAddressId === "custom" ? "active" : ""}`}
                 onClick={() => handleAddressSelect("custom")}
               >
@@ -322,15 +359,15 @@ export function CheckoutForm({
               <div className="field-grid mb-6">
                 <div className="field">
                   <label htmlFor="name">Nama lengkap</label>
-                  <input id="name" name="name" required minLength={2} maxLength={160} autoComplete="name" placeholder="Budi Santoso" value={nameInput} onChange={e => setNameInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                  <input id="name" name="name" required minLength={2} maxLength={160} autoComplete="name" placeholder="Budi Santoso" value={nameInput} onChange={e => setNameInput(e.target.value)} disabled={busy || selectedAddressId !== "custom"} />
                 </div>
                 <div className="field">
                   <label htmlFor="phone">Nomor WhatsApp</label>
-                  <input id="phone" name="phone" required minLength={8} maxLength={20} inputMode="tel" autoComplete="tel" pattern="[0-9+() -]{8,20}" placeholder="0812 3456 7890" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                  <input id="phone" name="phone" required minLength={8} maxLength={20} inputMode="tel" autoComplete="tel" pattern="[0-9+() -]{8,20}" placeholder="0812 3456 7890" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} disabled={busy || selectedAddressId !== "custom"} />
                 </div>
                 <div className="field full">
                   <label htmlFor="email">Email</label>
-                  <input id="email" name="email" type="email" required maxLength={200} autoComplete="email" placeholder="budi@email.com" value={emailInput} onChange={e => setEmailInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                  <input id="email" name="email" type="email" required maxLength={200} autoComplete="email" placeholder="budi@email.com" value={emailInput} onChange={e => setEmailInput(e.target.value)} disabled={busy || selectedAddressId !== "custom"} />
                   <small>Email dipakai untuk konfirmasi dan melacak pesanan.</small>
                 </div>
               </div>
@@ -342,15 +379,15 @@ export function CheckoutForm({
                 <div className="field full">
                   <label htmlFor="area">Kecamatan atau kode pos</label>
                   <div className="search-field">
-                    <input id="area" required minLength={3} maxLength={120} value={areaQuery} onChange={event => { setAreaQuery(event.target.value); setArea(null); setAreaResults([]); setOptions([]); setShipping(null); }} autoComplete="off" placeholder="Tulis kecamatan atau kode pos" disabled={selectedAddressId !== "custom"} />
-                    <button className="button button-light" type="button" disabled={searchingArea || selectedAddressId !== "custom"} onClick={searchArea}>
+                    <input id="area" required minLength={3} maxLength={120} value={areaQuery} onChange={event => { setAreaQuery(event.target.value); setArea(null); setAreaResults([]); setOptions([]); setShipping(null); }} autoComplete="off" placeholder="Tulis kecamatan atau kode pos" disabled={busy || selectedAddressId !== "custom"} />
+                    <button className="button button-light" type="button" disabled={busy || searchingArea || selectedAddressId !== "custom"} onClick={searchArea}>
                       <Search size={15} /> {searchingArea ? "Mencari…" : "Cari"}
                     </button>
                   </div>
                   {areaResults.length > 0 && (
                     <div className="area-results static">
                       {areaResults.map(result => (
-                        <button type="button" key={result.id} onClick={() => { const selected = { id: result.id, label: `${result.name} — ${result.postal_code}`, postalCode: String(result.postal_code) }; setArea(selected); setAreaQuery(selected.label); setAreaResults([]); setOptions([]); setShipping(null); }}>
+                        <button type="button" key={result.id} disabled={busy} onClick={() => { const selected = { id: result.id, label: `${result.name} — ${result.postal_code}`, postalCode: String(result.postal_code) }; setArea(selected); setAreaQuery(selected.label); setAreaResults([]); setOptions([]); setShipping(null); }}>
                           {result.name} · {result.postal_code}
                         </button>
                       ))}
@@ -360,7 +397,7 @@ export function CheckoutForm({
                 </div>
                 <div className="field full">
                   <label htmlFor="address">Alamat lengkap</label>
-                  <textarea id="address" name="address" required minLength={10} maxLength={1000} autoComplete="street-address" placeholder="Nama jalan, nomor rumah, RT/RW, patokan" value={addressInput} onChange={e => setAddressInput(e.target.value)} disabled={selectedAddressId !== "custom"} />
+                  <textarea id="address" name="address" required minLength={10} maxLength={1000} autoComplete="street-address" placeholder="Nama jalan, nomor rumah, RT/RW, patokan" value={addressInput} onChange={e => setAddressInput(e.target.value)} disabled={busy || selectedAddressId !== "custom"} />
                 </div>
               </div>
             </div>
@@ -376,7 +413,7 @@ export function CheckoutForm({
             ) : (
               <>
                 {selectedAddressId === "custom" ? (
-                  <button type="button" className="button button-light button-block" disabled={loadingRates} onClick={() => loadRates()}>
+                  <button type="button" className="button button-light button-block" disabled={busy || loadingRates} onClick={() => loadRates()}>
                     {loadingRates ? "Menghitung ongkir…" : options.length ? "Perbarui ongkir" : "Cek ongkir"}
                   </button>
                 ) : (
@@ -389,7 +426,7 @@ export function CheckoutForm({
                 )}
                 <div className="shipping-options-list">
                   {options.map(option => (
-                    <button type="button" key={option.id} className={`shipping-option ${shipping?.id === option.id ? "active" : ""}`} onClick={() => setShipping(option)}>
+                    <button type="button" key={option.id} disabled={busy} className={`shipping-option ${shipping?.id === option.id ? "active" : ""}`} onClick={() => setShipping(option)}>
                       <div>
                         <strong>{option.name}</strong>
                         <span>Estimasi tiba {option.eta}</span>
@@ -451,48 +488,71 @@ export function CheckoutForm({
             </div>
             <div className="summary-line">
               <span>Biaya Layanan</span>
-              <span>{shipping ? rupiah(serviceFee) : "Hitung ongkir dahulu"}</span>
+              <span>{shipping ? rupiah(feeBreakdown.serviceFee) : "Pilih Jasa Kirim"}</span>
+            </div>
+            <div className="summary-line">
+              <span>Kode Unik Pembayaran</span>
+              <span>(Rp 1-10)</span>
             </div>
             <div className="voucher-field">
               <label htmlFor="voucher-code">Kode promo</label>
               <div className="voucher-input-row">
-                <input id="voucher-code" value={voucherCode} onChange={event => setVoucherCode(event.target.value.toUpperCase())} placeholder="Masukkan kode promo" maxLength={50} disabled={voucherCheckBusy || Boolean(activeVoucher)} />
+                <input
+                  id="voucher-code"
+                  value={voucherCode}
+                  onChange={event => handleVoucherChange(event.target.value)}
+                  placeholder="Masukkan kode promo"
+                  maxLength={50}
+                  disabled={busy || voucherCheckBusy || Boolean(activeVoucher)}
+                />
                 {activeVoucher ? (
-                  <button type="button" className="button button-light" onClick={() => { setAppliedVoucher(null); setVoucherMessage(""); }}>Hapus</button>
+                  <button type="button" className="button button-light" onClick={handleRemoveVoucher} disabled={busy}>Hapus</button>
                 ) : (
-                  <button type="button" className="button button-light" onClick={checkVoucher} disabled={voucherCheckBusy || !shipping}>{voucherCheckBusy ? "Mengecek…" : "CEK"}</button>
+                  <button type="button" className="button button-light" onClick={checkVoucher} disabled={busy || voucherCheckBusy || !shipping || !voucherCode.trim()}>{voucherCheckBusy ? "CEK..." : "CEK"}</button>
                 )}
               </div>
-              {voucherMessage && <small className={activeVoucher ? "voucher-feedback success" : "voucher-feedback"} role="status">{voucherMessage}</small>}
+              {hasUncheckedVoucher && !voucherCheckBusy && (
+                <small className="voucher-feedback" role="status">
+                  {voucherMessage || "Verifikasi kode promo sebelum bayar, atau hapus kode promo."}
+                </small>
+              )}
+              {activeVoucher && voucherMessage && (
+                <small className="voucher-feedback success" role="status">
+                  {voucherMessage}
+                </small>
+              )}
             </div>
             {activeVoucher && (
               <div className="summary-line voucher-discount">
-                <span>Diskon promo ({activeVoucher.code})</span>
+                <span className="voucher-discount-label">
+                  <Tag size={13} />
+                  Diskon promo ({activeVoucher.code})
+                </span>
                 <span>-{rupiah(voucherDiscount)}</span>
               </div>
             )}
             <div className="summary-line total">
-              <span>Total invoice</span>
+              <span>Estimasi Akhir</span>
               <span>{rupiah(total)}</span>
             </div>
           </div>
 
           <label className="policy-check">
-            <input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} />
-            <span>Saya menyetujui <Link href="/pages/shipping">kebijakan pengiriman</Link> dan <Link href="/pages/returns">retur/refund</Link>.</span>
+            <input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} disabled={busy} />
+            <span>Saya menyetujui <Link href="/pages/terms">Syarat & Ketentuan</Link> yang ada.</span>
           </label>
 
           {error && <p role="alert" className="checkout-error">{error}</p>}
 
           <button
             className="button button-dark button-block"
-            disabled={busy || !accepted || !area || !shipping || (fromCart ? cartItems.length === 0 : !variant || variant.stock <= 0)}
+            disabled={isPayDisabled}
           >
             {busy ? "Membuat QRIS…" : "Bayar dengan QRIS"}
           </button>
 
           <p className="summary-note secure-checkout-note">
-            <LockKeyhole size={15} /> Pembayaran Terlindungi
+            <LockKeyhole size={15} /> Pembayaran Terlindungi. Kode unik ditambahkan setelah pembayaran dibuat.
           </p>
           <div ref={containerRef} className="turnstile-container" aria-live="polite" />
         </aside>

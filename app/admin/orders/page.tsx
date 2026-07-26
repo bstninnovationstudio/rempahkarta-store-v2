@@ -40,7 +40,7 @@ export default async function OrdersPage({
           Dalam perjalanan <b>{counts.intransit}</b>
         </Link>
         <Link href="/admin/orders?filter=cancel" aria-current={(query.filter === "cancel" || query.filter === "cancellation") ? "page" : undefined} className={`filter-chip ${(query.filter === "cancel" || query.filter === "cancellation") ? "active" : ""}`}>
-          Pembatalan <b>{counts.cancel}</b>
+          Pengajuan pembatalan <b>{counts.cancel}</b>
         </Link>
         <Link
           href="/admin/orders?filter=issue"
