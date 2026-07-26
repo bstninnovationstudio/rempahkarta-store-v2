@@ -6,11 +6,14 @@ import {
   ClipboardList,
   Clock3,
   FolderTree,
+  Images,
+  LayoutDashboard,
   PackageSearch,
   RotateCcw,
   Settings,
   ShoppingBag,
   Ticket,
+  Truck,
   Users,
   WalletCards,
   Warehouse,
@@ -21,15 +24,28 @@ import { rupiah } from "@/lib/format";
 
 const shortcutSections = [
   {
+    label: "Overview",
+    items: [
+      { href: "/admin", label: "Dashboard", desc: "Ringkasan operasional toko & statistik", icon: LayoutDashboard },
+    ],
+  },
+  {
     label: "Operasional",
     items: [
       { href: "/admin/orders", label: "Pesanan", desc: "Kelola daftar pesanan & status", icon: ClipboardList },
-      { href: "/admin/products", label: "Produk", desc: "Katalog & varian produk", icon: ShoppingBag },
-      { href: "/admin/categories", label: "Kategori", desc: "Pengelompokan kategori", icon: FolderTree },
+      { href: "/admin/shipments", label: "Pengiriman", desc: "Pelacakan & status pengiriman", icon: Truck },
       { href: "/admin/inventory", label: "Inventori", desc: "Stok gudang & tingkat varian", icon: Warehouse },
+      { href: "/admin/users", label: "Pelanggan", desc: "Daftar & riwayat akun pelanggan", icon: Users },
+    ],
+  },
+  {
+    label: "Toko",
+    items: [
+      { href: "/admin/categories", label: "Kategori", desc: "Pengelompokan kategori produk", icon: FolderTree },
+      { href: "/admin/products", label: "Produk", desc: "Katalog & varian produk", icon: ShoppingBag },
       { href: "/admin/vouchers", label: "Voucher", desc: "Manajemen voucher promo", icon: Ticket },
-      { href: "/admin/returns", label: "Retur & refund", desc: "Pengajuan & resolusi retur", icon: RotateCcw },
-      { href: "/admin/users", label: "Pelanggan", desc: "Daftar & riwayat akun", icon: Users },
+      { href: "/admin/users", label: "Pelanggan", desc: "Daftar & riwayat akun pelanggan", icon: Users },
+      { href: "/admin/gallery", label: "Galeri", desc: "Media & aset visual toko", icon: Images },
     ],
   },
   {
@@ -37,6 +53,7 @@ const shortcutSections = [
     items: [
       { href: "/admin/finance/omzet", label: "Dana omzet", desc: "Buku besar omzet & penarikan", icon: WalletCards },
       { href: "/admin/finance/biteship", label: "Dana Biteship", desc: "Shadow balance & deposit kurir", icon: PackageSearch },
+      { href: "/admin/returns", label: "Pengajuan Refund", desc: "Pengajuan & resolusi refund", icon: RotateCcw },
     ],
   },
   {
@@ -136,7 +153,7 @@ export default async function AdminDashboard() {
                 {section.items.map((item) => {
                   const Icon = item.icon;
                   return (
-                    <Link key={item.href} href={item.href} className="admin-shortcut-card">
+                    <Link key={`${section.label}-${item.href}`} href={item.href} className="admin-shortcut-card">
                       <div className="admin-shortcut-icon">
                         <Icon size={18} />
                       </div>

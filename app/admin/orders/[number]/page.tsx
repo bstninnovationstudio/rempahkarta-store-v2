@@ -163,7 +163,6 @@ export default async function AdminOrderDetail({ params }: { params: Promise<{ n
               {order.discountAmount > 0 && <div><span>Diskon voucher ({order.voucherCode || "PROMO"})</span><strong className="admin-numeric tone-success">-{rupiah(order.discountAmount)}</strong></div>}
               <div><span>Biaya admin toko</span><strong className="admin-numeric">{rupiah(order.storeAdminFee)}</strong></div>
               <div><span>Fee QRIS BSTN</span><strong className="admin-numeric">{rupiah(order.qrisFee)}</strong></div>
-              <div><span>Total sebelum kode unik</span><strong className="admin-numeric">{rupiah(order.grandTotal)}</strong></div>
               {order.uniqueCode > 0 && <div><span>Nomor Acak Unik</span><strong className="admin-numeric">{rupiah(order.uniqueCode)}</strong></div>}
               <div><span>Total pembayaran QRIS</span><strong className="admin-numeric">{rupiah(order.payableAmount)}</strong></div>
               <div><span>Total terima bersih</span><strong className="admin-numeric">{rupiah(order.netRevenue)}</strong></div>

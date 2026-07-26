@@ -32,7 +32,9 @@ Dokumentasi aktif:
 - Admin memakai kredensial server dan JWT admin terpisah.
 - BSTN menyediakan Dynamic QRIS; Biteship menyediakan area, tarif, booking, tracking, dan pembatalan pengiriman.
 - Panel inventori memisahkan stok fisik dan reservasi. Penyesuaian stok dicatat sebagai mutasi manual dan tidak boleh menurunkan stok fisik di bawah unit yang sedang direservasi.
-- Pengelolaan voucher tersedia di `/admin/vouchers`, dengan editor terpisah di `/admin/vouchers/new` dan `/admin/vouchers/[id]`. Halaman admin list shipment dihapus; pemantauan dan tindakan pengiriman tetap berada pada detail pesanan serta API operasional Biteship.
+- Halaman pengaturan pengiriman di `/admin/shipments` mengelola kurir ekspedisi aktif (`ENABLED_COURIERS`: JNE, AnterAja, Pos Indonesia dengan *instant toggle*) dan informasi gudang utama (`WAREHOUSE_*` dengan pencarian lokasi Biteship real-time). Perubahan tersimpan langsung ke file `.env`, memori runtime, dan database tanpa perlu menghentikan (*restart*) server.
+- Halaman galeri media di `/admin/gallery` memungkinkan pengelolaan file gambar di server (kategori produk, retur, refund), identifikasi otomatis media terpakai vs media sampah (tidak terpakai), serta pembersihan sampah dengan konfirmasi ganda.
+- Halaman detail pelanggan di `/admin/users/[id]` menggunakan layout 1 kolom bertumpuk rapi dengan posisi riwayat pesanan diletakkan di paling bawah dan ID pelanggan yang tercantum pada tabel profil.
 - Cloudflare Turnstile divalidasi server-side pada aksi berisiko.
 - Resi admin dicetak sebagai label thermal 100 × 150 mm. CSS cetak memakai ukuran halaman tersebut dan membiarkan konten panjang mengalir ke label berikutnya, sehingga tidak dipotong oleh tinggi preview.
 - Rate limiter berjalan di memori proses; katalog memakai Next.js server Data Cache. Tidak ada Redis, queue, atau worker, sehingga tidak ada shared cache/limiter eksternal yang dikonfigurasi aplikasi.

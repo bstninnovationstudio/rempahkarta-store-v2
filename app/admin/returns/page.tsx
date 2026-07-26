@@ -45,7 +45,7 @@ export default async function Returns({ searchParams }: { searchParams: Promise<
       <div className="admin-page-head">
         <div>
           <p className="eyebrow">Layanan purnajual</p>
-          <h1>Retur & refund</h1>
+          <h1>Pengajuan Refund</h1>
           <p>Tinjau bukti, atur pengiriman balik, inspeksi, dan catat refund manual.</p>
         </div>
       </div>

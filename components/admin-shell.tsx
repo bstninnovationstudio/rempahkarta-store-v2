@@ -7,6 +7,7 @@ import {
   Boxes,
   ClipboardList,
   FolderTree,
+  Images,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -15,6 +16,7 @@ import {
   Settings,
   ShoppingBag,
   Ticket,
+  Truck,
   WalletCards,
   Users,
   Warehouse,
@@ -28,16 +30,28 @@ type NavigationSection = { label: string; items: readonly NavigationItem[] };
 
 const navigation = [
   {
-    label: "Operasional",
+    label: "Overview",
     items: [
       ["/admin", "Dashboard", LayoutDashboard],
+    ],
+  },
+  {
+    label: "Operasional",
+    items: [
       ["/admin/orders", "Pesanan", ClipboardList],
-      ["/admin/products", "Produk", ShoppingBag],
-      ["/admin/categories", "Kategori", FolderTree],
+      ["/admin/shipments", "Pengiriman", Truck],
       ["/admin/inventory", "Inventori", Warehouse],
-      ["/admin/vouchers", "Voucher", Ticket],
-      ["/admin/returns", "Retur & refund", RotateCcw],
       ["/admin/users", "Pelanggan", Users],
+    ],
+  },
+  {
+    label: "Toko",
+    items: [
+      ["/admin/categories", "Kategori", FolderTree],
+      ["/admin/products", "Produk", ShoppingBag],
+      ["/admin/vouchers", "Voucher", Ticket],
+      ["/admin/users", "Pelanggan", Users],
+      ["/admin/gallery", "Galeri", Images],
     ],
   },
   {
@@ -45,6 +59,7 @@ const navigation = [
     items: [
       ["/admin/finance/omzet", "Dana omzet", WalletCards],
       ["/admin/finance/biteship", "Dana Biteship", PackageSearch],
+      ["/admin/returns", "Pengajuan Refund", RotateCcw],
     ],
   },
   {
@@ -189,7 +204,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                     const active = href === "/admin" ? path === href : path.startsWith(href);
                     return (
                       <Link
-                        key={href}
+                        key={`${section.label}-${href}`}
                         href={href}
                         onClick={closeSidebarOnMobile}
                         className={active ? "active" : ""}

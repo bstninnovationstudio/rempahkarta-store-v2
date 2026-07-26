@@ -70,19 +70,35 @@ function mapAdminOrder(order: {
   publicNumber: string;
   guestName: string;
   createdAt: Date;
+  subtotal: bigint;
+  shippingFee: bigint;
+  discountAmount: bigint;
+  serviceFee: bigint;
   grandTotal: bigint;
   paymentState: string;
   fulfillmentState: string;
   issueOrder: boolean;
   items: Array<{ nameSnapshot: string }>;
   shipments: Array<{ courierCompany: string; courierType: string; courierName?: string | null }>;
-  payments: Array<{ payableAmount: bigint | null }>;
+  payments: Array<{ payableAmount: bigint | null; feeAmount?: bigint | null; uniqueCode?: bigint | null }>;
 }, index: number): AdminOrder {
+  const payment = order.payments[0];
+  const paymentAmounts = calculatePaymentAmounts({
+    subtotal: order.subtotal,
+    shippingFee: order.shippingFee,
+    discountAmount: order.discountAmount,
+    serviceFee: order.serviceFee,
+    grandTotal: order.grandTotal,
+    payableAmount: payment?.payableAmount,
+    feeAmount: payment?.feeAmount,
+    uniqueCode: payment?.uniqueCode,
+  });
+
   return {
     number: order.publicNumber,
     customer: maskName(order.guestName),
     createdAt: adminDate(order.createdAt),
-    total: Number(order.payments[0]?.payableAmount ?? order.grandTotal),
+    total: Number(paymentAmounts.revenueBeforeRefund),
     payment: paymentForUi(order.paymentState),
     fulfillment: fulfillmentForUi(order.fulfillmentState),
     courier: order.shipments[0] ? getCourierDisplayName(order.shipments[0].courierName, order.shipments[0].courierCompany, order.shipments[0].courierType) : "—",
@@ -148,7 +164,7 @@ export async function getAdminOrdersPage(options: { page?: number; pageSize?: nu
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     skip: (pageInfo.page - 1) * pageSize,
     take: pageSize,
-    include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 }, payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true } } },
+    include: { items: { take: 1 }, shipments: { orderBy: { createdAt: "desc" }, take: 1 }, payments: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { payableAmount: true, feeAmount: true, uniqueCode: true } } },
   });
   const countFor = (...states: string[]) => fulfillmentGroups
     .filter(group => states.includes(group.fulfillmentState))
@@ -509,5 +525,5 @@ export async function getAdminOrderDetail(number:string){
         note: event.note
       };
     });
-  })(),collectionMethods:Array.isArray(order.quotes[0]?.collectionMethods)?order.quotes[0].collectionMethods.map(String):["pickup"],issueOrder:order.issueOrder,issueReason:order.issueReason};
+  })(),collectionMethods:Array.isArray(order.quotes[0]?.collectionMethods)?order.quotes[0].collectionMethods.map(String):["pickup"]};
 }

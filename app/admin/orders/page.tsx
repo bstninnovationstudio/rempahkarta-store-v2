@@ -134,7 +134,7 @@ export default async function OrdersPage({
                   <StatusPill status={order.fulfillment} />
                 </div>
                 <div className="order-card-total">
-                  <span>Total pembayaran</span>
+                  <span>Total terima bersih</span>
                   <strong>{rupiah(order.total)}</strong>
                 </div>
               </Link>

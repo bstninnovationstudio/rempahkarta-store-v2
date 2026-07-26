@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { ReturnState } from "@prisma/client";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { syncOrderRevenue } from "@/lib/finance";
@@ -56,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
     return NextResponse.json({ success: true });
   }
 
-  const terminalReturnStates = ["rejected", "closed", "cancelled", "finished", "refunded"];
+  const terminalReturnStates: ReturnState[] = ["rejected", "closed", "cancelled", "finished", "refunded"];
   const existingReturn = await prisma.returnRequest.findFirst({
     where: {
       orderId: order.id,

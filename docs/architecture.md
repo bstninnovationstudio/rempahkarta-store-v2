@@ -159,10 +159,9 @@ awaiting_payment
 - Pembayaran yang menjadi paid setelah order cancelled mengubah payment state menjadi `refund_pending`.
 - Sync pelanggan/admin memakai kredensial masing-masing dan GET provider server-to-server; kedua aksi dilindungi rate limit dan Turnstile.
 
-## Biteship
-
 - Location search hanya setelah tombol user, bukan per keystroke.
-- Quote hanya diminta setelah Area ID dipilih dan dibatasi `ENABLED_COURIERS`.
+- Quote hanya diminta setelah Area ID dipilih dan dibatasi `ENABLED_COURIERS` (JNE, AnterAja, Pos Indonesia).
+- Halaman `/admin/shipments` mengelola instant toggle kurir aktif dan alamat gudang utama (`WAREHOUSE_*`), dengan pencarian Area ID Biteship real-time (`/api/admin/shipping/locations`). Perubahan langsung memperbarui `.env`, memori runtime, dan database tanpa restart server.
 - Item quote dan booking berasal dari snapshot server yang sama.
 - `reference_id` shipment deterministik; duplicate reference dapat mengambil order provider yang sudah ada.
 - Status provider dipetakan ke fulfillment lokal melalui `lib/shipping-state.ts`.
@@ -170,6 +169,8 @@ awaiting_payment
 - `order.waybill_id` memperbarui resi aktif dan audit.
 - Cancel/reject sebelum handover memulihkan inventory secara idempoten; kegagalan provider tidak membatalkan order lokal.
 - Route resi admin membentuk label thermal melalui CSS paged media berukuran 100 × 150 mm. Konten yang melampaui satu label mengalir ke halaman berikutnya; blok label penting dijaga agar tidak terpotong di tengah halaman.
+- Halaman `/admin/gallery` mengelola file media (produk, retur, refund), memisahkan file terpakai vs file sampah (tidak terpakai), dan menyediakan penghapusan file sampah dengan konfirmasi ganda.
+- Halaman `/admin/users/[id]` menyajikan profil pelanggan, rekening refund, alamat, dan riwayat pesanan dalam layout 1 kolom bertumpuk.
 
 ## Retur, refund, dan audit
 
