@@ -3,7 +3,7 @@ import { z } from "zod";
 import { BiteshipAdapter } from "@/lib/adapters/biteship";
 import { warehouseAreaId, getBiteshipApiKey } from "@/lib/env";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds } from "@/lib/finance";
 
@@ -23,6 +23,9 @@ export async function POST(request: Request) {
   try {
     const customer = await customerFromRequest();
     if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const userCheck = assertCustomerActive(customer);
+    if (userCheck) return userCheck;
+
 
     const parsed = schema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Payload ongkir tidak valid", details: parsed.error.flatten() }, { status: 400 });

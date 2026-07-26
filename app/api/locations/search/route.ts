@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { BiteshipAdapter } from "@/lib/adapters/biteship";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBiteshipApiKey } from "@/lib/env";
 import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds, type BiteshipReservation } from "@/lib/finance";
@@ -11,6 +11,9 @@ export async function GET(request: Request) {
   if (!rate.allowed) return rateLimitResponse(rate);
   const customer = await customerFromRequest();
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
+
 
   const q = new URL(request.url).searchParams.get("q")?.trim();
   if (!q || q.length < 3 || q.length > 120) return NextResponse.json({ error: "Kata pencarian harus 3–120 karakter" }, { status: 400 });

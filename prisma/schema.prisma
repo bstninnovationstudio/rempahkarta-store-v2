@@ -122,6 +122,24 @@ enum VoucherTarget {
   SHIPPING
 }
 
+enum UserStatus {
+  ACTIVE
+  PAUSE
+  BLOCK
+}
+
+enum ScheduleType {
+  HOLIDAY
+  MAINTENANCE
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 model Product {
   id             String           @id @default(cuid())
   slug           String           @unique @db.VarChar(180)
@@ -635,6 +653,7 @@ model User {
   avatarUrl        String?            @db.VarChar(500)
   googleId         String             @unique @db.VarChar(120)
   currentSessionId String?            @db.VarChar(120)
+  status           UserStatus         @default(ACTIVE)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   orders           Order[]
@@ -644,6 +663,7 @@ model User {
   voucherUsages    VoucherUsage[]
 
   @@index([createdAt])
+  @@index([status])
 }
 
 model UserAddress {
@@ -688,4 +708,20 @@ model CartItem {
 
   @@unique([userId, variantId])
   @@index([userId])
+}
+
+model StoreSchedule {
+  id           String         @id @default(cuid())
+  type         ScheduleType
+  title        String         @db.VarChar(160)
+  announcement String         @db.Text
+  startAt      DateTime
+  endAt        DateTime
+  status       ScheduleStatus @default(SCHEDULED)
+  createdBy    String         @db.VarChar(200)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([status, startAt, endAt])
+  @@index([type, status])
 }

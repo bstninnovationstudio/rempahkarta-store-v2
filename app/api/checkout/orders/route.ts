@@ -8,7 +8,7 @@ import { isProduction, getAppUrl, getBstnApiKey, getBiteshipApiKey, warehouseAre
 import { releaseOrderReservation } from "@/lib/inventory";
 import { createOrderWithReservation } from "@/lib/repositories/order-repository";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive, assertStoreOperational } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getProfileCompleteness } from "@/lib/user-profile";
 import { invalidateCatalogCache } from "@/lib/catalog";
@@ -33,8 +33,12 @@ export async function POST(request: Request) {
   const rate = checkRateLimit(request, { scope: "checkout:order-create", limit: 10 });
   if (!rate.allowed) return rateLimitResponse(rate);
   try {
+    const storeCheck = await assertStoreOperational();
+    if (storeCheck) return storeCheck;
     const customer = await customerFromRequest();
     if (!customer) return NextResponse.json({ error: "Silakan login terlebih dahulu untuk checkout." }, { status: 401 });
+    const userActiveCheck = assertCustomerActive(customer);
+    if (userActiveCheck) return userActiveCheck;
     const completion = await getProfileCompleteness(customer.id);
     if (!completion.isComplete) {
       return NextResponse.json(

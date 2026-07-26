@@ -8,6 +8,7 @@ import { turnstileSiteKey } from "@/lib/turnstile";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { prisma } from "@/lib/db";
 import { getProfileCompleteness } from "@/lib/user-profile";
+import { HolidayNoticeBanner } from "@/components/holiday-notice-banner";
 
 export default async function CheckoutPage({
   searchParams,
@@ -41,7 +42,9 @@ export default async function CheckoutPage({
   return (
     <>
       <StoreHeader />
+      <HolidayNoticeBanner />
       <main className="simple-page">
+
         <div className="page-title">
           <Link
             href={fromCart ? "/cart" : product ? `/products/${product.slug}` : "/"}

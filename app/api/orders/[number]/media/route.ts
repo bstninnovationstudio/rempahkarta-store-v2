@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { saveLocalImage } from "@/lib/local-media";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export async function POST(request: Request, { params }: { params: Promise<{ number: string }> }) {
@@ -9,6 +9,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   if (!rate.allowed) return rateLimitResponse(rate);
   const customer = await customerFromRequest();
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
+
 
   const { number } = await params;
   const order = await prisma.order.findUnique({

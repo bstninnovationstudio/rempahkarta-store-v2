@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { releaseOrderReservation, restockCommittedOrder } from "@/lib/inventory";
 import { BstnPaymentAdapter, BstnApiError } from "@/lib/adapters/bstn";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBstnApiKey } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
@@ -29,6 +29,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
 
   const customer = await customerFromRequest();
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
 
   const order = await prisma.order.findUnique({
     where: { publicNumber: number },

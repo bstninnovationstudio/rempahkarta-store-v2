@@ -102,7 +102,7 @@ export async function toggleCourierConfig(code: string, enabled: boolean) {
   }
 
   const currentConfig = await getShippingConfig();
-  let currentEnabled = new Set(currentConfig.enabledCouriers.map((c) => c.toLowerCase()));
+  const currentEnabled = new Set(currentConfig.enabledCouriers.map((c) => c.toLowerCase()));
 
   if (enabled) {
     currentEnabled.add(code.toLowerCase());

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { BstnPaymentAdapter } from "@/lib/adapters/bstn";
 import { prisma } from "@/lib/db";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { invalidateCatalogCache } from "@/lib/catalog";
@@ -16,6 +16,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   if (!rate.allowed) return rateLimitResponse(rate);
   const customer = await customerFromRequest();
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
+
 
   let json: unknown;
   try { json = await request.json(); }

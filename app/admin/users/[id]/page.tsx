@@ -10,6 +10,8 @@ import { rupiah } from "@/lib/format";
 import { StatusPill } from "@/components/status-pill";
 import type { OrderStatus } from "@/lib/types";
 
+import { AdminUserStatusControl } from "@/components/admin-user-status-control";
+
 function uiStatus(value: string): OrderStatus {
   if (["packed", "shipment_booked"].includes(value)) return "processing";
   if (["handed_over", "return_in_transit"].includes(value)) return "in_transit";
@@ -37,6 +39,7 @@ export default async function UserDetailAdminPage({
       email: true,
       phone: true,
       avatarUrl: true,
+      status: true,
       createdAt: true,
       addresses: { orderBy: { id: "desc" } },
       refundSetting: true,
@@ -80,6 +83,7 @@ export default async function UserDetailAdminPage({
           <h1>{user.name}</h1>
           <p>Detail profil, alamat tersimpan, rekening pengembalian dana, dan riwayat belanja.</p>
         </div>
+        <AdminUserStatusControl userId={user.id} initialStatus={user.status} />
       </div>
 
       <div className="user-detail-layout">
@@ -134,6 +138,8 @@ export default async function UserDetailAdminPage({
             <strong className="admin-numeric">{rupiah(totalSpent)}</strong>
           </div>
         </div>
+
+
 
         {/* 2. Refund settings card */}
         <div className="detail-card">

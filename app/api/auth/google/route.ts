@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
-import { createCustomerToken, customerCookie } from "@/lib/customer-auth";
+import { createCustomerToken, customerCookie, USER_BLOCKED_ERROR, assertStoreOperational } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getProfileCompleteness } from "@/lib/user-profile";
 
@@ -34,6 +34,9 @@ export async function POST(request: Request) {
   const rate = checkRateLimit(request, { scope: "auth:google", limit: 10, windowMs: 60_000 });
   if (!rate.allowed) return rateLimitResponse(rate);
 
+  const storeCheck = await assertStoreOperational();
+  if (storeCheck) return storeCheck;
+
   try {
     const parsed = requestSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Credential Google wajib disediakan" }, { status: 400 });
@@ -54,6 +57,16 @@ export async function POST(request: Request) {
     const payload = googlePayloadSchema.safeParse(verified.payload);
     if (!payload.success) {
       return NextResponse.json({ error: "Token Google tidak valid atau kadaluwarsa" }, { status: 401 });
+    }
+
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ googleId: payload.data.sub }, { email: payload.data.email }],
+      },
+    });
+
+    if (existingUser && existingUser.status === "BLOCK") {
+      return NextResponse.json({ error: USER_BLOCKED_ERROR }, { status: 403 });
     }
 
     const sessionId = crypto.randomUUID();
@@ -79,3 +92,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Gagal memproses autentikasi Google" }, { status: 500 });
   }
 }
+

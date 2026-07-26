@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { getProfileCompleteness } from "@/lib/user-profile";
@@ -52,6 +52,8 @@ export async function POST(request: Request) {
   if (!customer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
 
   try {
     const body = await request.json();

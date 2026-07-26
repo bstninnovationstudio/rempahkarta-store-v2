@@ -14,7 +14,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const updated = await updateWarehouseConfig(body as any);
+    const updated = await updateWarehouseConfig(body as Parameters<typeof updateWarehouseConfig>[0]);
     return NextResponse.json({ success: true, config: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal menyimpan informasi gudang";

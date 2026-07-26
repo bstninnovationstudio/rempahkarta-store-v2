@@ -16,6 +16,7 @@ export async function GET() {
       email: customer.email,
       avatarUrl: customer.avatarUrl,
       phone: customer.phone,
+      status: customer.status,
     },
     completion,
   });

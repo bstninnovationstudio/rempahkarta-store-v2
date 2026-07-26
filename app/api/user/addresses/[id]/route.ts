@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { getProfileCompleteness } from "@/lib/user-profile";
@@ -27,6 +27,8 @@ export async function PUT(
   if (!customer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
 
   const { id } = await params;
 
@@ -73,6 +75,9 @@ export async function DELETE(
   if (!customer) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userCheckDelete = assertCustomerActive(customer);
+  if (userCheckDelete) return userCheckDelete;
+
 
   const { id } = await params;
 

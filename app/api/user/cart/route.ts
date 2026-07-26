@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { customerFromRequest } from "@/lib/customer-auth";
+import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const MAX_CART_ITEMS = 50;
@@ -99,6 +99,8 @@ export async function POST(request: Request) {
   if (!rate.allowed) return rateLimitResponse(rate);
   const customer = await customerFromRequest();
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
   try {
     const parsed = cartSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Format data tidak valid", details: parsed.error.flatten() }, { status: 400 });
@@ -132,6 +134,8 @@ export async function PUT(request: Request) {
   if (!rate.allowed) return rateLimitResponse(rate);
   const customer = await customerFromRequest();
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userCheckPut = assertCustomerActive(customer);
+  if (userCheckPut) return userCheckPut;
   try {
     const parsed = cartSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Format data tidak valid", details: parsed.error.flatten() }, { status: 400 });

@@ -29,6 +29,7 @@ export default async function UsersAdminPage({ searchParams }: { searchParams: P
             <thead>
               <tr>
                 <th scope="col">Pelanggan</th>
+                <th scope="col">Status</th>
                 <th scope="col">Tanggal daftar</th>
                 <th scope="col">Jumlah pesanan</th>
                 <th scope="col">Total belanja</th>
@@ -63,6 +64,11 @@ export default async function UsersAdminPage({ searchParams }: { searchParams: P
                       </div>
                     </div>
                   </td>
+                  <td data-label="Status">
+                    <span className={`user-status-badge ${row.status === "ACTIVE" ? "active" : row.status === "PAUSE" ? "pause" : "block"}`}>
+                      {row.status === "ACTIVE" ? "Aktif" : row.status === "PAUSE" ? "Dijeda" : "Diblokir"}
+                    </span>
+                  </td>
                   <td data-label="Tanggal daftar">
                     {new Date(row.createdAt).toLocaleDateString("id-ID", {
                       dateStyle: "medium",
@@ -83,7 +89,7 @@ export default async function UsersAdminPage({ searchParams }: { searchParams: P
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="admin-table-empty">
+                  <td colSpan={6} className="admin-table-empty">
                     Belum ada pelanggan terdaftar.
                   </td>
                 </tr>

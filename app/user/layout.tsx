@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowRight, ShieldAlert, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRight, ShieldAlert, ShieldCheck, PauseCircle } from "lucide-react";
 import { StoreHeader } from "@/components/store-header";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { redirect } from "next/navigation";
@@ -57,6 +57,19 @@ export default async function UserLayout({
           </div>
         </aside>
         <section className="user-content">
+          {customer.status === "PAUSE" && (
+            <div className="account-paused-alert">
+              <div className="account-paused-icon">
+                <PauseCircle size={20} aria-hidden="true" />
+              </div>
+              <div className="account-paused-copy">
+                <strong>Akun Anda Sedang Dijeda</strong>
+                <p>
+                  Akun anda sedang dijeda oleh karena aktifitas mencurigakan dan sedang dalam peninjauan lebih lanjut.
+                </p>
+              </div>
+            </div>
+          )}
           {!isComplete && (
             <div className="account-completion-alert">
               <div className="account-completion-icon">
@@ -79,3 +92,4 @@ export default async function UserLayout({
     </div>
   );
 }
+

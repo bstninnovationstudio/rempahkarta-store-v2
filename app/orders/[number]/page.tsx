@@ -12,6 +12,7 @@ import { rupiah } from "@/lib/format";
 import type { OrderStatus } from "@/lib/types";
 import { getBiteshipStatusDetail } from "@/lib/shipping-state";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { HolidayNoticeBanner } from "@/components/holiday-notice-banner";
 
 const demoEvents = [
   { at: "13 Jul\n14.32", title: "Paket dalam perjalanan ke kota tujuan", note: "JNE Jakarta Gateway", tone: "info" as const },
@@ -833,7 +834,10 @@ export default async function OrderPage({
     <>
       <StoreHeader />
       <main className="simple-page order-detail-page">
+        <HolidayNoticeBanner />
         <Link href="/" className="eyebrow order-back-link"><ArrowLeft size={13} /> Kembali ke toko</Link>
+
+
 
         <header className="order-header-card">
           <div className="order-header-top">

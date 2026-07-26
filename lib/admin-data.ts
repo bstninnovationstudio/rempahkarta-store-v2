@@ -260,13 +260,13 @@ export async function getAdminUsersPage(options: { page?: number; pageSize?: num
   const users = await prisma.user.findMany({
     skip: (pageInfo.page - 1) * pageSize,
     take: pageSize,
-    select: { id: true, name: true, email: true, avatarUrl: true, createdAt: true, _count: { select: { orders: true } } },
+    select: { id: true, name: true, email: true, avatarUrl: true, status: true, createdAt: true, _count: { select: { orders: true } } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
   const paidTotals = await getPaidTotalsByUserIds(users.map(user => user.id));
   const spentByUser = new Map(Array.from(paidTotals, ([id, total]) => [id, Number(total)]));
   return {
-    rows: users.map(user => ({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl, createdAt: user.createdAt, totalOrders: user._count.orders, totalSpent: spentByUser.get(user.id) || 0 })),
+    rows: users.map(user => ({ id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl, status: user.status, createdAt: user.createdAt, totalOrders: user._count.orders, totalSpent: spentByUser.get(user.id) || 0 })),
     pagination: pageInfo,
   };
 }

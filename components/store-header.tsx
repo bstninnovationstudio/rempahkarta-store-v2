@@ -5,8 +5,11 @@ import Image from "next/image";
 import { ArrowUpRight, LogIn, Menu, Search, Settings2, ShoppingBag, X, Smartphone, LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { StoreAnnouncementBar } from "@/components/store-announcement-bar";
 
 export function StoreHeader() {
+
+
   const [open, setOpen] = useState(false);
   const [cartCount, setCartCount] = useState(0);
   const [user, setUser] = useState<{ name: string; email: string; avatarUrl?: string } | null>(null);
@@ -175,7 +178,10 @@ export function StoreHeader() {
 
   return (
     <header className="store-header">
+      <StoreAnnouncementBar />
       <div className="store-header-inner">
+
+
         <button
           ref={openMenuButtonRef}
           className="icon-button mobile-only"
