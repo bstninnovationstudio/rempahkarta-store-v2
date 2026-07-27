@@ -33,3 +33,17 @@ test("Schedule overlap detection logic checks time windows", () => {
   // Case 5: Touching boundary -> Does not overlap
   assert.equal(isOverlapping(new Date("2026-08-05T10:00:00Z"), new Date("2026-08-10T10:00:00Z")), false);
 });
+
+test("30-minute advance notice window logic", () => {
+  const now = new Date("2026-07-27T10:00:00Z");
+  const startAtIn20Mins = new Date("2026-07-27T10:20:00Z");
+  const startAtIn45Mins = new Date("2026-07-27T10:45:00Z");
+
+  const thirtyMinsFromNow = new Date(now.getTime() + 30 * 60 * 1000);
+
+  // 20 mins from now is within 30 minutes window -> Should show advance notice
+  assert.equal(startAtIn20Mins > now && startAtIn20Mins <= thirtyMinsFromNow, true);
+
+  // 45 mins from now is outside 30 minutes window -> Should NOT show advance notice yet
+  assert.equal(startAtIn45Mins > now && startAtIn45Mins <= thirtyMinsFromNow, false);
+});

@@ -12,6 +12,15 @@ export interface OperationalStatusResult {
     startAt: string;
     endAt: string;
   } | null;
+  upcomingSchedule: {
+    id: string;
+    type: ScheduleType;
+    title: string;
+    announcement: string;
+    startAt: string;
+    endAt: string;
+    startsInMinutes: number;
+  } | null;
   holidayEndAtWib: string | null;
   maintenanceEndAtWib: string | null;
   announcement: string | null;
@@ -37,6 +46,7 @@ export function formatWibDateTime(dateInput: Date | string | number): string {
 
 export async function getStoreOperationalStatus(): Promise<OperationalStatusResult> {
   const now = new Date();
+  const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000);
 
   // Find candidate schedules that are either currently active or scheduled
   const candidates = await prisma.storeSchedule.findMany({
@@ -47,6 +57,7 @@ export async function getStoreOperationalStatus(): Promise<OperationalStatusResu
   });
 
   let activeSchedule: StoreSchedule | null = null;
+  let upcomingSchedule: StoreSchedule | null = null;
   const updates: Promise<unknown>[] = [];
 
   for (const schedule of candidates) {
@@ -71,6 +82,10 @@ export async function getStoreOperationalStatus(): Promise<OperationalStatusResu
       if (!activeSchedule) {
         activeSchedule = { ...schedule, status: "ACTIVE" };
       }
+    } else if (schedule.startAt > now && schedule.startAt <= thirtyMinutesFromNow) {
+      if (!upcomingSchedule) {
+        upcomingSchedule = schedule;
+      }
     }
   }
 
@@ -82,6 +97,23 @@ export async function getStoreOperationalStatus(): Promise<OperationalStatusResu
 
   const isHoliday = activeSchedule?.type === "HOLIDAY";
   const isMaintenance = activeSchedule?.type === "MAINTENANCE";
+
+  let announcementText: string | null = null;
+
+  if (activeSchedule) {
+    announcementText = activeSchedule.announcement;
+  } else if (upcomingSchedule) {
+    const diffMs = upcomingSchedule.startAt.getTime() - now.getTime();
+    const minutes = Math.max(1, Math.ceil(diffMs / 60000));
+    const startWib = formatWibDateTime(upcomingSchedule.startAt);
+    const modeLabel = upcomingSchedule.type === "MAINTENANCE" ? "Pemeliharaan sistem" : "Masa libur toko";
+    announcementText = `Informasi Operasional: ${modeLabel} ("${upcomingSchedule.title}") akan dimulai pada ${startWib} (dalam ${minutes} menit). ${upcomingSchedule.announcement}`;
+
+  }
+
+  const upcomingInMinutes = upcomingSchedule
+    ? Math.max(1, Math.ceil((upcomingSchedule.startAt.getTime() - now.getTime()) / 60000))
+    : 0;
 
   return {
     isHoliday,
@@ -96,9 +128,20 @@ export async function getStoreOperationalStatus(): Promise<OperationalStatusResu
           endAt: activeSchedule.endAt.toISOString(),
         }
       : null,
+    upcomingSchedule: upcomingSchedule
+      ? {
+          id: upcomingSchedule.id,
+          type: upcomingSchedule.type,
+          title: upcomingSchedule.title,
+          announcement: upcomingSchedule.announcement,
+          startAt: upcomingSchedule.startAt.toISOString(),
+          endAt: upcomingSchedule.endAt.toISOString(),
+          startsInMinutes: upcomingInMinutes,
+        }
+      : null,
     holidayEndAtWib: isHoliday && activeSchedule ? formatWibDateTime(activeSchedule.endAt) : null,
     maintenanceEndAtWib: isMaintenance && activeSchedule ? formatWibDateTime(activeSchedule.endAt) : null,
-    announcement: activeSchedule ? activeSchedule.announcement : null,
+    announcement: announcementText,
   };
 }
 

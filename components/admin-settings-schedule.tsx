@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   Megaphone,
   Wrench,
-
   ShieldCheck,
   AlertCircle,
   Clock,
@@ -14,6 +13,9 @@ import {
   Plus,
   CheckCircle2,
   Sparkles,
+  Pencil,
+  Trash2,
+  Save,
 } from "lucide-react";
 import { formatWibDateTime } from "@/lib/store-schedule";
 
@@ -43,6 +45,15 @@ interface OperationalStatusData {
     startAt: string;
     endAt: string;
   } | null;
+  upcomingSchedule: {
+    id: string;
+    type: ScheduleType;
+    title: string;
+    announcement: string;
+    startAt: string;
+    endAt: string;
+    startsInMinutes: number;
+  } | null;
   holidayEndAtWib: string | null;
   maintenanceEndAtWib: string | null;
   announcement: string | null;
@@ -58,29 +69,47 @@ export function AdminSettingsSchedule({
   initialSchedules,
 }: AdminSettingsScheduleProps) {
   const router = useRouter();
+  const isDevMode = process.env.NEXT_PUBLIC_APP_MODE !== "production";
+
   const [operationalStatus, setOperationalStatus] =
     useState<OperationalStatusData>(initialStatus);
   const [schedules, setSchedules] =
     useState<StoreScheduleItem[]>(initialSchedules);
 
-  // Form State
+  // New Schedule Form State
   const [type, setType] = useState<ScheduleType>("HOLIDAY");
   const [title, setTitle] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
 
+  // Edit Modal State (Dev Mode)
+  const [editingItem, setEditingItem] = useState<StoreScheduleItem | null>(null);
+  const [editType, setEditType] = useState<ScheduleType>("HOLIDAY");
+  const [editTitle, setEditTitle] = useState("");
+  const [editAnnouncement, setEditAnnouncement] = useState("");
+  const [editStartAt, setEditStartAt] = useState("");
+  const [editEndAt, setEditEndAt] = useState("");
+  const [editStatus, setEditStatus] = useState<ScheduleStatus>("SCHEDULED");
+
+  // Deleting State
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   function defaultAnnouncementText(scheduleType: ScheduleType) {
     if (scheduleType === "HOLIDAY") {
-      return "📢 Pengumuman Operasional: Toko sedang libur. Pesanan tetap dapat dibuat dan akan kami proses serta kirimkan secara bertahap setelah masa libur berakhir.";
+      return "Pengumuman Operasional: Toko sedang libur. Pesanan tetap dapat dibuat dan akan kami proses serta kirimkan secara bertahap setelah masa libur berakhir.";
     }
-    return "🛠️ Pemeliharaan Sistem: Toko kami sedang dalam peningkatan kualitas layanan. Fitur transaksi pengguna dijeda sementara.";
+    return "Pemeliharaan Sistem: Toko kami sedang dalam peningkatan kualitas layanan. Fitur transaksi pengguna dijeda sementara.";
   }
+
 
   const handleTypeChange = (newType: ScheduleType) => {
     setType(newType);
@@ -88,6 +117,18 @@ export function AdminSettingsSchedule({
       setAnnouncement(defaultAnnouncementText(newType));
     }
   };
+
+  function toLocalDatetimeInputString(isoString: string): string {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hours = pad(d.getHours());
+    const minutes = pad(d.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
 
   const handleCreateSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,9 +141,7 @@ export function AdminSettingsSchedule({
     const endDate = new Date(endAt);
 
     if (startDate >= endDate) {
-      setError(
-        "Waktu berakhir jadwal operasional harus lebih baru daripada waktu mulai."
-      );
+      setError("Waktu berakhir jadwal operasional harus lebih baru daripada waktu mulai.");
       return;
     }
 
@@ -129,9 +168,7 @@ export function AdminSettingsSchedule({
       }
 
       setSuccess(
-        `Jadwal ${
-          type === "HOLIDAY" ? "Libur" : "Maintenance"
-        } ("${data.schedule.title}") berhasil ditambahkan.`
+        `Jadwal ${type === "HOLIDAY" ? "Libur" : "Maintenance"} ("${data.schedule.title}") berhasil ditambahkan.`
       );
       setTitle("");
       setAnnouncement("");
@@ -141,11 +178,7 @@ export function AdminSettingsSchedule({
       setSchedules((prev) => [data.schedule, ...prev]);
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Gagal menyimpan jadwal operasional"
-      );
+      setError(err instanceof Error ? err.message : "Gagal menyimpan jadwal operasional");
     } finally {
       setLoading(false);
     }
@@ -170,9 +203,7 @@ export function AdminSettingsSchedule({
       setOperationalStatus(data.currentOperationalStatus);
       setSchedules((prev) =>
         prev.map((item) =>
-          item.id === id
-            ? { ...item, status: "CANCELLED" as ScheduleStatus }
-            : item
+          item.id === id ? { ...item, status: "CANCELLED" as ScheduleStatus } : item
         )
       );
       router.refresh();
@@ -180,6 +211,97 @@ export function AdminSettingsSchedule({
       setError(err instanceof Error ? err.message : "Gagal membatalkan jadwal");
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  // Open Edit Modal
+  const handleOpenEditModal = (item: StoreScheduleItem) => {
+    setEditingItem(item);
+    setEditType(item.type);
+    setEditTitle(item.title);
+    setEditAnnouncement(item.announcement);
+    setEditStartAt(toLocalDatetimeInputString(item.startAt));
+    setEditEndAt(toLocalDatetimeInputString(item.endAt));
+    setEditStatus(item.status);
+    setError(null);
+    setSuccess(null);
+  };
+
+  // Submit Edit Schedule
+  const handleSaveEditSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+
+    const startDate = new Date(editStartAt);
+    const endDate = new Date(editEndAt);
+
+    if (startDate >= endDate) {
+      setError("Waktu berakhir jadwal operasional harus lebih baru daripada waktu mulai.");
+      return;
+    }
+
+    setSavingEdit(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await fetch(`/api/admin/settings/schedules/${editingItem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: editType,
+          title: editTitle.trim(),
+          announcement: editAnnouncement.trim(),
+          startAt: startDate.toISOString(),
+          endAt: endDate.toISOString(),
+          status: editStatus,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal mengedit jadwal operasional");
+      }
+
+      setSuccess(`Log jadwal operasional ("${data.schedule.title}") berhasil diperbarui.`);
+      setOperationalStatus(data.currentOperationalStatus);
+      setSchedules((prev) =>
+        prev.map((item) => (item.id === editingItem.id ? data.schedule : item))
+      );
+      setEditingItem(null);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal mengedit jadwal");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Delete Log
+  const handleDeleteSchedule = async (id: string) => {
+    setDeletingId(id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await fetch(`/api/admin/settings/schedules/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal menghapus log jadwal operasional");
+      }
+
+      setSuccess("Log jadwal operasional berhasil dihapus.");
+      setOperationalStatus(data.currentOperationalStatus);
+      setSchedules((prev) => prev.filter((item) => item.id !== id));
+      setConfirmDeleteId(null);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menghapus log");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -255,6 +377,23 @@ export function AdminSettingsSchedule({
                 &quot;
               </p>
             </div>
+          ) : operationalStatus.upcomingSchedule ? (
+            <div className="op-active-box upcoming-notice">
+              <div className="op-active-head">
+                <div className="op-active-title">
+                  <Clock size={16} className="text-info" aria-hidden="true" />
+                  <strong>
+                    Pengingat Jadwal Mendatang ({operationalStatus.upcomingSchedule.type === "MAINTENANCE" ? "Maintenance" : "Libur"})
+                  </strong>
+                </div>
+                <div className="op-active-time">
+                  <span>Mulai dalam {operationalStatus.upcomingSchedule.startsInMinutes} menit</span>
+                </div>
+              </div>
+              <p className="op-active-announcement">
+                &quot;{operationalStatus.announcement}&quot;
+              </p>
+            </div>
           ) : (
             <div className="op-normal-box">
               <p>
@@ -292,7 +431,6 @@ export function AdminSettingsSchedule({
         </div>
 
         <form onSubmit={handleCreateSchedule} className="op-form">
-          {/* Mode Selector Tabs */}
           <div className="op-type-tabs" role="radiogroup" aria-label="Tipe Jadwal Operasional">
             <button
               type="button"
@@ -327,7 +465,6 @@ export function AdminSettingsSchedule({
             </button>
           </div>
 
-          {/* Form Fields Grid */}
           <div className="op-field-grid">
             <div className="op-field-group full-width">
               <label htmlFor="schedule-title" className="op-label">
@@ -396,11 +533,7 @@ export function AdminSettingsSchedule({
           </div>
 
           <div className="op-form-footer">
-            <button
-              type="submit"
-              disabled={loading}
-              className="button button-dark op-submit-btn"
-            >
+            <button type="submit" disabled={loading} className="button button-dark op-submit-btn">
               {loading ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
@@ -425,6 +558,11 @@ export function AdminSettingsSchedule({
             <h2>Log Histori & Jadwal Operasional</h2>
             <p className="sub">
               Daftar seluruh jadwal libur dan maintenance yang terdaftar beserta status pelaksanaannya.
+              {isDevMode && (
+                <span className="dev-mode-badge" title="Dev Tools Aktif (APP_MODE=development)">
+                  Dev Tools Aktif (Fitur Edit & Hapus Log Tersedia)
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -444,7 +582,7 @@ export function AdminSettingsSchedule({
             <tbody>
               {schedules.map((item) => (
                 <tr key={item.id}>
-                  <td data-label="Tipe & Judul" className="admin-table-cell-wrap">
+                  <td data-label="Tipe & Judul">
                     <div className="op-table-title-cell">
                       <span className={`op-tag ${item.type.toLowerCase()}`}>
                         {item.type === "HOLIDAY" ? "Libur" : "Maintenance"}
@@ -466,24 +604,76 @@ export function AdminSettingsSchedule({
                     <span className="sub">{item.createdBy}</span>
                   </td>
                   <td data-label="Aksi" className="text-right">
-                    {(item.status === "SCHEDULED" || item.status === "ACTIVE") && (
-                      <button
-                        type="button"
-                        disabled={cancellingId === item.id}
-                        onClick={() => handleCancelSchedule(item.id)}
-                        className="button-link-danger op-cancel-btn"
-                        title="Batalkan Jadwal Operasional"
-                      >
-                        {cancellingId === item.id ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <>
-                            <XCircle size={14} aria-hidden="true" />
-                            <span>Batalkan</span>
-                          </>
-                        )}
-                      </button>
-                    )}
+                    <div className="op-action-btn-group">
+                      {(item.status === "SCHEDULED" || item.status === "ACTIVE") && (
+                        <button
+                          type="button"
+                          disabled={cancellingId === item.id}
+                          onClick={() => handleCancelSchedule(item.id)}
+                          className="op-cancel-btn"
+                          title="Batalkan Jadwal Operasional"
+                        >
+                          {cancellingId === item.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <>
+                              <XCircle size={14} aria-hidden="true" />
+                              <span>Batalkan</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Dev Mode Controls: Edit & Delete */}
+                      {isDevMode && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(item)}
+                            className="op-dev-btn edit"
+                            title="Edit Data & Durasi (Mode Dev)"
+                          >
+                            <Pencil size={14} aria-hidden="true" />
+                            <span>Edit</span>
+                          </button>
+
+                          {confirmDeleteId === item.id ? (
+                            <div className="op-dev-delete-confirm">
+                              <button
+                                type="button"
+                                disabled={deletingId === item.id}
+                                onClick={() => handleDeleteSchedule(item.id)}
+                                className="op-dev-btn confirm-delete"
+                                title="Konfirmasi Hapus"
+                              >
+                                {deletingId === item.id ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  "Ya, Hapus"
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="op-dev-btn cancel-delete"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(item.id)}
+                              className="op-dev-btn delete"
+                              title="Hapus Log Operasional (Mode Dev)"
+                            >
+                              <Trash2 size={14} aria-hidden="true" />
+                              <span>Hapus</span>
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -498,6 +688,144 @@ export function AdminSettingsSchedule({
           </table>
         </div>
       </section>
+
+      {/* 4. Edit Schedule Dev Modal */}
+      {editingItem && (
+        <div className="op-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+          <div className="op-modal-card">
+            <div className="op-modal-head">
+              <h3 id="edit-modal-title">Edit Log & Durasi Operasional (Dev Mode)</h3>
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="op-modal-close"
+                aria-label="Tutup Modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSchedule} className="op-form">
+              <div className="op-field-grid">
+                <div className="op-field-group">
+                  <label htmlFor="edit-schedule-type" className="op-label">
+                    Tipe Jadwal
+                  </label>
+                  <select
+                    id="edit-schedule-type"
+                    value={editType}
+                    onChange={(e) => setEditType(e.target.value as ScheduleType)}
+                    className="op-input"
+                  >
+                    <option value="HOLIDAY">Libur Toko</option>
+                    <option value="MAINTENANCE">Pemeliharaan (Maintenance)</option>
+                  </select>
+                </div>
+
+                <div className="op-field-group">
+                  <label htmlFor="edit-schedule-status" className="op-label">
+                    Status Jadwal
+                  </label>
+                  <select
+                    id="edit-schedule-status"
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as ScheduleStatus)}
+                    className="op-input"
+                  >
+                    <option value="SCHEDULED">SCHEDULED (Dijadwalkan)</option>
+                    <option value="ACTIVE">ACTIVE (Sedang Aktif)</option>
+                    <option value="COMPLETED">COMPLETED (Selesai)</option>
+                    <option value="CANCELLED">CANCELLED (Dibatalkan)</option>
+                  </select>
+                </div>
+
+                <div className="op-field-group full-width">
+                  <label htmlFor="edit-schedule-title" className="op-label">
+                    Judul Jadwal Operasional
+                  </label>
+                  <input
+                    id="edit-schedule-title"
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="op-input"
+                  />
+                </div>
+
+                <div className="op-field-group">
+                  <label htmlFor="edit-schedule-start" className="op-label">
+                    Waktu Mulai (WIB)
+                  </label>
+                  <input
+                    id="edit-schedule-start"
+                    type="datetime-local"
+                    required
+                    value={editStartAt}
+                    onChange={(e) => setEditStartAt(e.target.value)}
+                    className="op-input"
+                  />
+                </div>
+
+                <div className="op-field-group">
+                  <label htmlFor="edit-schedule-end" className="op-label">
+                    Waktu Selesai (WIB)
+                  </label>
+                  <input
+                    id="edit-schedule-end"
+                    type="datetime-local"
+                    required
+                    value={editEndAt}
+                    onChange={(e) => setEditEndAt(e.target.value)}
+                    className="op-input"
+                  />
+                </div>
+
+                <div className="op-field-group full-width">
+                  <label htmlFor="edit-schedule-announcement" className="op-label">
+                    Teks Pengumuman (Running Text)
+                  </label>
+                  <textarea
+                    id="edit-schedule-announcement"
+                    rows={3}
+                    required
+                    value={editAnnouncement}
+                    onChange={(e) => setEditAnnouncement(e.target.value)}
+                    className="op-textarea"
+                  />
+                </div>
+              </div>
+
+              <div className="op-modal-footer">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="button button-light"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="button button-dark"
+                >
+                  {savingEdit ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Menyimpan Perubahan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} aria-hidden="true" />
+                      <span>Simpan Perubahan</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
