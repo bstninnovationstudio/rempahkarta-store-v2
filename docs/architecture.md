@@ -56,7 +56,7 @@ Kelengkapan akun dihitung oleh `lib/user-profile.ts` dari data aktual, bukan fla
 
 - nama minimal dua karakter;
 - email terisi;
-- telepon minimal delapan karakter;
+- nomor WhatsApp minimal delapan karakter dan `phoneVerified=true`;
 - minimal satu `UserAddress`;
 - satu `UserRefundSetting` bank atau e-wallet dengan nama pemilik dan nomor yang valid.
 
@@ -82,6 +82,12 @@ Flow checkout server:
 5. Buat payment BSTN atau mock development. Kegagalan membuat payment membatalkan order dan melepas reservasi secara idempoten.
 
 Data harga, stok, berat, dimensi, dan ongkir dari client tidak dipercaya.
+
+### Verifikasi dan consent WhatsApp
+
+`WhatsappOtpChallenge` menyimpan HMAC kode enam digit yang terikat ke user, purpose, nomor, dan binding payload. Challenge berlaku lima menit, maksimal lima percobaan dan satu resend; konsumsi challenge terjadi atomik di transaksi update nomor atau rekening refund. Kode maupun body OTP tidak pernah masuk outbox/audit.
+
+Consent perjalanan paket dan promosi disimpan terpisah pada `User` beserta timestamp. Consent tidak menjadi syarat OTP atau completeness. Pembayaran/event shipment hanya membuat `WhatsappMessage` bila consent perjalanan aktif; dispatcher memeriksa consent kembali tepat sebelum menghubungi GOWA agar revoke setelah enqueue tetap dihormati.
 
 ## Boundary query
 
@@ -169,8 +175,19 @@ awaiting_payment
 - `order.waybill_id` memperbarui resi aktif dan audit.
 - Cancel/reject sebelum handover memulihkan inventory secara idempoten; kegagalan provider tidak membatalkan order lokal.
 - Route resi admin membentuk label thermal melalui CSS paged media berukuran 100 × 150 mm. Konten yang melampaui satu label mengalir ke halaman berikutnya; blok label penting dijaga agar tidak terpotong di tengah halaman.
-- Halaman `/admin/gallery` mengelola file media (produk, retur, refund), memisahkan file terpakai vs file sampah (tidak terpakai), dan menyediakan penghapusan file sampah dengan konfirmasi ganda.
 - Halaman `/admin/users/[id]` menyajikan profil pelanggan, rekening refund, alamat, dan riwayat pesanan dalam layout 1 kolom bertumpuk.
+- Halaman `/admin/settings` mengelola jadwal operasional toko (`StoreSchedule` model) dengan mode Libur (`HOLIDAY`) dan Pemeliharaan Sistem (`MAINTENANCE`).
+- Status operasional dihitung otomatis oleh `lib/store-schedule.ts`. Jadwal `SCHEDULED` yang akan dimulai dalam $\le 30$ menit diidentifikasi secara otomatis sebagai `upcomingSchedule`, sehingga banner pengumuman running text (`StoreAnnouncementBar`) di storefront menampilkan peringatan dini 30 menit sebelum jadwal aktif tanpa memblokir pesanan pelanggan lebih awal.
+- Banner running text `StoreAnnouncementBar` menyatu di dalam header (`StoreHeader`) dengan tinggi dinamis, animasi `translate3d` perulangan *seamless* 100% tanpa lompatan piksel, badge label visual (`.announcement-label`), skema warna aksen merah saat aktif, serta penyesuaian khusus tampilan mobile.
+
+## GOWA, outbox, dan promosi
+
+`lib/gowa.ts` memilih URL DEV/LIVE berdasarkan `APP_MODE`, memakai Basic Auth dan opsional `X-Device-Id`, menormalisasi nomor, serta memvalidasi sukses hanya bila HTTP 2xx, `code=SUCCESS`, dan `message_id` tersedia. Semua teks/caption mendapat footer pesan otomatis yang sama.
+
+Notifikasi payment dan setiap row `ShipmentTrackingEvent` membuat `WhatsappMessage` dengan `dedupeKey` unik di transaksi domain. Pengiriman berjalan lewat `after()` setelah commit; status `AMBIGUOUS` tidak di-retry karena GOWA tidak menyediakan idempotency key.
+
+`/admin/promotions` membuat `WhatsappPromotionCampaign` serta snapshot `WhatsappMessage` untuk user aktif dengan nomor terverifikasi dan consent promosi. Media JPG/PNG disimpan di `storage/private/promotions/{campaignId}`. Browser admin memproses batch tiga penerima per request dan dapat melanjutkan campaign; ini tetap berada di Next.js tanpa Redis, queue, atau worker. Status penerima adalah pending, sent, failed, ambiguous, atau skipped bila consent/status berubah sebelum kirim.
+
 
 ## Retur, refund, dan audit
 
@@ -202,7 +219,7 @@ Turnstile selalu diverifikasi lewat Siteverify server. Secret test hanya tersedi
 
 ## Migration dan penyimpanan
 
-Migration `0_baseline` merepresentasikan DDL schema lengkap dan `migration_lock.toml` mengunci provider MySQL. Database lama yang sudah memiliki tabel harus dibaseline satu kali dengan `npm run db:baseline:existing` **setelah** tabel/kolom/constraint/relasi diverifikasi; database kosong tidak boleh melewati baseline. Migration incremental menambahkan index query, voucher, serta ledger keuangan secara additive dan tidak menjalankan seed. Migration keuangan awal melakukan backfill posisi dana order lama dan membuat akun shadow Biteship bersaldo nol; migration `202607220002_reconcile_revenue_total_settlement` merekonsiliasi formula settlement lama, `202607220003_standardize_unique_code_revenue` menambah snapshot kode unik/subtotal dan menulis delta audit agar saldo historis mengikuti formula omzet kanonis, lalu `202607220004_correct_qris_fee_snapshot` memisahkan kode unik dari snapshot fee QRIS tanpa mengubah saldo.
+Migration `0_baseline` merepresentasikan DDL schema lengkap dan `migration_lock.toml` mengunci provider MySQL. Database lama yang sudah memiliki tabel harus dibaseline satu kali dengan `npm run db:baseline:existing` **setelah** tabel/kolom/constraint/relasi diverifikasi; database kosong tidak boleh melewati baseline. Migration incremental menambahkan index query, voucher, ledger keuangan, OTP/outbox WhatsApp, consent, dan campaign promosi secara additive dan tidak menjalankan seed. Nomor user legacy sengaja memiliki `phoneVerified=false` sampai diverifikasi. Migration keuangan awal melakukan backfill posisi dana order lama dan membuat akun shadow Biteship bersaldo nol; migration `202607220002_reconcile_revenue_total_settlement` merekonsiliasi formula settlement lama, `202607220003_standardize_unique_code_revenue` menambah snapshot kode unik/subtotal dan menulis delta audit agar saldo historis mengikuti formula omzet kanonis, lalu `202607220004_correct_qris_fee_snapshot` memisahkan kode unik dari snapshot fee QRIS tanpa mengubah saldo.
 
 `npm run setup` menjalankan generate + migrate deploy. `setup:demo`, seed, dan `db push` hanya untuk database lokal/disposable.
 

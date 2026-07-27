@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowLeft, CheckCircle2, Save, ShieldCheck, WalletCards } from "lucide-react";
+import { ArrowLeft, CheckCircle2, LockKeyhole, Save, Send, ShieldCheck, WalletCards } from "lucide-react";
 import { errorMessage } from "@/lib/error-message";
 import { useTurnstile } from "@/components/use-turnstile";
 import { useRouter } from "next/navigation";
+import { WhatsappOtpPanel } from "@/components/whatsapp-otp-panel";
 
 interface RefundSetting {
   id?: string;
@@ -22,7 +23,16 @@ interface UserPaymentClientProps {
   turnstileSiteKey: string;
   embedded?: boolean;
   isComplete?: boolean;
+  contactComplete?: boolean;
+  verifiedPhone?: string | null;
 }
+
+type OtpSession = {
+  challengeId: string;
+  expiresAt: string;
+  resendAvailableAt: string;
+  resendCount: number;
+};
 
 function maskedAccountNumber(value: string | null | undefined) {
   if (!value) return "—";
@@ -34,10 +44,12 @@ export function UserPaymentClient({
   turnstileSiteKey,
   embedded = false,
   isComplete = false,
+  contactComplete = true,
+  verifiedPhone = null,
 }: UserPaymentClientProps) {
   const router = useRouter();
   const [setting, setSetting] = useState<RefundSetting | null>(initialSetting);
-  const [isEditing, setIsEditing] = useState(!initialSetting);
+  const [isEditing, setIsEditing] = useState(!initialSetting && contactComplete);
   const [type, setType] = useState<"bank" | "ewallet">(initialSetting?.type || "bank");
 
   // Form states
@@ -52,7 +64,60 @@ export function UserPaymentClient({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [otpSession, setOtpSession] = useState<OtpSession | null>(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpPayloadKey, setOtpPayloadKey] = useState("");
   const { containerRef, token } = useTurnstile(turnstileSiteKey);
+
+  const payload = type === "bank"
+    ? {
+        type,
+        bankName: bankName.trim(),
+        bankOwnerName: bankOwnerName.trim(),
+        bankNumber: bankNumber.trim(),
+      }
+    : {
+        type,
+        ewalletName: ewalletName.trim(),
+        ewalletOwnerName: ewalletOwnerName.trim(),
+        ewalletNumber: ewalletNumber.trim(),
+      };
+  const payloadKey = JSON.stringify(payload);
+  const activeOtpSession = otpSession && otpPayloadKey === payloadKey ? otpSession : null;
+
+  async function requestOtp(resend = false) {
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const turnstileToken = await token("user_otp_send");
+      const response = await fetch("/api/user/otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          purpose: "REFUND_SETTING_VERIFICATION",
+          ...(!resend ? { refundSetting: payload } : {}),
+          ...(resend && activeOtpSession ? { challengeId: activeOtpSession.challengeId } : {}),
+          turnstileToken,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Gagal mengirim kode OTP");
+      setOtpSession({
+        challengeId: data.challengeId,
+        expiresAt: data.expiresAt,
+        resendAvailableAt: data.resendAvailableAt,
+        resendCount: data.resendCount,
+      });
+      setOtpPayloadKey(payloadKey);
+      setOtpCode("");
+      setSuccess(data.message || "Kode OTP telah dikirim melalui WhatsApp.");
+    } catch (caught: unknown) {
+      setError(errorMessage(caught, "Gagal mengirim kode OTP."));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,26 +125,27 @@ export function UserPaymentClient({
     setError("");
     setSuccess("");
 
-    const payload = type === "bank"
-      ? {
-          type,
-          bankName: bankName.trim(),
-          bankOwnerName: bankOwnerName.trim(),
-          bankNumber: bankNumber.trim(),
-        }
-      : {
-          type,
-          ewalletName: ewalletName.trim(),
-          ewalletOwnerName: ewalletOwnerName.trim(),
-          ewalletNumber: ewalletNumber.trim(),
-        };
-
     try {
+      if (!contactComplete || !verifiedPhone) {
+        throw new Error("Lengkapi dan verifikasi kontak utama sebelum mengatur rekening refund.");
+      }
+      if (!activeOtpSession) {
+        await requestOtp();
+        return;
+      }
+      if (otpCode.length !== 6) {
+        throw new Error("Masukkan 6 digit kode OTP yang dikirim melalui WhatsApp.");
+      }
       const turnstileToken = await token("user_payment");
       const res = await fetch("/api/user/payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, turnstileToken }),
+        body: JSON.stringify({
+          ...payload,
+          otpChallengeId: activeOtpSession.challengeId,
+          otpCode,
+          turnstileToken,
+        }),
       });
 
       const data = await res.json();
@@ -88,6 +154,9 @@ export function UserPaymentClient({
       setSetting(data.setting);
       setSuccess("Pengaturan rekening refund berhasil disimpan.");
       setIsEditing(false);
+      setOtpSession(null);
+      setOtpCode("");
+      setOtpPayloadKey("");
       router.refresh();
     } catch (e: unknown) {
       setError(errorMessage(e, "Gagal menyimpan data."));
@@ -116,6 +185,15 @@ export function UserPaymentClient({
 
       {success && <div className="form-banner success" role="status">{success}</div>}
       {error && <div className="form-banner error" role="alert">{error}</div>}
+      {!contactComplete ? (
+        <div className="refund-contact-lock" role="status">
+          <span><LockKeyhole size={18} aria-hidden="true" /></span>
+          <div>
+            <strong>Verifikasi kontak utama terlebih dahulu</strong>
+            <p>Nama, email, dan nomor WhatsApp terverifikasi wajib lengkap sebelum rekening pengembalian dana dapat diatur.</p>
+          </div>
+        </div>
+      ) : null}
 
       {setting && !isEditing ? (
         <div className="payment-info-box">
@@ -172,6 +250,7 @@ export function UserPaymentClient({
               type="button"
               className="button button-dark refund-edit-btn"
               onClick={() => setIsEditing(true)}
+              disabled={!contactComplete}
             >
               Edit Rekening
             </button>
@@ -179,7 +258,7 @@ export function UserPaymentClient({
         </div>
       ) : null}
 
-      {isEditing && (
+      {contactComplete && (isEditing || !setting) && (
         <form onSubmit={handleSubmit} className="refund-setting-form">
           {setting && (
             <button
@@ -193,6 +272,9 @@ export function UserPaymentClient({
                 setEwalletName(setting.ewalletName || "");
                 setEwalletOwnerName(setting.ewalletOwnerName || "");
                 setEwalletNumber(setting.ewalletNumber || "");
+                setOtpSession(null);
+                setOtpCode("");
+                setOtpPayloadKey("");
                 setIsEditing(false);
               }}
             >
@@ -301,9 +383,44 @@ export function UserPaymentClient({
             )}
           </div>
 
+          {activeOtpSession ? (
+            <>
+              <WhatsappOtpPanel
+                idPrefix="refund"
+                code={otpCode}
+                onCodeChange={setOtpCode}
+                expiresAt={activeOtpSession.expiresAt}
+                resendAvailableAt={activeOtpSession.resendAvailableAt}
+                resendCount={activeOtpSession.resendCount}
+                busy={busy}
+                onResend={() => requestOtp(true)}
+                phoneLabel={verifiedPhone || "nomor terverifikasi"}
+              />
+              {activeOtpSession.resendCount >= 1 ? (
+                <button
+                  type="button"
+                  className="otp-restart-button"
+                  onClick={() => {
+                    setOtpSession(null);
+                    setOtpCode("");
+                    setOtpPayloadKey("");
+                    setSuccess("");
+                  }}
+                >
+                  Mulai verifikasi baru
+                </button>
+              ) : null}
+            </>
+          ) : null}
+
           <div className="refund-setting-actions-row">
             <button type="submit" className="button button-dark refund-setting-submit" disabled={busy}>
-              <Save size={15} /> {busy ? "Menyimpan…" : "Simpan pengaturan"}
+              {activeOtpSession ? <Save size={15} /> : <Send size={15} />}
+              {busy
+                ? "Memproses…"
+                : activeOtpSession
+                  ? "Verifikasi & simpan rekening"
+                  : "Kirim OTP untuk menyimpan"}
             </button>
           </div>
         </form>

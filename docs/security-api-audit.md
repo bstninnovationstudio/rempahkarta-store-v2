@@ -109,6 +109,11 @@ Cookie SameSite Lax tetap menjadi defense-in-depth, bukan satu-satunya kontrol C
 | Ubah profil | 20 | 1 menit |
 | Tambah/edit/hapus alamat | 20 gabungan | 1 menit |
 | Simpan rekening refund | 20 | 1 menit |
+| Request/resend OTP WhatsApp | 6/user dan 10/IP | 15 menit |
+| Sesi OTP baru persisten | 3/user dan 3/nomor | 1 jam |
+| Ubah consent WhatsApp | 20 | 1 menit |
+| Buat campaign promosi | 3 | 1 jam |
+| Dispatch promosi | 120 batch | 15 menit |
 | Tulis cart | 30 gabungan | 1 menit |
 | Pembatalan order | 10 | 1 menit |
 | Upload bukti retur | 10 | 1 menit |
@@ -135,6 +140,9 @@ Identitas memakai header yang ditetapkan `RATE_LIMIT_TRUSTED_IP_HEADER` hanya bi
 | Simpan kontak | `user_profile` | JSON body |
 | Tambah/edit/hapus alamat | `user_address` | JSON body |
 | Simpan rekening refund | `user_payment` | JSON body |
+| Request/resend OTP | `user_otp_send` | JSON body |
+| Ubah consent WhatsApp | `user_notifications` | JSON body |
+| Buat campaign promosi admin | `admin_promotion_send` | multipart form |
 | Sinkron payment pelanggan | `payment_sync` | JSON body |
 | Sinkron payment admin | `admin_payment_sync` | JSON body |
 
@@ -227,6 +235,9 @@ Dry-run wajib ditinjau. Apply menyalin dengan pemeriksaan hash bila destination 
 | Rate limiter in-memory per instance | Deployment multi-instance dapat melipatgandakan limit; restart mengosongkan bucket | Gunakan satu instance atau limit tambahan di CDN/reverse proxy. Redis sengaja tidak ditambahkan. |
 | Next Data Cache tanpa backend shared yang dikonfigurasi aplikasi | Konsistensi/invalidation antar-instance bergantung pada adapter platform/deployment | Pada scale-out, validasi perilaku cache platform atau gunakan shared revalidation strategy/purge deployment-level. |
 | Upload lokal | File hilang pada filesystem ephemeral atau berbeda antar-instance | Mount volume persisten untuk `public/uploads` dan `storage/private`, sticky routing bila perlu, backup bersama MySQL. Pertimbangkan object storage hanya bila arsitektur berubah. |
+| GOWA tidak memiliki idempotency key pengiriman | Timeout dapat berarti pesan sudah terkirim walau respons tidak diterima | Catat `AMBIGUOUS`, jangan retry otomatis, simpan provider `message_id` pada sukses, dan dedupe enqueue berdasarkan source event. |
+| Broadcast promosi berhenti saat browser admin ditutup | Recipient pending belum terkirim sampai campaign dilanjutkan | Snapshot/log tetap persisten; tombol lanjutkan memproses batch tiga penerima. Tidak ada worker terpisah sesuai arsitektur. |
+| Consent dicabut setelah campaign dibuat | Snapshot lama dapat memuat user yang sudah opt-out | Dispatcher memeriksa status user, verifikasi nomor, dan consent ulang tepat sebelum kirim lalu menandai `SKIPPED`. |
 | Rekening refund tersimpan plaintext di MySQL | Kebocoran backup/database mengekspos nomor rekening/e-wallet | Batasi akses DB dan backup, gunakan encryption-at-rest volume/database, audit akses; pertimbangkan field-level encryption bila threat model meningkat. |
 | Validasi upload tanpa malware scanner/decode penuh | Magic bytes, MIME, dan ukuran menahan spoofing dasar tetapi bukan file berbahaya yang kompleks | Batasi body sekitar 6 MB di proxy, jangan eksekusi file, sajikan private/no-store; tambahkan image re-encode atau scanner jika menerima sumber berisiko tinggi. |
 | Refund legacy tanpa `returnRequestId` | Script tidak dapat menentukan owner folder secara aman; bukti lama dapat tetap public | Review warning dry-run, perbaiki relasi secara manual, jalankan ulang, lalu verifikasi tidak ada path `/uploads/refunds/*` aktif. |

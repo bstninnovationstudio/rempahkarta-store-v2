@@ -61,7 +61,10 @@ export default async function UserSettingsPage({
   ]);
 
   const completion = {
-    contact: hasText(customer.name, 2) && hasText(customer.email, 3) && hasText(customer.phone, 8),
+    contact: hasText(customer.name, 2)
+      && hasText(customer.email, 3)
+      && hasText(customer.phone, 8)
+      && customer.phoneVerified,
     address: addresses.length > 0,
     payment: isRefundSettingComplete(setting),
   };
@@ -96,6 +99,9 @@ export default async function UserSettingsPage({
             phone: customer.phone || "",
           }}
           isComplete={completion.contact}
+          phoneVerified={customer.phoneVerified}
+          initialShipmentNotifications={customer.whatsappShipmentNotifications}
+          initialPromotionNotifications={customer.whatsappPromotionNotifications}
           turnstileSiteKey={turnstileSiteKey()}
         />
 
@@ -129,6 +135,8 @@ export default async function UserSettingsPage({
           turnstileSiteKey={turnstileSiteKey()}
           embedded
           isComplete={completion.payment}
+          contactComplete={completion.contact}
+          verifiedPhone={customer.phoneVerified ? customer.phone : null}
         />
       </div>
 

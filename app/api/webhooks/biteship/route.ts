@@ -7,6 +7,10 @@ import { fulfillmentFromBiteshipStatus, handedOverBiteshipStatuses } from "@/lib
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { syncOrderRevenue } from "@/lib/finance";
 import { isPrismaUniqueConstraintError } from "@/lib/prisma-errors";
+import {
+  enqueueShipmentTrackingNotification,
+  scheduleWhatsappDispatch,
+} from "@/lib/whatsapp-notifications";
 
 type BiteshipWebhook = {
   event: "order.status" | "order.price" | "order.waybill_id" | string;
@@ -147,6 +151,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   }
 
+  let whatsappMessageId: string | null = null;
   await prisma.$transaction(async tx=>{
     {
       const normalized=normalizeBiteshipStatus(payload.status);
@@ -167,7 +172,7 @@ export async function POST(request: Request) {
       if((payload.event==="order.price"||actual!=null)&&actual!=null){update.actualPrice=BigInt(actual);update.priceAdjustment=BigInt(actual)-shipment.quotedPrice}
       if(payload.event==="order.waybill_id"&&waybill){update.waybillId=waybill;update.waybillUpdatedAt=new Date()}
       await tx.shipment.update({where:{id:shipment.id},data:update});
-      await tx.shipmentTrackingEvent.create({data:{shipmentId:shipment.id,providerStatus:payload.event==="order.status"?normalized:payload.event,note:payload.note||undefined,occurredAt,payloadHash,payload}});
+      const trackingEvent = await tx.shipmentTrackingEvent.create({data:{shipmentId:shipment.id,providerStatus:payload.event==="order.status"?normalized:payload.event,note:payload.note||undefined,occurredAt,payloadHash,payload}});
 
       if(payload.event==="order.status"&&payload.status&&statusAccepted){
         const fulfillment=fulfillmentFromBiteshipStatus(normalized);
@@ -199,10 +204,12 @@ export async function POST(request: Request) {
         }
       }
       await tx.auditLog.create({data:{actorType:"system",action:statusAccepted?`biteship.${payload.event}`:"biteship.signal_ignored",entityType:"shipment",entityId:shipment.id,before:{status:shipment.status,waybillId:shipment.waybillId,actualPrice:shipment.actualPrice?.toString()},after:{status:appliedStatus,providerStatus:normalized,waybillId:waybill,actualPrice:actual}}});
+      whatsappMessageId = (await enqueueShipmentTrackingNotification(tx, trackingEvent.id))?.id || null;
     }
     await syncOrderRevenue(tx, shipment.orderId);
     await tx.webhookInbox.update({where:{source_deliveryKey:{source:"biteship",deliveryKey}},data:{status:"processed",processedAt:new Date(),error:null}});
   });
   invalidateCatalogCache();
+  scheduleWhatsappDispatch(whatsappMessageId);
   return NextResponse.json({ success: true });
 }

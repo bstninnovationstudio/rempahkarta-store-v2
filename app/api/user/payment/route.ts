@@ -5,29 +5,20 @@ import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { getProfileCompleteness } from "@/lib/user-profile";
+import {
+  refundSettingBindingHash,
+  refundSettingData,
+  refundSettingSchema,
+} from "@/lib/refund-setting";
+import { consumeWhatsappOtp } from "@/lib/whatsapp-otp";
+import { formatWhatsappPhone } from "@/lib/gowa";
+import { Prisma } from "@prisma/client";
 
-const refundSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("bank"),
-    bankName: z.string().trim().min(2).max(100),
-    bankOwnerName: z.string().trim().min(2).max(160),
-    bankNumber: z.string().trim().min(5).max(80),
-    turnstileToken: z.string().min(1).max(2048),
-    ewalletName: z.null().optional(),
-    ewalletOwnerName: z.null().optional(),
-    ewalletNumber: z.null().optional(),
-  }),
-  z.object({
-    type: z.literal("ewallet"),
-    ewalletName: z.string().trim().min(2).max(100),
-    ewalletOwnerName: z.string().trim().min(2).max(160),
-    ewalletNumber: z.string().trim().min(5).max(80),
-    turnstileToken: z.string().min(1).max(2048),
-    bankName: z.null().optional(),
-    bankOwnerName: z.null().optional(),
-    bankNumber: z.null().optional(),
-  }),
-]);
+const refundSchema = z.intersection(refundSettingSchema, z.object({
+  otpChallengeId: z.string().uuid(),
+  otpCode: z.string().regex(/^\d{6}$/),
+  turnstileToken: z.string().min(1).max(2048),
+}));
 
 export async function GET() {
   const customer = await customerFromRequest();
@@ -64,22 +55,64 @@ export async function POST(request: Request) {
     const verification = await verifyTurnstile(request, parsed.data.turnstileToken, "user_payment");
     if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
 
-    const { type, bankName, bankOwnerName, bankNumber, ewalletName, ewalletOwnerName, ewalletNumber } = parsed.data;
-
-    const setting = await prisma.$transaction(async tx => {
+    const bindingHash = await refundSettingBindingHash(parsed.data);
+    const data = refundSettingData(parsed.data);
+    const result = await prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM \`User\` WHERE id = ${customer.id} FOR UPDATE`);
+      const current = await tx.user.findUniqueOrThrow({ where: { id: customer.id } });
+      if (
+        current.name.trim().length < 2
+        || current.email.trim().length < 3
+        || !current.phone
+        || !current.phoneVerified
+      ) {
+        return {
+          error: {
+            code: "CONTACT_NOT_VERIFIED",
+            message: "Lengkapi dan verifikasi kontak utama sebelum mengatur rekening refund.",
+            status: 409,
+          },
+        };
+      }
+      const phone = formatWhatsappPhone(current.phone);
+      const consumed = await consumeWhatsappOtp(tx, {
+        challengeId: parsed.data.otpChallengeId,
+        userId: customer.id,
+        purpose: "REFUND_SETTING_VERIFICATION",
+        phone,
+        bindingHash,
+        code: parsed.data.otpCode,
+      });
+      if (!consumed.ok) {
+        return { error: { code: consumed.code, message: consumed.message, status: consumed.status } };
+      }
       const saved = await tx.userRefundSetting.upsert({
         where: { userId: customer.id },
-        update: { type, bankName: bankName || null, bankOwnerName: bankOwnerName || null, bankNumber: bankNumber || null, ewalletName: ewalletName || null, ewalletOwnerName: ewalletOwnerName || null, ewalletNumber: ewalletNumber || null },
-        create: { userId: customer.id, type, bankName: bankName || null, bankOwnerName: bankOwnerName || null, bankNumber: bankNumber || null, ewalletName: ewalletName || null, ewalletOwnerName: ewalletOwnerName || null, ewalletNumber: ewalletNumber || null },
+        update: data,
+        create: { userId: customer.id, ...data },
       });
       await tx.auditLog.create({
-        data: { actorType: "customer", actorId: customer.id, action: "user.refund_account_updated", entityType: "user", entityId: customer.id, after: { type } },
+        data: {
+          actorType: "customer",
+          actorId: customer.id,
+          action: "user.refund_account_updated",
+          entityType: "user",
+          entityId: customer.id,
+          after: { type: data.type, otpVerified: true },
+        },
       });
-      return saved;
-    });
+      return { setting: saved };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    if (result.error) {
+      return NextResponse.json(
+        { error: result.error.message, code: result.error.code },
+        { status: result.error.status },
+      );
+    }
 
     const completion = await getProfileCompleteness(customer.id);
-    return NextResponse.json({ success: true, setting, completion });
+    return NextResponse.json({ success: true, setting: result.setting, completion });
   } catch {
     return NextResponse.json({ error: "Gagal menyimpan pengaturan refund" }, { status: 500 });
   }

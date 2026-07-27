@@ -7,7 +7,7 @@ const allowedTypes = new Map([
   ["image/webp", "webp"],
 ]);
 
-type MediaScope = "products" | "returns" | "refunds";
+type MediaScope = "products" | "returns" | "refunds" | "promotions";
 type PrivateMediaScope = Exclude<MediaScope, "products">;
 
 const safeSegment = /^[a-zA-Z0-9_-]{1,180}$/;

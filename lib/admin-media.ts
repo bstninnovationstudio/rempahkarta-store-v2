@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 const UPLOADS_DIR = path.resolve(process.cwd(), "public", "uploads");
 const PRIVATE_DIR = path.resolve(process.cwd(), "storage", "private");
 
-export type MediaCategory = "products" | "returns" | "refunds" | "other";
+export type MediaCategory = "products" | "returns" | "refunds" | "promotions" | "other";
 
 export type MediaItem = {
   id: string; // safe relative path key
@@ -76,7 +76,7 @@ export async function scanAllMediaItems(): Promise<{
   const allFiles = [...uploadFiles, ...privateFiles];
 
   // Fetch DB references for usage check
-  const [productImages, productVariants, returnRequests, refunds] = await Promise.all([
+  const [productImages, productVariants, returnRequests, refunds, promotions] = await Promise.all([
     prisma.productImage.findMany({
       select: { id: true, objectKey: true, product: { select: { name: true } } },
     }),
@@ -90,6 +90,10 @@ export async function scanAllMediaItems(): Promise<{
     prisma.refund.findMany({
       where: { proofObjectKey: { not: null } },
       select: { id: true, proofObjectKey: true, order: { select: { publicNumber: true } } },
+    }),
+    prisma.whatsappPromotionCampaign.findMany({
+      where: { mediaFileName: { not: null } },
+      select: { id: true, mediaFileName: true },
     }),
   ]);
 
@@ -133,6 +137,10 @@ export async function scanAllMediaItems(): Promise<{
       category = "refunds";
       categoryLabel = "Bukti Refund";
       previewUrl = `/api/admin/media/preview?path=${encodeURIComponent(relFromCwd)}`;
+    } else if (relFromCwd.startsWith("storage/private/promotions")) {
+      category = "promotions";
+      categoryLabel = "Pesan Promosi";
+      previewUrl = `/api/admin/media/preview?path=${encodeURIComponent(relFromCwd)}`;
     } else if (relFromCwd.startsWith("storage/private/")) {
       category = "other";
       categoryLabel = "Storage Privat";
@@ -170,6 +178,11 @@ export async function scanAllMediaItems(): Promise<{
     for (const ref of refunds) {
       if (ref.proofObjectKey && (ref.proofObjectKey === previewUrl || ref.proofObjectKey.endsWith(fileName))) {
         usedBySet.add(`Bukti Refund Pesanan: ${ref.order?.publicNumber || ref.id}`);
+      }
+    }
+    for (const campaign of promotions) {
+      if (campaign.mediaFileName === fileName) {
+        usedBySet.add(`Pesan Promosi: ${campaign.id}`);
       }
     }
 
@@ -221,7 +234,7 @@ export async function deleteMediaItem(
   const fileName = path.basename(fullPath);
 
   // Check usage first
-  const [productImages, productVariants, returnRequests, refunds] = await Promise.all([
+  const [productImages, productVariants, returnRequests, refunds, promotions] = await Promise.all([
     prisma.productImage.findMany({
       where: { objectKey: { contains: fileName } },
       select: { id: true, product: { select: { name: true } } },
@@ -236,6 +249,10 @@ export async function deleteMediaItem(
     prisma.refund.findMany({
       where: { proofObjectKey: { contains: fileName } },
       select: { id: true, order: { select: { publicNumber: true } } },
+    }),
+    prisma.whatsappPromotionCampaign.findMany({
+      where: { mediaFileName: { contains: fileName } },
+      select: { id: true },
     }),
   ]);
 
@@ -257,6 +274,9 @@ export async function deleteMediaItem(
   }
   for (const ref of refunds) {
     usedBySet.add(`Bukti Refund Pesanan: ${ref.order?.publicNumber || ref.id}`);
+  }
+  for (const campaign of promotions) {
+    usedBySet.add(`Pesan Promosi: ${campaign.id}`);
   }
 
   const usedBy = Array.from(usedBySet);
@@ -286,6 +306,10 @@ export async function deleteMediaItem(
       await tx.refund.updateMany({
         where: { proofObjectKey: { contains: fileName } },
         data: { proofObjectKey: null },
+      });
+      await tx.whatsappPromotionCampaign.updateMany({
+        where: { mediaFileName: { contains: fileName } },
+        data: { mediaFileName: null, mediaContentType: null },
       });
       // 4. Update ReturnRequest evidence
       for (const ret of returnRequests) {

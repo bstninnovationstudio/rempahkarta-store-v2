@@ -31,14 +31,18 @@ Dokumentasi aktif:
 - Google Identity dipakai untuk login pelanggan; aplikasi menerbitkan JWT session pelanggan sendiri setelah ID token Google diverifikasi.
 - Admin memakai kredensial server dan JWT admin terpisah.
 - BSTN menyediakan Dynamic QRIS; Biteship menyediakan area, tarif, booking, tracking, dan pembatalan pengiriman.
+- GOWA menyediakan pengiriman OTP, notifikasi perjalanan paket berbasis consent, serta broadcast promosi teks/gambar dari `/admin/promotions`.
 - Panel inventori memisahkan stok fisik dan reservasi. Penyesuaian stok dicatat sebagai mutasi manual dan tidak boleh menurunkan stok fisik di bawah unit yang sedang direservasi.
 - Halaman pengaturan pengiriman di `/admin/shipments` mengelola kurir ekspedisi aktif (`ENABLED_COURIERS`: JNE, AnterAja, Pos Indonesia dengan *instant toggle*) dan informasi gudang utama (`WAREHOUSE_*` dengan pencarian lokasi Biteship real-time). Perubahan tersimpan langsung ke file `.env`, memori runtime, dan database tanpa perlu menghentikan (*restart*) server.
 - Halaman galeri media di `/admin/gallery` memungkinkan pengelolaan file gambar di server (kategori produk, retur, refund), identifikasi otomatis media terpakai vs media sampah (tidak terpakai), serta pembersihan sampah dengan konfirmasi ganda.
 - Halaman detail pelanggan di `/admin/users/[id]` menggunakan layout 1 kolom bertumpuk rapi dengan posisi riwayat pesanan diletakkan di paling bawah dan ID pelanggan yang tercantum pada tabel profil.
+- Halaman pengaturan operasional di `/admin/settings` mengelola jadwal libur toko (`HOLIDAY`) dan pemeliharaan sistem (`MAINTENANCE`), lengkap dengan fitur peringatan dini 30 menit otomatis serta banner pengumuman running text storefront (`StoreAnnouncementBar`) yang berjalan *seamless* 100% tanpa lompatan piksel.
+- Halaman `/admin/promotions` membuat campaign WhatsApp untuk user yang opt-in, mengirim batch resumable tanpa worker terpisah, dan mencatat hasil terkirim/gagal/ambigu/dilewati per penerima.
 - Cloudflare Turnstile divalidasi server-side pada aksi berisiko.
 - Resi admin dicetak sebagai label thermal 100 × 150 mm. CSS cetak memakai ukuran halaman tersebut dan membiarkan konten panjang mengalir ke label berikutnya, sehingga tidak dipotong oleh tinggi preview.
+
 - Rate limiter berjalan di memori proses; katalog memakai Next.js server Data Cache. Tidak ada Redis, queue, atau worker, sehingga tidak ada shared cache/limiter eksternal yang dikonfigurasi aplikasi.
-- Media produk publik disimpan di `public/uploads/products`; bukti retur/refund disimpan privat di `storage/private` dan hanya disajikan lewat API owner/admin dengan `private, no-store`. Keduanya harus persisten dan dibackup bersama MySQL.
+- Media produk publik disimpan di `public/uploads/products`; bukti retur/refund dan media promosi disimpan privat di `storage/private` dan hanya disajikan lewat API owner/admin dengan `private, no-store`. Keduanya harus persisten dan dibackup bersama MySQL.
 
 ## Persyaratan
 
@@ -52,10 +56,11 @@ Dokumentasi aktif:
 ```bash
 npm ci
 cp .env.example .env
-# isi DATABASE_URL, secret auth, Google, Turnstile, BSTN, Biteship, dan gudang
+# isi DATABASE_URL, secret auth, Google, Turnstile, BSTN, Biteship, GOWA, dan gudang
 # gunakan output berbeda
 openssl rand -base64 48 # salin ke AUTH_SECRET
 openssl rand -base64 48 # salin ke CUSTOMER_JWT_SECRET
+openssl rand -base64 48 # salin ke WHATSAPP_OTP_SECRET
 read -s ADMIN_PASSWORD
 printf '%s' "$ADMIN_PASSWORD" | npm run auth:hash-password
 unset ADMIN_PASSWORD
@@ -129,6 +134,9 @@ Panel admin tersedia di `/admin-login`.
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Widget client dan Siteverify server. |
 | `BSTN_BASE_URL`, `BSTN_PROJECT_API_KEY_DEV`, `BSTN_PROJECT_API_KEY_LIVE`, `BSTN_RETURN_SIGNATURE_SECRET` | Dynamic QRIS, verifikasi webhook, dan rekonsiliasi pembayaran (dual key untuk DEV & LIVE). |
 | `BITESHIP_BASE_URL`, `BITESHIP_API_KEY_DEV`, `BITESHIP_API_KEY_LIVE`, `BITESHIP_WEBHOOK_SHARED_SECRET` | Area, tarif, shipment, tracking, pembatalan, dan autentikasi webhook (dual key untuk DEV & LIVE). |
+| `GOWA_BASE_URL_DEV`, `GOWA_BASE_URL_LIVE` | Endpoint GOWA aktif berdasarkan `APP_MODE`: development memakai koneksi VPS dan production memakai `http://localhost:3000`. |
+| `GOWA_USER`, `GOWA_PASS`, `GOWA_DEVICE_ID` | Basic Auth GOWA dan device ID opsional untuk instalasi multi-device. Hanya dibaca server. |
+| `WHATSAPP_OTP_SECRET` | Secret HMAC OTP minimal 32 karakter; buat terpisah. Bila kosong fallback ke customer/auth secret. |
 | `ENABLED_COURIERS` | Kode kurir yang boleh ditawarkan, dipisahkan koma. |
 | `WAREHOUSE_*` | Origin/pickup dan Area ID gudang. |
 | `RATE_LIMIT_TRUSTED_IP_HEADER` | Header IP yang sudah dihapus/ditulis ulang oleh reverse proxy tepercaya; hanya `cf-connecting-ip`, `x-real-ip`, atau `x-forwarded-for`. |
@@ -146,13 +154,13 @@ Versi Next, Prisma/client, dan eslint-config-next dikunci ke patch yang diaudit;
 2. Aplikasi membuat JWT pelanggan selama 7 hari di cookie HttpOnly, Secure pada production, SameSite Lax. JWT memiliki issuer, audience, subject, `jti`, `tokenUse`, dan `sessionId`.
 3. `currentSessionId` pada user menjadi device/session lock. Login baru mengganti session aktif sebelumnya.
 4. Pelanggan yang belum lengkap diarahkan ke `/user/settings?onboarding=1`.
-5. Akun dianggap lengkap bila memiliki nama, email, nomor telepon, minimal satu alamat, serta satu rekening refund bank atau e-wallet yang valid.
+5. Akun dianggap lengkap bila memiliki nama, email, nomor WhatsApp terverifikasi, minimal satu alamat, serta satu rekening refund bank atau e-wallet yang valid.
 6. Halaman checkout dan `POST /api/checkout/orders` sama-sama menolak pembuatan pesanan bila profil belum lengkap.
 7. Detail, pembayaran, pembatalan, media, dan retur pesanan hanya dapat diakses setelah login dan pemeriksaan ownership. Pesanan historis tanpa `userId` hanya diklaim oleh akun terverifikasi dengan email yang sama; nomor order saja tidak memberi akses.
 
 Semua mutasi API non-webhook (`POST`/`PUT`/`PATCH`/`DELETE`) juga harus memiliki header `Origin` yang sama persis dengan origin `APP_URL`. Production fail-closed bila origin hilang/tidak cocok atau `APP_URL` tidak valid. Webhook provider dikecualikan karena memakai signature/secret sendiri.
 
-Halaman `/user/settings` menyatukan kontak, alamat, dan rekening refund. Route lama `/user/addresses` dan `/user/payment` tetap ada sebagai redirect kompatibilitas.
+Halaman `/user/settings` menyatukan kontak, OTP WhatsApp, dua consent notifikasi yang independen, alamat, dan rekening refund. Nomor baru wajib OTP 5 menit; rekening refund hanya terbuka setelah kontak lengkap dan setiap create/update rekening memerlukan OTP baru yang terikat ke payload. Consent perjalanan/promosi tidak memengaruhi pengiriman atau validasi OTP. Route lama `/user/addresses` dan `/user/payment` tetap ada sebagai redirect kompatibilitas.
 
 ## Query, pagination, statistik, dan cache
 
@@ -179,6 +187,10 @@ Semua `/api/*` dibatasi 100 request/menit per identitas IP. Webhook provider mem
 | Cari lokasi / cek ongkir | masing-masing 25 / menit |
 | Sinkronisasi pembayaran user/admin | masing-masing 15 / menit |
 | Simpan profil, alamat, rekening refund | masing-masing 20 / menit |
+| Request OTP | 6/user dan 10/IP / 15 menit; maksimal 3 sesi baru/jam di DB |
+| Ubah consent WhatsApp | 20 / menit |
+| Buat campaign promosi | 3 / jam |
+| Dispatch promosi | 120 batch / 15 menit; 3 penerima/batch |
 | Tulis cart | 30 / menit |
 | Pembatalan pesanan / upload bukti | masing-masing 10 / menit |
 | Pengajuan retur | 5 / menit |
@@ -201,6 +213,9 @@ Siteverify server wajib untuk aksi berikut:
 - simpan kontak: `user_profile`;
 - tambah/edit/hapus alamat: `user_address`;
 - simpan rekening refund: `user_payment`;
+- kirim/resend OTP: `user_otp_send`;
+- ubah consent WhatsApp: `user_notifications`;
+- buat campaign promosi admin: `admin_promotion_send`;
 - sinkronisasi pembayaran pelanggan: `payment_sync`;
 - sinkronisasi pembayaran admin: `admin_payment_sync`.
 

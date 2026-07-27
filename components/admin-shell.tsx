@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Megaphone,
   PackageSearch,
   RotateCcw,
   Settings,
@@ -42,6 +43,7 @@ const navigation = [
       ["/admin/shipments", "Pengiriman", Truck],
       ["/admin/inventory", "Inventori", Warehouse],
       ["/admin/users", "Pelanggan", Users],
+      ["/admin/promotions", "Pesan Promosi", Megaphone],
     ],
   },
   {
@@ -50,7 +52,6 @@ const navigation = [
       ["/admin/categories", "Kategori", FolderTree],
       ["/admin/products", "Produk", ShoppingBag],
       ["/admin/vouchers", "Voucher", Ticket],
-      ["/admin/users", "Pelanggan", Users],
       ["/admin/gallery", "Galeri", Images],
     ],
   },

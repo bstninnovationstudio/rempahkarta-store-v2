@@ -13,6 +13,10 @@ import type { FulfillmentState } from "@prisma/client";
 import { isDevToolsEnabled } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { syncOrderRevenue } from "@/lib/finance";
+import {
+  enqueueShipmentTrackingNotification,
+  scheduleWhatsappDispatch,
+} from "@/lib/whatsapp-notifications";
 
 const schema = z.object({
   type: z.enum(["fulfillment", "biteship", "issue"]),
@@ -51,6 +55,7 @@ export async function POST(
   }
 
   try {
+    let whatsappMessageId: string | null = null;
     await prisma.$transaction(async (tx) => {
       if (type === "fulfillment") {
         const targetState = status as FulfillmentState;
@@ -143,7 +148,7 @@ export async function POST(
         const payload = { mock: true, status: status, event: "order.status" };
         const payloadHash = await sha256(JSON.stringify(payload));
         
-        await tx.shipmentTrackingEvent.create({
+        const trackingEvent = await tx.shipmentTrackingEvent.create({
           data: {
             shipmentId: activeShipment.id,
             providerStatus: normalized,
@@ -210,6 +215,7 @@ export async function POST(
             after: { status: normalized, ...orderUpdate },
           },
         });
+        whatsappMessageId = (await enqueueShipmentTrackingNotification(tx, trackingEvent.id))?.id || null;
       } 
       
       else if (type === "issue") {
@@ -238,6 +244,7 @@ export async function POST(
     });
 
     invalidateCatalogCache();
+    scheduleWhatsappDispatch(whatsappMessageId);
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gagal mengupdate status secara manual";

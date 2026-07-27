@@ -140,6 +140,25 @@ enum ScheduleStatus {
   CANCELLED
 }
 
+enum WhatsappOtpPurpose {
+  PHONE_VERIFICATION
+  REFUND_SETTING_VERIFICATION
+}
+
+enum WhatsappMessageStatus {
+  PENDING
+  SENT
+  FAILED
+  AMBIGUOUS
+  SKIPPED
+}
+
+enum WhatsappCampaignStatus {
+  QUEUED
+  SENDING
+  COMPLETED
+}
+
 model Product {
   id             String           @id @default(cuid())
   slug           String           @unique @db.VarChar(180)
@@ -306,6 +325,7 @@ model Order {
   refunds          Refund[]
   cancellations    CancellationRequest[]
   revenueLedgers   RevenueLedger[]
+  whatsappMessages WhatsappMessage[]
 
   @@index([paymentState, createdAt])
   @@index([fulfillmentState, createdAt])
@@ -319,25 +339,25 @@ model Order {
 }
 
 model RevenueLedger {
-  id             String            @id @default(cuid())
-  orderId        String?
-  dedupeKey      String            @unique @db.VarChar(220)
-  type           RevenueLedgerType
-  availableDelta BigInt            @default(0)
-  heldDelta      BigInt            @default(0)
-  grossAmount    BigInt            @default(0)
-  productSubtotal BigInt           @default(0)
-  shippingFee    BigInt            @default(0)
-  serviceFee     BigInt            @default(0)
-  adminFee       BigInt            @default(0)
-  uniqueCode     BigInt            @default(0)
-  discountAmount BigInt            @default(0)
-  netAmount      BigInt            @default(0)
-  notes          String?           @db.VarChar(500)
-  actorId        String?           @db.VarChar(120)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  order          Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  id              String            @id @default(cuid())
+  orderId         String?
+  dedupeKey       String            @unique @db.VarChar(220)
+  type            RevenueLedgerType
+  availableDelta  BigInt            @default(0)
+  heldDelta       BigInt            @default(0)
+  grossAmount     BigInt            @default(0)
+  productSubtotal BigInt            @default(0)
+  shippingFee     BigInt            @default(0)
+  serviceFee      BigInt            @default(0)
+  adminFee        BigInt            @default(0)
+  uniqueCode      BigInt            @default(0)
+  discountAmount  BigInt            @default(0)
+  netAmount       BigInt            @default(0)
+  notes           String?           @db.VarChar(500)
+  actorId         String?           @db.VarChar(120)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  order           Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   @@index([type, createdAt])
   @@index([orderId, createdAt])
@@ -458,7 +478,7 @@ model Payment {
   amount            BigInt
   payableAmount     BigInt?
   feeAmount         BigInt?
-  uniqueCode       BigInt         @default(0)
+  uniqueCode        BigInt         @default(0)
   status            PaymentState   @default(not_created)
   paymentPageUrl    String?        @db.Text
   expiresAt         DateTime?
@@ -646,24 +666,107 @@ model AuditLog {
 }
 
 model User {
-  id               String             @id @default(cuid())
-  email            String             @unique @db.VarChar(200)
-  name             String             @db.VarChar(160)
-  phone            String?            @db.VarChar(40)
-  avatarUrl        String?            @db.VarChar(500)
-  googleId         String             @unique @db.VarChar(120)
-  currentSessionId String?            @db.VarChar(120)
-  status           UserStatus         @default(ACTIVE)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  orders           Order[]
-  addresses        UserAddress[]
-  refundSetting    UserRefundSetting?
-  cartItems        CartItem[]
-  voucherUsages    VoucherUsage[]
+  id                             String                 @id @default(cuid())
+  email                          String                 @unique @db.VarChar(200)
+  name                           String                 @db.VarChar(160)
+  phone                          String?                @db.VarChar(40)
+  phoneVerified                  Boolean                @default(false)
+  phoneVerifiedAt                DateTime?
+  whatsappShipmentNotifications  Boolean                @default(false)
+  whatsappShipmentConsentedAt    DateTime?
+  whatsappPromotionNotifications Boolean                @default(false)
+  whatsappPromotionConsentedAt   DateTime?
+  avatarUrl                      String?                @db.VarChar(500)
+  googleId                       String                 @unique @db.VarChar(120)
+  currentSessionId               String?                @db.VarChar(120)
+  status                         UserStatus             @default(ACTIVE)
+  createdAt                      DateTime               @default(now())
+  updatedAt                      DateTime               @updatedAt
+  orders                         Order[]
+  addresses                      UserAddress[]
+  refundSetting                  UserRefundSetting?
+  cartItems                      CartItem[]
+  voucherUsages                  VoucherUsage[]
+  otpChallenges                  WhatsappOtpChallenge[]
+  whatsappMessages               WhatsappMessage[]
 
   @@index([createdAt])
   @@index([status])
+}
+
+model WhatsappOtpChallenge {
+  id            String             @id @default(cuid())
+  userId        String
+  purpose       WhatsappOtpPurpose
+  phone         String             @db.VarChar(40)
+  codeHash      String             @db.VarChar(64)
+  bindingHash   String             @db.VarChar(64)
+  resendCount   Int                @default(0)
+  attempts      Int                @default(0)
+  lastSentAt    DateTime           @default(now())
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  invalidatedAt DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+}
+
+model WhatsappMessage {
+  id                String                     @id @default(cuid())
+  userId            String?
+  orderId           String?
+  campaignId        String?
+  phone             String                     @db.VarChar(40)
+  kind              String                     @db.VarChar(50)
+  sourceType        String                     @db.VarChar(50)
+  sourceId          String                     @db.VarChar(191)
+  dedupeKey         String                     @unique @db.VarChar(220)
+  body              String                     @db.Text
+  status            WhatsappMessageStatus      @default(PENDING)
+  attempts          Int                        @default(0)
+  providerMessageId String?                    @db.VarChar(191)
+  providerCode      String?                    @db.VarChar(80)
+  httpStatus        Int?
+  error             String?                    @db.Text
+  lastAttemptAt     DateTime?
+  sentAt            DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  user              User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  order             Order?                     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  campaign          WhatsappPromotionCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([orderId, createdAt])
+  @@index([userId, createdAt])
+  @@index([campaignId, status])
+}
+
+model WhatsappPromotionCampaign {
+  id               String                 @id @default(cuid())
+  message          String                 @db.Text
+  mediaFileName    String?                @db.VarChar(191)
+  mediaContentType String?                @db.VarChar(80)
+  status           WhatsappCampaignStatus @default(QUEUED)
+  totalRecipients  Int                    @default(0)
+  sentCount        Int                    @default(0)
+  failedCount      Int                    @default(0)
+  ambiguousCount   Int                    @default(0)
+  skippedCount     Int                    @default(0)
+  createdBy        String                 @db.VarChar(200)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  messages         WhatsappMessage[]
+
+  @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 model UserAddress {

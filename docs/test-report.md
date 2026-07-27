@@ -1,6 +1,26 @@
 # Laporan verifikasi REMPAHKARTA v1.3.0
 
-Tanggal verifikasi: 22 Juli 2026 (Asia/Jakarta)
+Tanggal verifikasi terakhir: 27 Juli 2026 (Asia/Jakarta)
+
+## Verifikasi tambahan integrasi WhatsApp GOWA
+
+Audit dan implementasi WhatsApp pada 27 Juli 2026 telah diverifikasi dengan hasil:
+
+| Pemeriksaan | Hasil |
+| --- | --- |
+| `npx prisma validate` | Lulus setelah penambahan challenge OTP, consent, outbox pesan, dan campaign promosi. |
+| `npx prisma generate` | Lulus menggunakan Prisma 6.19.3. |
+| `npx tsc --noEmit` | Lulus tanpa error TypeScript. |
+| `npm run lint` | Lulus tanpa error; tersisa tiga warning lama berupa variabel tidak terpakai pada halaman invoice. |
+| `npm test` | Lulus, 44/44 test; tidak ada skip/todo/failure. |
+| `npm run build` | Lulus dengan Next.js 16.2.10; seluruh 58 unit page/static generation selesai. |
+| `git diff --check` | Lulus; tidak ditemukan whitespace error. |
+
+Test tambahan mencakup normalisasi nomor WhatsApp Indonesia/internasional, footer pesan otomatis yang tidak digandakan, multipart pengiriman gambar, parameter keamanan OTP, pemisahan konteks HMAC, binding OTP terhadap payload rekening refund, serta konsistensi copy event perjalanan paket.
+
+Production build memuat route baru untuk OTP, preferensi notifikasi, campaign promosi admin, dispatch campaign bertahap, dan media promosi privat. Build masih menampilkan satu warning tracing Turbopack pada konfigurasi preview media admin yang sudah ada; warning tidak menghentikan build.
+
+Migration `202607270002_add_gowa_whatsapp_verification` dan `202607270003_add_whatsapp_consents_and_promotions` telah divalidasi dari schema dan build, tetapi **belum diterapkan ke database `.env` aktif** pada sesi verifikasi ini. Penerapan harus dilakukan secara eksplisit melalui `npm run setup`/`npm run db:migrate` pada target yang sudah dipastikan dan dicadangkan; tidak ada seed atau `db push` yang dijalankan.
 
 ## Ringkasan hasil
 

@@ -47,7 +47,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 10 | `/orders/[number]/return` | Owner | Wizard `ReturnForm`, item, bukti, alasan | Memastikan order eligible dan milik user; upload/submission melalui API owner. |
 | 12 | `/user` | Customer | Metrik, completeness, tiga pesanan terbaru | `count`/`aggregate` terpisah dan `take: 3`; layout account terpadu. |
 | 13 | `/user/orders` | Customer | Riwayat pesanan, payment/fulfillment pill | Pagination server 10 row/page; order customer + fallback email legacy. |
-| 14 | `/user/settings` | Customer | Kontak, alamat, rekening refund, progress onboarding | Satu layar universal; membaca user, maksimal lima alamat, dan refund setting. |
+| 14 | `/user/settings` | Customer | Kontak + OTP, consent WhatsApp, alamat, rekening refund, progress onboarding | Satu layar universal; nomor/rekening memakai OTP dan consent perjalanan/promosi independen. |
 | 15 | `/user/addresses` | Customer | Route kompatibilitas | Redirect ke `/user/settings#addresses`, mempertahankan query aksi/redirect aman. |
 | 16 | `/user/payment` | Customer | Route kompatibilitas | Redirect ke `/user/settings#payment`. |
 
@@ -77,6 +77,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 37 | `/admin/vouchers/[id]` | Admin | `VoucherForm` edit/kelola | Lookup voucher unik + jumlah penggunaan. |
 | 38 | `/admin/finance/omzet` | Admin | Metric omzet, rincian produk/diskon/ongkir/admin toko/kode unik, penarikan, `RevenueLedger` | Saldo = produk setelah diskon + ongkir + admin toko + kode unik − refund; fee QRIS bukan omzet, seluruh metric dari aggregate ledger, transaksi 20/page. |
 | 39 | `/admin/finance/biteship` | Admin | Shadow balance, biaya request, CRUD manual, `BiteshipLedger` | Akun singleton + ledger terpaginasi 20/page; record otomatis immutable. |
+| 40 | `/admin/promotions` | Admin | `AdminPromotionManager`, composer teks/media, progress dan log campaign | Maksimum 20 campaign terbaru; penerima hanya user aktif dengan nomor terverifikasi dan consent promosi. |
 
 `app/admin/layout.tsx` adalah security/layout boundary untuk route 18–38: `requireAdmin()`, shell desktop, drawer tablet/mobile, dan navigasi admin. `app/user/layout.tsx` adalah boundary session/layout route akun, menampilkan progress completeness dan navigasi account.
 
@@ -107,9 +108,11 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 17 | `/api/user/dashboard/stats` | `GET` | Customer | Aggregate saja | — | Total order, payment pending, total belanja, dan completeness. |
 | 18 | `/api/user/orders` | `GET` | Customer | 10 default, 50 maksimum | — | List order milik user/email legacy dengan satu item ringkas. |
 | 19 | `/api/user/profile` | `GET`, `PUT` | Customer | — | `PUT`: 20/menit + Turnstile `user_profile` | Baca kontak atau simpan nama/telepon; email Google tetap read-only. |
+| — | `/api/user/otp` | `POST` | Customer aktif | OTP 5 menit, 1 resend, 5 percobaan | 6/user + 10/IP/15 menit; 3 sesi baru/jam; Turnstile `user_otp_send` | Buat/resend challenge nomor atau refund; kode tidak pernah dikembalikan/disimpan plaintext. |
+| — | `/api/user/notifications` | `PATCH` | Customer aktif | Dua consent boolean | 20/menit; Turnstile `user_notifications` | Ubah consent shipment/promosi beserta timestamp dan audit. |
 | 20 | `/api/user/addresses` | `GET`, `POST` | Customer | GET maksimum 5 alamat | `POST`: 20/menit + Turnstile `user_address` | List/tambah alamat; transaksi berserial menjaga maksimal lima alamat per customer. |
 | 21 | `/api/user/addresses/[id]` | `PUT`, `DELETE` | Customer pemilik alamat | — | 20/menit gabungan + Turnstile `user_address` | Ubah/hapus alamat setelah pemeriksaan ownership. |
-| 22 | `/api/user/payment` | `GET`, `POST` | Customer | Satu setting | `POST`: 20/menit + Turnstile `user_payment` | Baca/upsert rekening refund bank/e-wallet. |
+| 22 | `/api/user/payment` | `GET`, `POST` | Customer + kontak terverifikasi | Satu setting | `POST`: 20/menit + Turnstile `user_payment` + OTP terikat payload | Baca/upsert rekening refund bank/e-wallet secara atomik dengan konsumsi challenge. |
 | 23 | `/api/user/cart` | `GET`, `POST`, `PUT` | Customer | Maksimum 50 item | Write: 30/menit gabungan | Baca, tambah, atau sinkron penuh cart dengan validasi produk/varian. |
 
 ## API route: admin (32)
@@ -142,6 +145,9 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 46 | `/api/admin/orders/[number]/resolve` | `POST` | Admin | — | — | Selesaikan issue order melalui flow refund/return/finish yang ada. |
 | 47 | `/api/admin/returns/[id]/decision` | `POST` | Admin | — | 20/menit | Setujui/tolak kasus secara serialized dan sinkronkan state order/return. |
 | 48 | `/api/admin/returns/[id]/refund` | `POST` | Admin | Satu refund operation | 10/menit | Verifikasi bukti privat, lock order, cegah over-refund, catat referensi/audit/state. |
+| — | `/api/admin/promotions` | `POST` | Admin | Semua user eligible, dedupe nomor | 3/jam; Turnstile `admin_promotion_send` | Buat campaign teks/JPG/PNG dan snapshot outbox penerima consent. |
+| — | `/api/admin/promotions/[id]/dispatch` | `POST` | Admin | 3 penerima/batch | 120 batch/15 menit | Dispatch resumable, recheck consent, dan agregasi hasil campaign. |
+| — | `/api/admin/promotions/[id]/media` | `GET` | Admin | Satu gambar | `private, no-store` | Sajikan lampiran promosi dari private storage. |
 
 ## API route: keuangan admin (5)
 
@@ -177,12 +183,13 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | --- | --- | --- |
 | Katalog | `Product`, `ProductCategory`, `ProductVariant`, `ProductImage` | Master produk/kategori dengan posisi tersimpan, satu kategori opsional, unit jual, media. |
 | Inventory | `Warehouse`, `InventoryLevel`, `InventoryMovement` | Gudang, saldo/version per varian, ledger side effect idempoten. |
-| Customer | `User`, `UserAddress`, `UserRefundSetting`, `CartItem` | Identitas Google/session lock, alamat, rekening refund, cart server. |
+| Customer | `User`, `UserAddress`, `UserRefundSetting`, `CartItem`, `WhatsappOtpChallenge` | Identitas/session, nomor terverifikasi, consent, challenge OTP, alamat, rekening refund, cart. |
 | Order/voucher | `Order`, `OrderItem`, `OrderAddress`, `Voucher`, `VoucherUsage` | Header state/total/owner, snapshot item/alamat/voucher, aturan dan pemakaian promo. |
 | Payment | `Payment`, `PaymentEvent` | Payment lokal/provider dan histori delivery/status. |
 | Shipping | `ShippingQuote`, `Shipment`, `ShipmentTrackingEvent` | Snapshot tarif terpilih, booking, status/waybill/harga/tracking. |
 | Purnajual | `CancellationRequest`, `ReturnRequest`, `ReturnItem`, `Refund` | Permintaan batal, kasus retur/issue, item, refund manual. |
 | Operasional | `WebhookInbox`, `AuditLog` | Idempotency inbox provider dan jejak perubahan aktor/entity. |
+| WhatsApp | `WhatsappMessage`, `WhatsappPromotionCampaign` | Transactional outbox notifikasi dan log campaign promosi teks/media. |
 | Keuangan | `RevenueLedger`, `BiteshipFundAccount`, `BiteshipLedger` | Posisi omzet available/held, shadow balance atomik, dan histori dana Biteship. |
 
 Enum state kanonis mencakup state order/retur, voucher, `RevenueLedgerType`, dan `BiteshipLedgerType` pada `prisma/schema.prisma`.
@@ -207,6 +214,9 @@ Enum state kanonis mencakup state order/retur, voucher, `RevenueLedgerType`, dan
 | `lib/safe-redirect.ts` | Allowlist path internal dan penolakan protocol-relative/control character | Login, onboarding, redirect settings. |
 | `lib/rate-limit.ts`, `proxy.ts` | Bucket global/scope dan header 429 | Seluruh API. |
 | `lib/turnstile.ts` | Siteverify fail-closed dan site key dev | Login, checkout, profile/address/payment sync. |
+| `lib/gowa.ts`, `lib/whatsapp-otp.ts` | Kontrak GOWA teks/gambar, normalisasi, HMAC challenge dan konsumsi OTP | Onboarding, perubahan nomor, dan rekening refund. |
+| `lib/whatsapp-notifications.ts`, `lib/shipment-event.ts` | Outbox/dedupe/dispatch consent-aware dan copy timeline bersama | Payment, Biteship, sync, simulator, promosi. |
+| `lib/refund-setting.ts` | Schema, canonical payload, dan binding hash rekening | Request OTP refund dan save rekening. |
 | `lib/inventory.ts` | Commit/release/restock + movement dedupe | Checkout, payment, shipment, cancellation, webhook. |
 | `lib/repositories/order-repository.ts`, `lib/voucher.ts` | Reserve, evaluasi voucher, dan create snapshot order atomik | Checkout order, voucher check/public, cron. |
 | `lib/payment-sync.ts` | Rekonsiliasi payment provider, state order, inventory, dan audit secara konsisten | Sync customer/admin, webhook BSTN, dan test domain. |

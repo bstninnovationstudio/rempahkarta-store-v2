@@ -9,6 +9,10 @@ import { serializeBigInt } from "@/lib/serialize";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { getBiteshipApiKey } from "@/lib/env";
 import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds, syncOrderRevenue } from "@/lib/finance";
+import {
+  enqueueShipmentTrackingNotification,
+  scheduleWhatsappDispatch,
+} from "@/lib/whatsapp-notifications";
 
 export async function POST(_: Request, { params }: { params: Promise<{ number: string }> }) {
   const admin = await adminFromRequest(); if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,9 +38,10 @@ export async function POST(_: Request, { params }: { params: Promise<{ number: s
     const fulfillment = fulfillmentFromBiteshipStatus(status);
     const raw = JSON.parse(JSON.stringify(detail));
     const payloadHash = await sha256(JSON.stringify(raw));
+    let whatsappMessageId: string | null = null;
     const updated = await prisma.$transaction(async tx => {
       const result = await tx.shipment.update({ where: { id: shipment.id }, data: { status, waybillId: waybill, trackingId: tracking, actualPrice: actual, priceAdjustment: actual - shipment.quotedPrice, lastProviderSyncAt: new Date(), ...(waybill && waybill !== shipment.waybillId ? { waybillUpdatedAt: new Date() } : {}), raw } });
-      await tx.shipmentTrackingEvent.upsert({ where: { shipmentId_payloadHash: { shipmentId: shipment.id, payloadHash } }, update: {}, create: { shipmentId: shipment.id, providerStatus: status, note: "Sinkronisasi manual Biteship", occurredAt: new Date(), payloadHash, payload: raw } });
+      const trackingEvent = await tx.shipmentTrackingEvent.upsert({ where: { shipmentId_payloadHash: { shipmentId: shipment.id, payloadHash } }, update: {}, create: { shipmentId: shipment.id, providerStatus: status, note: "Sinkronisasi manual Biteship", occurredAt: new Date(), payloadHash, payload: raw } });
       if (fulfillment && fulfillment !== shipment.order.fulfillmentState) {
         if (fulfillment === "cancelled" && !handedOverBiteshipStatuses.has(normalizeBiteshipStatus(shipment.status))) {
           if (["packed", "shipment_booked", "handover_pending"].includes(shipment.order.fulfillmentState)) await restockCommittedOrder(tx, shipment.orderId, `biteship_sync_${status}`);
@@ -46,9 +51,11 @@ export async function POST(_: Request, { params }: { params: Promise<{ number: s
       }
       await syncOrderRevenue(tx, shipment.orderId, String(admin.email));
       await tx.auditLog.create({ data: { actorType: "admin", actorId: String(admin.email), action: "shipment.synced", entityType: "shipment", entityId: shipment.id, before: { status: shipment.status, waybillId: shipment.waybillId, actualPrice: shipment.actualPrice?.toString() }, after: { status, waybillId: waybill, actualPrice: actual.toString(), fulfillment } } });
+      whatsappMessageId = (await enqueueShipmentTrackingNotification(tx, trackingEvent.id))?.id || null;
       return result;
     });
     invalidateCatalogCache();
+    scheduleWhatsappDispatch(whatsappMessageId);
     return NextResponse.json({ success: true, shipment: serializeBigInt(updated), fulfillment });
   } catch (error) {
     if (error instanceof BiteshipBalanceError) return NextResponse.json({ error: "Saldo Biteship tidak mencukupi untuk sinkronisasi shipment" }, { status: 409 });

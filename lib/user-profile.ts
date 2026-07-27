@@ -21,6 +21,7 @@ export async function getProfileCompleteness(userId: string): Promise<ProfileCom
       name: true,
       email: true,
       phone: true,
+      phoneVerified: true,
       addresses: { select: { id: true }, take: 1 },
       refundSetting: {
         select: {
@@ -47,7 +48,7 @@ export async function getProfileCompleteness(userId: string): Promise<ProfileCom
   const missing: ProfileCompleteness["missing"] = [];
   if (!hasText(user.name, 2)) missing.push("name");
   if (!hasText(user.email, 3)) missing.push("email");
-  if (!hasText(user.phone, 8)) missing.push("phone");
+  if (!hasText(user.phone, 8) || !user.phoneVerified) missing.push("phone");
   if (user.addresses.length === 0) missing.push("address");
 
   const refund = user.refundSetting;
@@ -68,4 +69,3 @@ export async function getProfileCompleteness(userId: string): Promise<ProfileCom
     },
   };
 }
-

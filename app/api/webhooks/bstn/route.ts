@@ -9,6 +9,10 @@ import { Prisma } from "@prisma/client";
 import { authoritativePaidSourceStates } from "@/lib/payment-sync";
 import { getBstnApiKey } from "@/lib/env";
 import { syncOrderRevenue } from "@/lib/finance";
+import {
+  enqueuePaidNotification,
+  scheduleWhatsappDispatch,
+} from "@/lib/whatsapp-notifications";
 import { deriveUniqueCode, readBstnUniqueCode } from "@/lib/payment-amounts";
 
 type WebhookPayload = {
@@ -100,6 +104,7 @@ export async function POST(request: Request) {
   const providerStatus = detail.data.status;
   const status = localStatus(providerStatus);
 
+  let whatsappMessageId: string | null = null;
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Payment\` WHERE id = ${local.id} FOR UPDATE`);
     await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${local.orderId} FOR UPDATE`);
@@ -134,11 +139,12 @@ export async function POST(request: Request) {
     });
     let transitioned = false;
     if (status === "paid") {
+      const paidAt = detail.data.paid_at ? new Date(detail.data.paid_at) : new Date();
       const changed = await tx.payment.updateMany({
         where: { id: local.id, status: { in: [...authoritativePaidSourceStates] } },
         data: {
           status: "paid",
-          paidAt: detail.data.paid_at ? new Date(detail.data.paid_at) : new Date(),
+          paidAt,
           raw: detail.data,
         },
       });
@@ -147,6 +153,11 @@ export async function POST(request: Request) {
         const wasCancelled=order.fulfillmentState==="cancelled";
         await tx.order.update({where:{id:local.orderId},data:{paymentState:wasCancelled?"refund_pending":"paid",...(order.fulfillmentState==="awaiting_payment"?{fulfillmentState:"awaiting_processing"}: {}),...(wasCancelled?{issueOrder:true,issueReason:"paid_after_cancel"}:{})}});
         await tx.auditLog.create({data:{actorType:"system",action:wasCancelled?"payment.paid_after_cancel":"payment.paid",entityType:"order",entityId:local.orderId,after:{providerStatus,refundPending:wasCancelled}}});
+        whatsappMessageId = (await enqueuePaidNotification(tx, {
+          orderId: local.orderId,
+          paymentId: local.id,
+          occurredAt: paidAt,
+        }))?.id || null;
       }
     } else if (
       (failedStatuses as readonly string[]).includes(status)
@@ -187,5 +198,6 @@ export async function POST(request: Request) {
     });
   });
   invalidateCatalogCache();
+  scheduleWhatsappDispatch(whatsappMessageId);
   return NextResponse.json({ success: true });
 }

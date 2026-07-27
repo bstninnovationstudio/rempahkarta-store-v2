@@ -10,9 +10,9 @@ import { OrderTrackingButton } from "@/components/order-tracking-button";
 import { products } from "@/lib/demo-data";
 import { rupiah } from "@/lib/format";
 import type { OrderStatus } from "@/lib/types";
-import { getBiteshipStatusDetail } from "@/lib/shipping-state";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { HolidayNoticeBanner } from "@/components/holiday-notice-banner";
+import { formatCustomerShipmentEvent, getCustomerShipmentStatusDetail } from "@/lib/shipment-event";
 
 const demoEvents = [
   { at: "13 Jul\n14.32", title: "Paket dalam perjalanan ke kota tujuan", note: "JNE Jakarta Gateway", tone: "info" as const },
@@ -169,30 +169,6 @@ function humanizeMachineValue(value: string) {
 function meaningfulReason(value?: string | null) {
   const cleaned = value?.trim();
   return cleaned && !defaultSystemReasons.has(cleaned.toLowerCase()) ? cleaned : null;
-}
-
-function getCustomerShipmentStatusDetail(status?: string | null) {
-  const detail = getBiteshipStatusDetail(status);
-  if (detail.category !== "Lainnya") return detail;
-  const label = humanizeMachineValue(status || "");
-  return {
-    category: "Pembaruan",
-    label,
-    meaning: `Kurir memperbarui status pengiriman: ${label.toLowerCase()}.`,
-  };
-}
-
-function cleanShipmentNote(note: string | null, rawStatus: string, fallback: string) {
-  if (!note || note.trim() === rawStatus || note.trim() === `Status ${rawStatus}` || /^[\[{]/.test(note.trim())) return fallback;
-  return note
-    .replace(/Booking Biteship dikonfirmasi/gi, "Pesanan memasuki proses pengiriman")
-    .replace(/Sinkronisasi manual Biteship/gi, "Pembaruan status pengiriman")
-    .replace(/Biteship/gi, "kurir")
-    .replace(/courier_not_found/gi, "kurir tidak tersedia")
-    .replace(/return_in_transit/gi, "dalam perjalanan kembali")
-    .replace(/dropping_off/gi, "sedang diantar")
-    .replace(/picking_up/gi, "menuju lokasi penjemputan")
-    .replace(/on_hold/gi, "pengiriman ditahan");
 }
 
 function getTimelineTone(title: string): SemanticTone {
@@ -646,27 +622,18 @@ export default async function OrderPage({
         // 3. Add Biteship shipment tracking events (most recent first)
         if (shipment?.events.length) {
           list.push(...shipment.events.map((event) => {
-            const detail = getCustomerShipmentStatusDetail(event.providerStatus);
-            let note = cleanShipmentNote(event.note, event.providerStatus, detail.meaning || `${shipment.courierCompany.toUpperCase()} ${shipment.courierType}`);
-            
-            if (event.providerStatus === "order.price") {
-              const payloadObj = event.payload as Record<string, unknown> | null;
-              const newPrice = payloadObj?.price ?? payloadObj?.order_price;
-              if (newPrice != null) {
-                note = `Biaya pengiriman disesuaikan menjadi Rp ${Number(newPrice).toLocaleString("id-ID")}`;
-              }
-            } else if (event.providerStatus === "order.waybill_id") {
-              const payloadObj = event.payload as Record<string, unknown> | null;
-              const resi = payloadObj?.courier_waybill_id ?? payloadObj?.waybill_id ?? payloadObj?.courier_tracking_id;
-              if (resi) {
-                note = `Nomor resi pengiriman diterbitkan: ${resi}`;
-              }
-            }
+            const formatted = formatCustomerShipmentEvent({
+              providerStatus: event.providerStatus,
+              note: event.note,
+              payload: event.payload,
+              courierCompany: shipment.courierCompany,
+              courierType: shipment.courierType,
+            });
 
             return {
               time: event.occurredAt,
-              title: detail.label,
-              note
+              title: formatted.title,
+              note: formatted.note,
             };
           }));
         } else if (shipment) {

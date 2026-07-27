@@ -8,6 +8,7 @@ import { getBstnApiKey } from "@/lib/env";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { applyVerifiedPaymentStatus } from "@/lib/payment-sync";
+import { scheduleWhatsappDispatch } from "@/lib/whatsapp-notifications";
 
 const schema = z.object({ turnstileToken: z.string().min(1).max(2048) });
 
@@ -74,6 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
       return result;
     });
     if (outcome.transitioned) invalidateCatalogCache();
+    scheduleWhatsappDispatch(outcome.whatsappMessageId);
     return NextResponse.json({ success: true, status: detail.data.status });
   } catch {
     return NextResponse.json({ error: "Sinkronisasi pembayaran gagal" }, { status: 502 });

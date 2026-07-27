@@ -2,6 +2,7 @@ import { Prisma, type PaymentState } from "@prisma/client";
 import { releaseOrderReservation } from "@/lib/inventory";
 import { syncOrderRevenue } from "@/lib/finance";
 import { deriveUniqueCode, readBstnUniqueCode } from "@/lib/payment-amounts";
+import { enqueuePaidNotification } from "@/lib/whatsapp-notifications";
 
 const failedProviderStatuses = new Set(["expired", "canceled", "failed", "denied"]);
 export const authoritativePaidSourceStates = [
@@ -30,6 +31,7 @@ export async function applyVerifiedPaymentStatus(
     tx.order.findUniqueOrThrow({ where: { id: input.orderId }, select: { fulfillmentState: true, grandTotal: true } }),
   ]);
   let transitioned = false;
+  let whatsappMessageId: string | null = null;
   const raw = input.raw && typeof input.raw === "object" && !Array.isArray(input.raw)
     ? input.raw as Record<string, unknown>
     : {};
@@ -58,6 +60,7 @@ export async function applyVerifiedPaymentStatus(
   });
 
   if (input.providerStatus === "paid") {
+    const paidAt = input.paidAt ? new Date(input.paidAt) : new Date();
     const changed = await tx.payment.updateMany({
       where: {
         id: input.paymentId,
@@ -65,7 +68,7 @@ export async function applyVerifiedPaymentStatus(
       },
       data: {
         status: "paid",
-        paidAt: input.paidAt ? new Date(input.paidAt) : new Date(),
+        paidAt,
         raw: input.raw,
       },
     });
@@ -82,6 +85,11 @@ export async function applyVerifiedPaymentStatus(
           ...(wasCancelled ? { issueOrder: true, issueReason: "paid_after_cancel" } : {}),
         },
       });
+      whatsappMessageId = (await enqueuePaidNotification(tx, {
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        occurredAt: paidAt,
+      }))?.id || null;
     }
   } else if (failedProviderStatuses.has(input.providerStatus)) {
     const terminal = input.providerStatus as Extract<PaymentState, "expired" | "canceled" | "failed" | "denied">;
@@ -119,7 +127,12 @@ export async function applyVerifiedPaymentStatus(
 
   await syncOrderRevenue(tx, input.orderId);
 
-  return { transitioned, previousStatus: payment.status, providerStatus: input.providerStatus };
+  return {
+    transitioned,
+    previousStatus: payment.status,
+    providerStatus: input.providerStatus,
+    whatsappMessageId,
+  };
 }
 
 export async function checkAndExpireOrderTx(

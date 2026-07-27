@@ -29,6 +29,12 @@ const schema = z.object({
   ADMIN_PASSWORD_HASH: z.string().length(64).optional(),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().min(1).optional(),
   TURNSTILE_SECRET_KEY: z.string().min(1).optional(),
+  GOWA_BASE_URL_DEV: z.string().url().default("http://157.20.32.214:3000"),
+  GOWA_BASE_URL_LIVE: z.string().url().default("http://localhost:3000"),
+  GOWA_USER: z.string().min(1).optional(),
+  GOWA_PASS: z.string().min(1).optional(),
+  GOWA_DEVICE_ID: z.string().min(1).optional(),
+  WHATSAPP_OTP_SECRET: z.string().min(32).optional(),
 });
 
 export type AppEnv = z.infer<typeof schema>;
@@ -84,6 +90,13 @@ export function getBiteshipApiKey(): string | undefined {
   return isProduction()
     ? (process.env.BITESHIP_API_KEY_LIVE || process.env.BITESHIP_API_KEY)
     : (process.env.BITESHIP_API_KEY_DEV || process.env.BITESHIP_API_KEY);
+}
+
+/** GOWA base URL aktif berdasarkan APP_MODE. */
+export function getGowaBaseUrl(): string {
+  return isProduction()
+    ? (process.env.GOWA_BASE_URL_LIVE || "http://localhost:3000")
+    : (process.env.GOWA_BASE_URL_DEV || "http://157.20.32.214:3000");
 }
 
 export function isDevToolsEnabled(): boolean {
