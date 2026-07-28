@@ -27,7 +27,7 @@ export async function PATCH(
 
   if (!isDevToolsEnabled()) {
     return NextResponse.json(
-      { error: "Fitur edit log operasional hanya tersedia pada mode development (APP_MODE=development)." },
+      { error: "Fitur edit log operasional hanya tersedia saat APP_MODE=development dan ENABLE_DEVTOOLS=true." },
       { status: 403 }
     );
   }
@@ -134,7 +134,7 @@ export async function DELETE(
 
   if (!isDevToolsEnabled()) {
     return NextResponse.json(
-      { error: "Fitur hapus log operasional hanya tersedia pada mode development (APP_MODE=development)." },
+      { error: "Fitur hapus log operasional hanya tersedia saat APP_MODE=development dan ENABLE_DEVTOOLS=true." },
       { status: 403 }
     );
   }

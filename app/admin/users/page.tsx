@@ -20,7 +20,18 @@ export default async function UsersAdminPage({ searchParams }: { searchParams: P
         </div>
       </div>
 
-      <div className="users-summary-bar"><span className="users-summary-icon"><Users size={17} aria-hidden="true" /></span><div><strong>{pagination.total}</strong><span>pelanggan terdaftar</span></div><span className="users-summary-note">Data terbaru ditampilkan lebih dahulu</span></div>
+      <div className="users-summary-bar">
+        <span className="users-summary-icon">
+          <Users size={17} aria-hidden="true" />
+        </span>
+        <div className="users-summary-text">
+          <div className="users-summary-count">
+            <strong>{pagination.total}</strong>
+            <span>pelanggan terdaftar</span>
+          </div>
+          <span className="users-summary-note">Data terbaru ditampilkan lebih dahulu</span>
+        </div>
+      </div>
 
       <section className="table-card">
         <div className="admin-table-wrap">
@@ -38,8 +49,9 @@ export default async function UsersAdminPage({ searchParams }: { searchParams: P
             </thead>
             <tbody>
               {rows.map(row => (
-                <tr key={row.id}>
+                <tr key={row.id} className="admin-user-row">
                   <td data-label="Pelanggan">
+                    <Link href={`/admin/users/${row.id}`} className="admin-row-link-overlay" aria-label={`Lihat detail pelanggan ${row.name}`} />
                     <div className="customer-table-profile">
                       {row.avatarUrl ? (
                         <Image

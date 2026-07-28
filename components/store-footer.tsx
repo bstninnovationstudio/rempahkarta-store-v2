@@ -26,9 +26,9 @@ export function StoreFooter() {
         </nav>
         <nav aria-label="Navigasi bantuan">
           <h3>Bantuan</h3>
-          <Link href="/user/orders">Pesanan saya</Link>
-          <Link href="/pages/shipping">Pengiriman</Link>
-          <Link href="/pages/returns">Retur &amp; refund</Link>
+          <Link href="/login">Masuk akun</Link>
+          <Link href="/pages/terms">Syarat &amp; ketentuan</Link>
+          <Link href="/pages/privacy">Kebijakan privasi</Link>
         </nav>
         <div className="footer-contact">
           <h3>Terhubung</h3>

@@ -36,7 +36,8 @@ export default async function CheckoutPage({
   }
 
   const savedAddresses = await prisma.userAddress.findMany({
-    where: { userId: customer.id }
+    where: { userId: customer.id },
+    orderBy: [{ isDefault: "desc" }, { id: "asc" }],
   });
 
   return (

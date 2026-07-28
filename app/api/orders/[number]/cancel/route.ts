@@ -9,8 +9,12 @@ import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBstnApiKey } from "@/lib/env";
 import { invalidateCatalogCache } from "@/lib/catalog";
 import { syncOrderRevenue } from "@/lib/finance";
+import { verifyTurnstile } from "@/lib/turnstile";
 
-const schema = z.object({ reason: z.string().trim().min(3).max(500) });
+const schema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  turnstileToken: z.string().min(1).max(2048),
+});
 const handedOverStates = ["handed_over", "completed", "return_in_transit", "returned", "finished"] as const;
 const reservationStates = ["awaiting_payment", "awaiting_processing", "processing"] as const;
 const committedStates = ["packed", "shipment_booked", "handover_pending"] as const;
@@ -31,6 +35,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   if (!customer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userCheck = assertCustomerActive(customer);
   if (userCheck) return userCheck;
+  const verification = await verifyTurnstile(request, body.data.turnstileToken, "order_cancel");
+  if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
 
   const order = await prisma.order.findUnique({
     where: { publicNumber: number },

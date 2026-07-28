@@ -1,6 +1,6 @@
 # Audit keamanan, API, dan database REMPAHKARTA
 
-Tanggal audit source: 19 Juli 2026 (Asia/Jakarta)
+Tanggal audit source: 28 Juli 2026 (Asia/Jakarta)
 
 Dokumen ini mencatat kontrol yang terlihat pada source v1.3.0 dan keterbatasannya. Ini bukan laporan penetration test dan tidak mengklaim provider atau database production telah diuji. Inventaris route lengkap berada di `docs/system-map.md`.
 
@@ -26,10 +26,11 @@ Dokumen ini mencatat kontrol yang terlihat pada source v1.3.0 dan keterbatasanny
 ## Dependency posture
 
 - Aplikasi: v1.3.0.
-- Next.js/`eslint-config-next`: 16.2.10.
+- Next.js/`eslint-config-next`: 16.2.12.
 - Prisma dan `@prisma/client`: 6.19.3.
+- Sharp: 0.35.0 (override produksi).
 - PostCSS override: 8.5.19.
-- `npm audit --omit=dev`: 0 vulnerability pada 19 Juli 2026.
+- `npm audit --omit=dev`: 0 vulnerability pada 28 Juli 2026.
 
 Hasil ini adalah snapshot lockfile, bukan jaminan permanen. Jalankan audit ulang setelah setiap perubahan dependency dan catat command aktual di `docs/test-report.md`.
 
@@ -57,7 +58,7 @@ Field `accessTokenHash` masih ada untuk kompatibilitas data/schema lama, tetapi 
 
 ### Admin
 
-Cookie `amk_admin` berisi JWT 12 jam dengan audience `rempahkarta-admin`, `tokenUse=admin`, dan role `owner`. Layout admin dan setiap API admin melakukan pemeriksaan independen. Login dibatasi 5/15 menit dan memerlukan Turnstile action `admin_login`.
+Cookie `amk_admin` berisi JWT 12 jam dengan audience `rempahkarta-admin`, `tokenUse=admin`, dan role `owner`. Layout admin dan setiap API admin melakukan pemeriksaan independen. Login memakai limiter berlapis 20/client dan 5/account per 15 menit serta memerlukan Turnstile action `admin_login`.
 
 Password admin production diverifikasi terhadap scrypt bersalt dengan parameter `N=16384`, `r=8`, `p=1`, key 64 byte, dan salt acak 16 byte. Encoding memiliki version slot untuk upgrade parameter. Buat nilai dengan:
 
@@ -99,7 +100,7 @@ Cookie SameSite Lax tetap menjadi defense-in-depth, bukan satu-satunya kontrol C
 | --- | ---: | ---: |
 | Semua API non-webhook | 100 | 1 menit |
 | Webhook provider | 1.000 | 1 menit |
-| Login admin | 5 | 15 menit |
+| Login admin | 20/client + 5/account | 15 menit |
 | Login Google | 10 | 1 menit |
 | Buat order | 10 | 1 menit |
 | Cari lokasi | 25 | 1 menit |
@@ -124,8 +125,12 @@ Cookie SameSite Lax tetap menjadi defense-in-depth, bukan satu-satunya kontrol C
 | Keputusan pembatalan admin | 20 | 1 menit |
 | Keputusan retur admin | 20 | 1 menit |
 | Penyelesaian refund admin | 10 | 1 menit |
+| Polling status pembayaran | 60/customer | 1 menit |
+| Sinkron shipment admin | 15 | 1 menit |
+| Resolve issue order | 10 | 1 menit |
+| Cron internal | 10/job | 1 menit |
 
-Respons 429 mengandung code `RATE_LIMITED`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, dan `Retry-After`. Store dibatasi 10.000 bucket dan membersihkan bucket kedaluwarsa.
+Respons 429 mengandung code `RATE_LIMITED`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, dan `Retry-After`. Store dibatasi 10.000 bucket dan saat penuh mengeluarkan bucket dengan `lastSeen` tertua.
 
 Identitas memakai header yang ditetapkan `RATE_LIMIT_TRUSTED_IP_HEADER` hanya bila nilainya salah satu `cf-connecting-ip`, `x-real-ip`, atau `x-forwarded-for`; nilai IP harus maksimum 64 karakter dan hanya berisi bentuk IPv4/IPv6. Tanpa konfigurasi valid, aplikasi sengaja tidak memercayai forwarded header apa pun dan seluruh request bergabung dalam bucket aman `unidentified`. Deployment yang mengaktifkan header tepercaya harus menolak akses langsung serta menghapus/menulis ulang header tersebut agar client tidak dapat memalsukan identitas.
 
@@ -145,6 +150,9 @@ Identitas memakai header yang ditetapkan `RATE_LIMIT_TRUSTED_IP_HEADER` hanya bi
 | Buat campaign promosi admin | `admin_promotion_send` | multipart form |
 | Sinkron payment pelanggan | `payment_sync` | JSON body |
 | Sinkron payment admin | `admin_payment_sync` | JSON body |
+| Pembatalan order pelanggan | `order_cancel` | JSON body |
+| Upload bukti retur | `return_media` | multipart field/header |
+| Pengajuan retur | `return_request` | JSON body |
 
 Siteverify dijalankan server-side dengan timeout delapan detik, IP client bila tersedia, dan idempotency key baru. Secret/test key fallback hanya tersedia di non-production. Token kosong, terlalu panjang, gagal verifikasi, action yang tidak exact, atau—di production—hostname yang berbeda dari `APP_URL` ditolak. Official test secret/site key juga ditolak di production.
 
@@ -244,7 +252,7 @@ Dry-run wajib ditinjau. Apply menyalin dengan pemeriksaan hash bila destination 
 | Editor category replacement penuh | Daftar tidak dipaginasi; payload besar saat katalog besar | Tambahkan endpoint assign/unassign delta sebelum pagination. |
 | Header IP proxy | Header dapat dipalsukan jika server dapat diakses langsung | Batasi origin ke proxy tepercaya dan overwrite header forwarding. |
 | JWT admin tanpa server-side revocation | Logout hanya menghapus cookie; token curian valid sampai 12 jam | Jaga cookie/HTTPS, rotasi `AUTH_SECRET` saat insiden; pertimbangkan session version/revocation jika threat model naik. |
-| Tidak ada Content-Security-Policy | XSS yang lolos validasi memiliki dampak lebih tinggi | Tambahkan CSP nonce-compatible setelah inventaris script Google/Turnstile selesai. Header baseline lain sudah aktif. |
+| CSP masih memerlukan `unsafe-inline` untuk bootstrap Next/style saat ini | XSS inline yang lolos validasi tetap memiliki dampak | Host script/frame/connect sudah dibatasi ke self, Google, dan Turnstile; migrasikan ke nonce bila arsitektur rendering diubah. |
 | Order legacy via email | Akun Google terverifikasi dengan email yang sama dapat mengklaim order lama | Ini jalur migrasi terkontrol; backfill `userId` dan hapus fallback setelah seluruh order lama diklaim. |
 | Biteship ping/test tanpa secret | Endpoint dapat menerima probe non-operasional | Tidak ada side effect/database write; monitor abuse dan batasi origin/provider jika kontrak Biteship memungkinkan. |
 | Offset pagination | Page sangat dalam tetap mahal walau dibatasi | Pantau slow query; gunakan keyset/cursor pada tabel terbesar bila dibutuhkan. |
@@ -257,8 +265,8 @@ Dry-run wajib ditinjau. Apply menyalin dengan pemeriksaan hash bila destination 
 
 ## Checklist release keamanan
 
-- [ ] `APP_MODE=production` dan payment mock nonaktif.
-- [ ] Devtools dan fixture/bypass demo tidak pernah diaktifkan di production (`APP_MODE=development` hanya untuk lokal/disposable).
+- [ ] `APP_MODE=production`, `ENABLE_DEVTOOLS=false`, dan payment mock nonaktif.
+- [ ] Devtools dan fixture/bypass demo hanya diaktifkan pada lokal/disposable dengan dua flag eksplisit.
 - [ ] `AUTH_SECRET`/`CUSTOMER_JWT_SECRET` acak, berbeda, minimal 32 karakter.
 - [ ] `ADMIN_PASSWORD_SCRYPT` dibuat dengan generator, salt unik, dan tidak ada password plaintext/SHA-256 legacy di production.
 - [ ] `APP_URL` HTTPS dan origin tidak dapat diakses melewati proxy tepercaya.

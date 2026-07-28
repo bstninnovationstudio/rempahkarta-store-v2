@@ -13,10 +13,11 @@ import type { OrderStatus } from "@/lib/types";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { HolidayNoticeBanner } from "@/components/holiday-notice-banner";
 import { formatCustomerShipmentEvent, getCustomerShipmentStatusDetail } from "@/lib/shipment-event";
+import { turnstileSiteKey } from "@/lib/turnstile";
 
 const demoEvents = [
   { at: "13 Jul\n14.32", title: "Paket dalam perjalanan ke kota tujuan", note: "JNE Jakarta Gateway", tone: "info" as const },
-  { at: "13 Jul\n12.08", title: "Paket telah diambil kurir", note: "Gudang AMK, Jakarta Selatan", tone: "info" as const },
+  { at: "13 Jul\n12.08", title: "Paket telah diambil kurir", note: "Gudang Rempahkarta, Jakarta Selatan", tone: "info" as const },
   { at: "13 Jul\n10.17", title: "Pesanan selesai dikemas", note: "Menunggu pickup JNE Regular", tone: "info" as const },
   { at: "13 Jul\n09.44", title: "Pembayaran QRIS berhasil", note: "Pesanan diteruskan ke tim fulfillment", tone: "success" as const },
 ];
@@ -395,7 +396,7 @@ export default async function OrderPage({
     uniqueCode: 0,
     total: product.price + 19000,
     courier: "JNE Regular",
-    tracking: "AMK128732198",
+    tracking: "RPK128732198",
     hasResi: true,
     recipient: "Budi S••••••",
     address: "Jl. Senopati No. ••, Kebayoran Baru\nJakarta Selatan, 12110",
@@ -425,7 +426,6 @@ export default async function OrderPage({
     }
     const { prisma } = await import("@/lib/db");
     const { checkAndExpireOrder } = await import("@/lib/payment-sync");
-    await checkAndExpireOrder(number);
 
     const order = await prisma.order.findUnique({
       where: { publicNumber: number },
@@ -446,6 +446,12 @@ export default async function OrderPage({
       },
     });
     if (!order) notFound();
+    const isOwner = order.userId === customer.id
+      || (order.userId === null && order.guestEmail.toLowerCase() === customer.email.toLowerCase());
+    if (!isOwner) notFound();
+    if (await checkAndExpireOrder(order.id)) {
+      redirect(`/orders/${number}`);
+    }
     const variantIds = Array.from(new Set(order.items.map((i) => i.variantId).filter((id): id is string => Boolean(id))));
     const variantRecords = variantIds.length > 0
       ? await prisma.productVariant.findMany({
@@ -472,8 +478,6 @@ export default async function OrderPage({
       },
       orderBy: { createdAt: "asc" }
     });
-    const isOwner = order.userId === customer.id || (order.userId === null && order.guestEmail.toLowerCase() === customer.email.toLowerCase());
-    if (!isOwner) notFound();
     const address = order.addresses.find((entry) => entry.type === "shipping");
     const shipment = order.shipments[0];
     const deliveredEvent = shipment?.events.find(
@@ -1078,7 +1082,7 @@ export default async function OrderPage({
                     </Link>
                   )}
                   {view.canCancel && (
-                    <OrderCancelButton number={number} paymentState={view.paymentState} />
+                    <OrderCancelButton number={number} paymentState={view.paymentState} turnstileSiteKey={turnstileSiteKey()} />
                   )}
                 </div>
               </div>

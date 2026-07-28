@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server";
 import { checkAndExpireAllStaleOrders } from "@/lib/payment-sync";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { authorizeCronRequest } from "@/lib/security";
 
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret) {
-    const authHeader = request.headers.get("authorization");
-    const headerSecret = request.headers.get("x-cron-secret");
-    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
-
-    if (bearerToken !== cronSecret && headerSecret !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized cron request" }, { status: 401 });
-    }
+  const rate = checkRateLimit(request, { scope: "cron:expire-orders", limit: 10, windowMs: 60_000 });
+  if (!rate.allowed) return rateLimitResponse(rate);
+  if (!authorizeCronRequest(request)) {
+    return NextResponse.json({ error: "Unauthorized cron request" }, { status: 401 });
   }
 
   try {
@@ -27,3 +23,5 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = GET;

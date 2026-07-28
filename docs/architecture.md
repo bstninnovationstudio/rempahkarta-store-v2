@@ -44,9 +44,9 @@ Pesanan baru selalu menyimpan `userId`. Pesanan historis yang belum memiliki `us
 
 ### Admin
 
-Admin login memverifikasi email dan hash scrypt bersalt (`N=16384`, `r=8`, `p=1`) dengan perbandingan timing-safe, dilindungi Turnstile dan limit 5 request/15 menit. Production mewajibkan `ADMIN_PASSWORD_SCRYPT`; SHA-256 legacy hanya diterima di development. JWT HS256 admin memiliki issuer yang sama, audience `rempahkarta-admin`, subject email, `jti`, `tokenUse=admin`, role `owner`, dan masa hidup 12 jam dalam cookie `amk_admin`.
+Admin login memverifikasi email dan hash scrypt bersalt (`N=16384`, `r=8`, `p=1`) dengan perbandingan timing-safe, dilindungi Turnstile, limit 20 request/client, dan 5 request/account per 15 menit. Production mewajibkan `ADMIN_PASSWORD_SCRYPT`; SHA-256 legacy hanya diterima di development. JWT HS256 admin memiliki issuer yang sama, audience `rempahkarta-admin`, subject email, `jti`, `tokenUse=admin`, role `owner`, dan masa hidup 12 jam dalam cookie `amk_admin` SameSite Strict.
 
-`app/admin/layout.tsx` memanggil `requireAdmin`; semua route mutasi/read admin juga memanggil `adminFromRequest`. Fixture/bypass devtools aktif secara otomatis bila `APP_MODE=development`; dilarang pada preview/staging publik. Payment mock juga hanya boleh hidup pada development lokal.
+`app/admin/layout.tsx` memanggil `requireAdmin`; semua route mutasi/read admin juga memanggil `adminFromRequest`. Fixture/devtools hanya aktif bila `APP_MODE=development` **dan** `ENABLE_DEVTOOLS=true`; production selalu menolaknya. Payment mock juga hanya boleh hidup pada development lokal.
 
 Di depan route handler, `proxy.ts` menolak mutasi API non-webhook bila `Origin` tidak sama persis dengan origin `APP_URL`. Pemeriksaan production bersifat fail-closed dan mencegah origin sibling-subdomain memanfaatkan cookie SameSite. Webhook dikecualikan dari Origin check karena memiliki autentikasi provider dan tidak berasal dari browser.
 
@@ -79,7 +79,7 @@ Flow checkout server:
 2. Baca varian aktif, harga, berat, dimensi, dan inventory dari MySQL.
 3. Minta ulang tarif Biteship. Harga berubah menghasilkan `SHIPPING_PRICE_CHANGED` dan tidak membuat order.
 4. Dalam transaksi MySQL, reserve inventory dengan optimistic lock `version`, buat snapshot item/alamat/quote, order, dan audit.
-5. Buat payment BSTN atau mock development. Kegagalan membuat payment membatalkan order dan melepas reservasi secara idempoten.
+5. Buat intent payment lokal terlebih dahulu, lalu panggil BSTN dengan reference idempoten. Penolakan provider yang definitif membatalkan order dan melepas reservasi; timeout/5xx tetap `pending` agar webhook, sync, atau expiry dapat merekonsiliasi tanpa split-brain.
 
 Data harga, stok, berat, dimensi, dan ongkir dari client tidak dipercaya.
 
@@ -211,11 +211,13 @@ Shadow balance bukan sinkronisasi saldo nyata Biteship. Saldo awal migration nol
 
 ## Rate limiting dan Turnstile
 
-`proxy.ts` menerapkan bucket global per IP untuk seluruh `/api/*`: 100/menit, atau 1.000/menit untuk webhook. Route mahal menambahkan bucket scope sendiri. Store in-memory dibersihkan setiap menit, membuang bucket kedaluwarsa, dan dibatasi 10.000 bucket.
+`proxy.ts` menerapkan bucket global per IP untuk seluruh `/api/*`: 100/menit, atau 1.000/menit untuk webhook. Policy path+method tambahan membatasi mutasi katalog/order/shipping/media/voucher, cron, private-media read, dan payment polling; route provider/transaksi paling sensitif juga memiliki bucket setelah autentikasi. Store in-memory dibersihkan setiap menit, membuang bucket kedaluwarsa dan bucket least-recently-seen saat melewati 10.000.
 
 Ini sengaja sederhana dan tidak terdistribusi. Pada multi-instance, limit efektif berlaku per instance; reverse proxy/CDN harus menambah batas global bila dibutuhkan.
 
 Turnstile selalu diverifikasi lewat Siteverify server. Secret test hanya tersedia di non-production; action harus exact dan production juga mencocokkan hostname terhadap `APP_URL`. JWT secret production menolak marker placeholder dan shared secret webhook harus kuat minimal 16 karakter. Aksi yang dilindungi dan limit per route dipetakan di `docs/system-map.md`.
+
+Security header production mencakup CSP host-terbatas untuk resource aplikasi, Google Identity, dan Cloudflare Turnstile, HSTS, anti-framing, `nosniff`, COOP, Referrer Policy, serta no-store untuk API auth/user/order/return/admin.
 
 ## Migration dan penyimpanan
 

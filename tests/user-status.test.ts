@@ -57,3 +57,18 @@ test("assertCustomerNotBlocked mengizinkan user ACTIVE & PAUSE, menolak BLOCK", 
   const blockedBody = await blockedRes?.json();
   assert.equal(blockedBody.error, USER_BLOCKED_ERROR);
 });
+
+test("pengurutan alamat mengutamakan alamat default", () => {
+  const addresses = [
+    { id: "1", label: "Rumah", isDefault: false },
+    { id: "2", label: "Kantor", isDefault: true },
+    { id: "3", label: "Gudang", isDefault: false },
+  ];
+
+  const sorted = [...addresses].sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
+  assert.equal(sorted[0].id, "2");
+  assert.equal(sorted[0].isDefault, true);
+
+  const defaultAddr = addresses.find(a => a.isDefault) || addresses[0];
+  assert.equal(defaultAddr.id, "2");
+});

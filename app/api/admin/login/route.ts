@@ -11,11 +11,18 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const rate = checkRateLimit(request, { scope: "auth:admin-login", limit: 5, windowMs: 15 * 60_000 });
+  const rate = checkRateLimit(request, { scope: "auth:admin-login:client", limit: 20, windowMs: 15 * 60_000 });
   if (!rate.allowed) return rateLimitResponse(rate);
   try {
     const parsed = schema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Payload tidak valid" }, { status: 400 });
+    const accountRate = checkRateLimit(request, {
+      scope: "auth:admin-login:account",
+      identity: parsed.data.email.toLowerCase(),
+      limit: 5,
+      windowMs: 15 * 60_000,
+    });
+    if (!accountRate.allowed) return rateLimitResponse(accountRate);
     const verification = await verifyTurnstile(request, parsed.data.turnstileToken, "admin_login");
     if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
     if (!await verifyAdminPassword(parsed.data.email, parsed.data.password)) {

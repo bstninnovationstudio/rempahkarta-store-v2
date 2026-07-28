@@ -3,6 +3,7 @@ import { z } from "zod";
 const schema = z.object({
   DATABASE_URL: z.string().min(1),
   APP_MODE: z.enum(["production", "development"]).default("development"),
+  ENABLE_DEVTOOLS: z.enum(["true", "false"]).default("false"),
   APP_URL: z.string().url().optional(),
   APP_URL_DEV: z.string().url().optional(),
   APP_URL_LIVE: z.string().url().optional(),
@@ -35,6 +36,7 @@ const schema = z.object({
   GOWA_PASS: z.string().min(1).optional(),
   GOWA_DEVICE_ID: z.string().min(1).optional(),
   WHATSAPP_OTP_SECRET: z.string().min(32).optional(),
+  CRON_SECRET: z.string().min(32).optional(),
 });
 
 export type AppEnv = z.infer<typeof schema>;
@@ -55,6 +57,15 @@ export function getAppUrl(): string | undefined {
   return isProduction()
     ? (process.env.APP_URL_LIVE || process.env.APP_URL)
     : (process.env.APP_URL_DEV || process.env.APP_URL);
+}
+
+export function getPublicAppOrigin(): string {
+  const configured = getAppUrl();
+  try {
+    return new URL(configured || "https://rempahkarta.com").origin;
+  } catch {
+    return "https://rempahkarta.com";
+  }
 }
 
 /** Selalu mengembalikan URL publik production (APP_URL_LIVE) untuk webhook URL, agar server payment publik selalu dapat menjangkau webhook. Fallback ke APP_URL_DEV / APP_URL jika APP_URL_LIVE belum diisi. */
@@ -100,7 +111,9 @@ export function getGowaBaseUrl(): string {
 }
 
 export function isDevToolsEnabled(): boolean {
-  return process.env.APP_MODE === "development";
+  return !isProduction()
+    && process.env.APP_MODE === "development"
+    && process.env.ENABLE_DEVTOOLS === "true";
 }
 
 export function warehouseAreaId() {

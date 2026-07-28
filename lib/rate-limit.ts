@@ -56,17 +56,28 @@ function cleanup(now: number) {
 
   if (store.size <= MAX_BUCKETS) return;
   const removeCount = Math.max(store.size - MAX_BUCKETS, Math.ceil(MAX_BUCKETS * 0.1));
-  let removed = 0;
-  for (const key of store.keys()) {
+  const oldest = [...store.entries()]
+    .sort((left, right) => left[1].lastSeenAt - right[1].lastSeenAt)
+    .slice(0, removeCount);
+  for (const [key] of oldest) {
     store.delete(key);
-    removed += 1;
-    if (removed >= removeCount) break;
   }
 }
 
 export function checkRateLimit(request: Request, policy: RateLimitPolicy): RateLimitResult {
   const now = Date.now();
   const windowMs = policy.windowMs ?? 60_000;
+  if (
+    !policy.scope
+    || policy.scope.length > 160
+    || !Number.isSafeInteger(policy.limit)
+    || policy.limit < 1
+    || !Number.isSafeInteger(windowMs)
+    || windowMs < 1
+    || windowMs > 24 * 60 * 60_000
+  ) {
+    throw new Error("Kebijakan rate limit tidak valid");
+  }
   cleanup(now);
 
   const identity = policy.identity || requestClientKey(request);

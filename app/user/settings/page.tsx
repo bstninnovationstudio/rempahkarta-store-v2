@@ -44,7 +44,7 @@ export default async function UserSettingsPage({
   const [addresses, setting] = await Promise.all([
     prisma.userAddress.findMany({
       where: { userId: customer.id },
-      orderBy: { id: "desc" },
+      orderBy: [{ isDefault: "desc" }, { id: "desc" }],
       take: 5,
       select: {
         id: true,
@@ -55,6 +55,7 @@ export default async function UserSettingsPage({
         address: true,
         postalCode: true,
         areaId: true,
+        isDefault: true,
       },
     }),
     prisma.userRefundSetting.findUnique({ where: { userId: customer.id } }),

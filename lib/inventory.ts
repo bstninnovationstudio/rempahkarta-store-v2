@@ -15,7 +15,7 @@ export async function releaseOrderReservation(
       where: { variantId: item.variantId },
       orderBy: { id: "asc" },
     });
-    if (!level) continue;
+    if (!level) throw new Error(`Inventory level tidak ditemukan untuk ${item.skuSnapshot}`);
     const released = await tx.inventoryLevel.updateMany({
       where: { id: level.id, reserved: { gte: item.quantity } },
       data: { reserved: { decrement: item.quantity }, version: { increment: 1 } },
@@ -33,6 +33,8 @@ export async function releaseOrderReservation(
           dedupeKey,
         },
       });
+    } else {
+      throw new Error(`Reservasi ${item.skuSnapshot} tidak valid saat dilepas`);
     }
   }
 }
@@ -91,11 +93,15 @@ export async function restockCommittedOrder(
     if (!item.variantId) continue;
     const dedupeKey=`restock_cancelled:${orderId}:${item.variantId}`;
     if(await tx.inventoryMovement.findUnique({where:{dedupeKey}}))continue;
+    const committed = await tx.inventoryMovement.findUnique({
+      where: { dedupeKey: `sale_committed:${orderId}:${item.variantId}` },
+    });
+    if (!committed) throw new Error(`Penjualan ${item.skuSnapshot} belum pernah dikomit`);
     const level = await tx.inventoryLevel.findFirst({
       where: { variantId: item.variantId },
       orderBy: { id: "asc" },
     });
-    if (!level) continue;
+    if (!level) throw new Error(`Inventory level tidak ditemukan untuk ${item.skuSnapshot}`);
     await tx.inventoryLevel.update({
       where: { id: level.id },
       data: { onHand: { increment: item.quantity }, version: { increment: 1 } },

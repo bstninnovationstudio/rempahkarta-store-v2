@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
-import { LockKeyhole, Search, Loader2, Tag } from "lucide-react";
+import { LockKeyhole, Search, Loader2, Tag, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { rupiah } from "@/lib/format";
 import type { Product, StoreVariant } from "@/lib/types";
@@ -35,14 +35,16 @@ export function CheckoutForm({
   allProducts?: Product[];
   fromCart?: boolean;
   turnstileSiteKey: string;
-  savedAddresses?: Array<{ id: string; label: string; contactName: string; contactPhone: string; contactEmail: string; address: string; postalCode: string; areaId: string }>;
+  savedAddresses?: Array<{ id: string; label: string; contactName: string; contactPhone: string; contactEmail: string; address: string; postalCode: string; areaId: string; isDefault?: boolean }>;
   customerEmail?: string;
   customerName?: string;
 }) {
+  const defaultSavedAddress = savedAddresses.find(a => a.isDefault) || savedAddresses[0] || null;
+
   const [options, setOptions] = useState<ShippingOption[]>([]);
   const [shipping, setShipping] = useState<ShippingOption | null>(null);
-  const [area, setArea] = useState<Area | null>(null);
-  const [areaQuery, setAreaQuery] = useState("");
+  const [area, setArea] = useState<Area | null>(() => defaultSavedAddress ? { id: defaultSavedAddress.areaId, label: `Kode Pos ${defaultSavedAddress.postalCode}`, postalCode: defaultSavedAddress.postalCode } : null);
+  const [areaQuery, setAreaQuery] = useState(() => defaultSavedAddress ? `Kode Pos ${defaultSavedAddress.postalCode}` : "");
   const [areaResults, setAreaResults] = useState<Array<{ id: string; name: string; postal_code: number }>>([]);
   const [searchingArea, setSearchingArea] = useState(false);
   const [loadingRates, setLoadingRates] = useState(false);
@@ -55,13 +57,34 @@ export function CheckoutForm({
   const [appliedVoucher, setAppliedVoucher] = useState<{ code: string; name: string; target: string; discountAmount: number; subtotal: number; shippingFee: number } | null>(null);
   const [cartItems, setCartItems] = useState<Array<{ productId: string; variantId: string; quantity: number; product: Product; variant: StoreVariant }>>([]);
 
-  const [nameInput, setNameInput] = useState(customerName);
-  const [phoneInput, setPhoneInput] = useState("");
-  const [emailInput, setEmailInput] = useState(customerEmail);
-  const [addressInput, setAddressInput] = useState("");
-  const [selectedAddressId, setSelectedAddressId] = useState("custom");
+  const [nameInput, setNameInput] = useState(() => defaultSavedAddress?.contactName || customerName);
+  const [phoneInput, setPhoneInput] = useState(() => defaultSavedAddress?.contactPhone || "");
+  const [emailInput, setEmailInput] = useState(() => defaultSavedAddress?.contactEmail || customerEmail);
+  const [addressInput, setAddressInput] = useState(() => defaultSavedAddress?.address || "");
+  const [selectedAddressId, setSelectedAddressId] = useState(() => defaultSavedAddress?.id || "custom");
   
   const { containerRef, token: turnstileToken } = useTurnstile(turnstileSiteKey);
+
+  useEffect(() => {
+    if (defaultSavedAddress) {
+      if (fromCart) {
+        if (cartItems.length > 0) {
+          void loadRates({
+            id: defaultSavedAddress.areaId,
+            label: `Kode Pos ${defaultSavedAddress.postalCode}`,
+            postalCode: defaultSavedAddress.postalCode
+          });
+        }
+      } else if (variant) {
+        void loadRates({
+          id: defaultSavedAddress.areaId,
+          label: `Kode Pos ${defaultSavedAddress.postalCode}`,
+          postalCode: defaultSavedAddress.postalCode
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromCart, cartItems.length, variant?.id]);
 
   useEffect(() => {
     if (fromCart) {
@@ -174,6 +197,8 @@ export function CheckoutForm({
   async function loadRates(targetArea?: Area | null) {
     const activeArea = targetArea !== undefined ? targetArea : area;
     if (!activeArea) return setError("Pilih lokasi hasil pencarian terlebih dahulu.");
+    if (fromCart && cartItems.length === 0) return;
+    if (!fromCart && (!product || !variant)) return;
     setLoadingRates(true); setError(""); setOptions([]); setShipping(null);
     try {
       const token = await turnstileToken("shipping_quotes");
@@ -307,21 +332,27 @@ export function CheckoutForm({
               <h2>Alamat tersimpan</h2>
             </div>
             <div className="address-cards-grid">
-              {savedAddresses.map(addr => (
-                <button
-                  type="button"
-                  key={addr.id}
-                  disabled={busy}
-                  className={`address-card ${selectedAddressId === addr.id ? "active" : ""}`}
-                  onClick={() => handleAddressSelect(addr.id)}
-                >
-                  <div className="address-card-label">{addr.label}</div>
-                  <div className="address-card-name">{addr.contactName}</div>
-                  <div className="address-card-phone">{addr.contactPhone}</div>
-                  <div className="address-card-detail">{addr.address}</div>
-                  <div className="address-card-postal">Kode Pos: {addr.postalCode}</div>
-                </button>
-              ))}
+              {savedAddresses.map((addr, index) => {
+                const isAddrDefault = addr.isDefault || (!savedAddresses.some(a => a.isDefault) && index === 0);
+                return (
+                  <button
+                    type="button"
+                    key={addr.id}
+                    disabled={busy}
+                    className={`address-card ${selectedAddressId === addr.id ? "active" : ""}`}
+                    onClick={() => handleAddressSelect(addr.id)}
+                  >
+                    <div className="address-card-head-row">
+                      <div className="address-card-label">{addr.label}</div>
+                      {isAddrDefault && <span className="address-card-default-badge">Utama</span>}
+                    </div>
+                    <div className="address-card-name">{addr.contactName}</div>
+                    <div className="address-card-phone">{addr.contactPhone}</div>
+                    <div className="address-card-detail">{addr.address}</div>
+                    <div className="address-card-postal">Kode Pos: {addr.postalCode}</div>
+                  </button>
+                );
+              })}
               
               <button
                 type="button"
@@ -494,41 +525,50 @@ export function CheckoutForm({
               <span>Kode Unik Pembayaran</span>
               <span>(Rp 1-10)</span>
             </div>
-            <div className="voucher-field">
-              <label htmlFor="voucher-code">Kode promo</label>
-              <div className="voucher-input-row">
-                <input
-                  id="voucher-code"
-                  value={voucherCode}
-                  onChange={event => handleVoucherChange(event.target.value)}
-                  placeholder="Masukkan kode promo"
-                  maxLength={50}
-                  disabled={busy || voucherCheckBusy || Boolean(activeVoucher)}
-                />
-                {activeVoucher ? (
-                  <button type="button" className="button button-light" onClick={handleRemoveVoucher} disabled={busy}>Hapus</button>
-                ) : (
+            {!activeVoucher ? (
+              <div className="voucher-field">
+                <label htmlFor="voucher-code">Kode promo</label>
+                <div className="voucher-input-row">
+                  <input
+                    id="voucher-code"
+                    value={voucherCode}
+                    onChange={event => handleVoucherChange(event.target.value)}
+                    placeholder="Masukkan kode promo"
+                    maxLength={50}
+                    disabled={busy || voucherCheckBusy}
+                  />
                   <button type="button" className="button button-light" onClick={checkVoucher} disabled={busy || voucherCheckBusy || !shipping || !voucherCode.trim()}>{voucherCheckBusy ? "CEK..." : "CEK"}</button>
+                </div>
+                {hasUncheckedVoucher && !voucherCheckBusy && (
+                  <small className="voucher-feedback" role="status">
+                    {voucherMessage || "Verifikasi kode promo sebelum bayar, atau hapus kode promo."}
+                  </small>
+                )}
+                {voucherMessage && !hasUncheckedVoucher && (
+                  <small className="voucher-feedback" role="status">
+                    {voucherMessage}
+                  </small>
                 )}
               </div>
-              {hasUncheckedVoucher && !voucherCheckBusy && (
-                <small className="voucher-feedback" role="status">
-                  {voucherMessage || "Verifikasi kode promo sebelum bayar, atau hapus kode promo."}
-                </small>
-              )}
-              {activeVoucher && voucherMessage && (
-                <small className="voucher-feedback success" role="status">
-                  {voucherMessage}
-                </small>
-              )}
-            </div>
-            {activeVoucher && (
+            ) : (
               <div className="summary-line voucher-discount">
-                <span className="voucher-discount-label">
-                  <Tag size={13} />
-                  Diskon promo ({activeVoucher.code})
+                <span className="voucher-discount-label" title={activeVoucher.code}>
+                  <Tag size={13} style={{ flexShrink: 0 }} />
+                  <span className="voucher-code-text">{activeVoucher.code}</span>
                 </span>
-                <span>-{rupiah(voucherDiscount)}</span>
+                <div className="voucher-discount-right">
+                  <span className="voucher-discount-amount">-{rupiah(voucherDiscount)}</span>
+                  <button
+                    type="button"
+                    className="voucher-remove-button"
+                    onClick={handleRemoveVoucher}
+                    disabled={busy}
+                    title="Hapus promo"
+                    aria-label="Hapus promo"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
               </div>
             )}
             <div className="summary-line total">

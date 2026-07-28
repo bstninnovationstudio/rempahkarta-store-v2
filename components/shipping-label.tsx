@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Barcode from "react-barcode";
+import { Printer } from "lucide-react";
 import styles from "./shipping-label.module.css";
 
 export interface ShippingLabelProps {
@@ -81,6 +82,37 @@ function formatWeight(value: number) {
 }
 
 export default function ShippingLabel({ data }: ShippingLabelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLElement>(null);
+  const [scale, setScale] = useState(1);
+  const [scaledHeight, setScaledHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    function updateScale() {
+      if (!containerRef.current || !labelRef.current) return;
+      const containerWidth = containerRef.current.clientWidth;
+      // 100mm is ~378px at standard 96dpi screen resolution
+      const labelWidth = labelRef.current.offsetWidth || 378;
+      const labelHeight = labelRef.current.offsetHeight || 567;
+
+      const padding = window.innerWidth < 480 ? 24 : 32;
+      const availableWidth = Math.max(260, containerWidth - padding);
+
+      if (availableWidth < labelWidth) {
+        const newScale = availableWidth / labelWidth;
+        setScale(newScale);
+        setScaledHeight(labelHeight * newScale);
+      } else {
+        setScale(1);
+        setScaledHeight(undefined);
+      }
+    }
+
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
+
   const routingCode = data.routingCode?.trim() || data.recipient.postalCode;
   const codText = data.isCod
     ? formatRupiah(data.codAmount)
@@ -88,111 +120,130 @@ export default function ShippingLabel({ data }: ShippingLabelProps) {
   const courierLogo = `/shipping-logos/${slugify(data.courierCompany)}.png`;
 
   return (
-    <section className={styles.printArea} aria-label="Label pengiriman">
+    <section ref={containerRef} className={styles.printArea} aria-label="Label pengiriman">
       <div className={styles.actions}>
         <button
           type="button"
           className={styles.printButton}
           onClick={() => window.print()}
         >
-          Cetak Resi / Simpan PDF
+          <Printer size={16} aria-hidden="true" />
+          <span>Cetak Resi / Simpan PDF</span>
         </button>
       </div>
 
-      <article className={styles.label}>
-        <header className={styles.header}>
-          <div className={styles.courierLogoBox}>
-            <Logo
-              src={courierLogo}
-              alt={`Logo ${data.courierCompany}`}
-              fallback={data.courierCompany.toUpperCase()}
-              className={styles.logoImage}
-            />
-          </div>
+      <div className={styles.labelWrapper}>
+        <div
+          className={styles.labelScaleContainer}
+          style={scaledHeight ? { height: `${scaledHeight}px` } : undefined}
+        >
+          <article
+            ref={labelRef}
+            className={styles.label}
+            style={
+              scale < 1
+                ? {
+                    transform: `scale(${scale})`,
+                    transformOrigin: "top center",
+                  }
+                : undefined
+            }
+          >
+            <header className={styles.header}>
+              <div className={styles.courierLogoBox}>
+                <Logo
+                  src={courierLogo}
+                  alt={`Logo ${data.courierCompany}`}
+                  fallback={data.courierCompany.toUpperCase()}
+                  className={styles.logoImage}
+                />
+              </div>
 
-          <div className={styles.brandBlock}>
-            <div className={styles.brandName}>REMPAHKARTA</div>
-            <div className={styles.brandMeta}>
-              Hangatkan Keluarga Indonesia!
-            </div>
-          </div>
-        </header>
+              <div className={styles.brandBlock}>
+                <div className={styles.brandName}>REMPAHKARTA</div>
+                <div className={styles.brandMeta}>
+                  Hangatkan Keluarga Indonesia!
+                </div>
+              </div>
+            </header>
 
-        <section className={styles.barcodeSection}>
-          <div className={styles.barcodeGraphic}>
-            <Barcode
-              value={data.waybillId || "PENDING"}
-              format="CODE128"
-              renderer="svg"
-              width={1.45}
-              height={56}
-              margin={0}
-              displayValue={false}
-              background="transparent"
-              lineColor="#000000"
-            />
-          </div>
-          <div className={styles.waybillText}>
-            Nomor Resi - <strong>{data.waybillId || "Menunggu Resi"}</strong>
-          </div>
-        </section>
+            <section className={styles.barcodeSection}>
+              <div className={styles.barcodeGraphic}>
+                <Barcode
+                  value={data.waybillId || "PENDING"}
+                  format="CODE128"
+                  renderer="svg"
+                  width={1.45}
+                  height={56}
+                  margin={0}
+                  displayValue={false}
+                  background="transparent"
+                  lineColor="#000000"
+                />
+              </div>
+              <div className={styles.waybillText}>
+                Nomor Resi - <strong>{data.waybillId || "Menunggu Resi"}</strong>
+              </div>
+            </section>
 
-        <section className={`${styles.centerBox} ${styles.codBox}`}>
-          <strong>Nilai COD: {codText}</strong>
-        </section>
+            <section className={`${styles.centerBox} ${styles.codBox}`}>
+              <strong>Nilai COD: {codText}</strong>
+            </section>
 
-        <section className={`${styles.centerBox} ${styles.serviceBox}`}>
-          <strong>Jenis Layanan - {data.courierService.toUpperCase()}</strong>
-        </section>
+            <section className={`${styles.centerBox} ${styles.serviceBox}`}>
+              <strong>Jenis Layanan - {data.courierService.toUpperCase()}</strong>
+            </section>
 
-        <section className={styles.shipmentGrid}>
-          <div className={styles.routingBox}>
-            <span className={styles.routingLabel}>Routing Code</span>
-            <strong className={styles.routingCode}>{routingCode}</strong>
-          </div>
+            <section className={styles.shipmentGrid}>
+              <div className={styles.routingBox}>
+                <span className={styles.routingLabel}>Routing Code</span>
+                <strong className={styles.routingCode}>{routingCode}</strong>
+              </div>
 
-          <div className={styles.metricsBox}>
-            <div className={styles.metricRow}>
-              <span>Quantity</span>
-              <span>:</span>
-              <strong>{data.totalQuantity} Pcs</strong>
-            </div>
-            <div className={styles.metricRow}>
-              <span>Weight</span>
-              <span>:</span>
-              <strong>{formatWeight(data.totalWeightKg)} Kg</strong>
-            </div>
-          </div>
-        </section>
+              <div className={styles.metricsBox}>
+                <div className={styles.metricRow}>
+                  <span>Quantity</span>
+                  <span>:</span>
+                  <strong>{data.totalQuantity} Pcs</strong>
+                </div>
+                <div className={styles.metricRow}>
+                  <span>Weight</span>
+                  <span>:</span>
+                  <strong>{formatWeight(data.totalWeightKg)} Kg</strong>
+                </div>
+              </div>
+            </section>
 
-        <section className={styles.addressGrid}>
-          <address className={styles.addressBox}>
-            <strong className={styles.addressTitle}>Alamat Penerima:</strong>
-            <strong>{data.recipient.name}</strong>
-            <span>{data.recipient.phone}</span>
-            <span>{data.recipient.address}</span>
-            <span>Kode Pos: {data.recipient.postalCode}</span>
-          </address>
+            <section className={styles.addressGrid}>
+              <address className={styles.addressBox}>
+                <strong className={styles.addressTitle}>Alamat Penerima:</strong>
+                <strong>{data.recipient.name}</strong>
+                <span>{data.recipient.phone}</span>
+                <span>{data.recipient.address}</span>
+                <span>Kode Pos: {data.recipient.postalCode}</span>
+              </address>
 
-          <address className={styles.addressBox}>
-            <strong className={styles.addressTitle}>Alamat Pengirim:</strong>
-            <strong>{data.sender.name}</strong>
-            <span>{data.sender.phone}</span>
-            <span>{data.sender.address}</span>
-            <span>Kode Pos: {data.sender.postalCode}</span>
-          </address>
-        </section>
+              <address className={styles.addressBox}>
+                <strong className={styles.addressTitle}>Alamat Pengirim:</strong>
+                <strong>{data.sender.name}</strong>
+                <span>{data.sender.phone}</span>
+                <span>{data.sender.address}</span>
+                <span>Kode Pos: {data.sender.postalCode}</span>
+              </address>
+            </section>
 
-        <section className={styles.infoBox}>
-          <strong>Jenis Barang :</strong>
-          <span>{data.itemDescription}</span>
-        </section>
+            <section className={styles.infoBox}>
+              <strong>Jenis Barang :</strong>
+              <span>{data.itemDescription}</span>
+            </section>
 
-        <footer className={styles.footer}>
-          MOHON MELAKUKAN PEREKAMAN SAAT MEMBUKA PAKET SEBAGAI BUKTI JIKA
-          TERJADI MASALAH DENGAN PESANAN!
-        </footer>
-      </article>
+            <footer className={styles.footer}>
+              MOHON MELAKUKAN PEREKAMAN SAAT MEMBUKA PAKET SEBAGAI BUKTI JIKA
+              TERJADI MASALAH DENGAN PESANAN!
+            </footer>
+          </article>
+        </div>
+      </div>
     </section>
   );
 }

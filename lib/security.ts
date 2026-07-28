@@ -23,6 +23,15 @@ export function isStrongSharedSecret(secret: string | undefined, minimumLength =
     || !/(replace|change.?me|development|example|test-secret|not-for-production)/i.test(secret);
 }
 
+export function authorizeCronRequest(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!isStrongSharedSecret(secret, 32)) return false;
+  const authorization = request.headers.get("authorization") || "";
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] || "";
+  const headerSecret = request.headers.get("x-cron-secret") || "";
+  return constantTimeEqual(secret!, bearer) || constantTimeEqual(secret!, headerSecret);
+}
+
 /** Browser mutations must originate from the configured storefront. */
 export function hasExactAppOrigin(request: Request) {
   const expected = getAppUrl();

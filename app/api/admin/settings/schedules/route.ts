@@ -4,6 +4,7 @@ import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { assertNoScheduleOverlap, getStoreOperationalStatus } from "@/lib/store-schedule";
+import { Prisma } from "@prisma/client";
 
 const scheduleSchema = z.object({
   type: z.enum(["HOLIDAY", "MAINTENANCE"]),
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
       });
 
       return created;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     const currentOperationalStatus = await getStoreOperationalStatus();
 

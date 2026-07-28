@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Script from "next/script";
-import { MapPin, Edit2, Trash2, Plus, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { MapPin, Edit2, Trash2, Plus, ArrowLeft, CheckCircle2, Star } from "lucide-react";
 import { useTurnstile } from "@/components/use-turnstile";
 import { errorMessage } from "@/lib/error-message";
 import { safeInternalPath } from "@/lib/safe-redirect";
@@ -17,6 +17,7 @@ interface Address {
   address: string;
   postalCode: string;
   areaId: string;
+  isDefault?: boolean;
 }
 
 interface UserAddressesClientProps {
@@ -54,6 +55,7 @@ export function UserAddressesClient({
   const [contactEmail, setContactEmail] = useState(defaultContact?.email || "");
   const [addressDetail, setAddressDetail] = useState("");
   const [area, setArea] = useState<{ id: string; label: string; postalCode: string } | null>(null);
+  const [isDefault, setIsDefault] = useState(false);
   
   // Area Search State
   const [areaQuery, setAreaQuery] = useState("");
@@ -89,6 +91,7 @@ export function UserAddressesClient({
     setArea(null);
     setAreaQuery("");
     setAreaResults([]);
+    setIsDefault(addresses.length === 0);
     setError("");
     setSuccess("");
     setEditingAddress(null);
@@ -108,6 +111,7 @@ export function UserAddressesClient({
     setContactPhone(addr.contactPhone);
     setContactEmail(addr.contactEmail);
     setAddressDetail(addr.address);
+    setIsDefault(Boolean(addr.isDefault));
     const mockArea = { id: addr.areaId, label: `Kode Pos ${addr.postalCode}`, postalCode: addr.postalCode };
     setArea(mockArea);
     setAreaQuery(mockArea.label);
@@ -146,6 +150,44 @@ export function UserAddressesClient({
     }
   };
 
+  const handleSetDefault = async (id: string) => {
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const securityToken = await turnstileToken("user_address");
+      const res = await fetch(`/api/user/addresses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turnstileToken: securityToken }),
+      });
+      const text = await res.text();
+      if (!text) throw new Error(`Server tidak mengembalikan respons (${res.status}).`);
+      let data: { error?: string; success?: boolean } = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Respons server tidak valid (${res.status}).`);
+      }
+      if (!res.ok) throw new Error(data.error || "Gagal memperbarui alamat utama");
+
+      setAddresses((current) =>
+        current
+          .map((a) => ({
+            ...a,
+            isDefault: a.id === id,
+          }))
+          .sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0))
+      );
+      setSuccess("Alamat utama berhasil diperbarui.");
+      router.refresh();
+    } catch (e: unknown) {
+      setError(errorMessage(e, "Gagal memperbarui alamat utama."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!area) {
@@ -164,6 +206,7 @@ export function UserAddressesClient({
       address: addressDetail.trim(),
       postalCode: area.postalCode,
       areaId: area.id,
+      isDefault,
     };
 
     try {
@@ -183,15 +226,29 @@ export function UserAddressesClient({
         });
       }
 
-      const data = await res.json();
+      const text = await res.text();
+      if (!text) throw new Error(`Server tidak mengembalikan respons (${res.status}).`);
+      let data: { error?: string; address?: Address } = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Respons server tidak valid (${res.status}).`);
+      }
       if (!res.ok) {
         throw new Error(data.error || "Gagal menyimpan alamat");
       }
 
       if (data.address) {
-        setAddresses((current) => mode === "add"
-          ? [data.address as Address, ...current]
-          : current.map((address) => address.id === data.address.id ? data.address as Address : address));
+        const saved = data.address as Address;
+        setAddresses((current) => {
+          let updatedList = mode === "add"
+            ? [saved, ...current]
+            : current.map((a) => a.id === saved.id ? saved : a);
+          if (saved.isDefault) {
+            updatedList = updatedList.map((a) => a.id === saved.id ? saved : { ...a, isDefault: false });
+          }
+          return updatedList.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
+        });
       }
       router.refresh();
 
@@ -232,7 +289,14 @@ export function UserAddressesClient({
         throw new Error(data.error || "Gagal menghapus alamat");
       }
 
-      setAddresses(current => current.filter(a => a.id !== id));
+      setAddresses((current) => {
+        const deletedAddr = current.find((a) => a.id === id);
+        const filtered = current.filter((a) => a.id !== id);
+        if (deletedAddr?.isDefault && filtered.length > 0) {
+          filtered[0].isDefault = true;
+        }
+        return filtered;
+      });
       setSuccess("Alamat berhasil dihapus.");
       router.refresh();
     } catch (e: unknown) {
@@ -281,9 +345,26 @@ export function UserAddressesClient({
 
           {addresses.length > 0 ? (
             <div className="user-address-list-grid">
-              {addresses.map(addr => (
-                <article key={addr.id} className="user-address-card">
-                  <span className="user-address-card-badge">{addr.label}</span>
+              {addresses.map((addr, index) => {
+                const isAddrDefault = addr.isDefault || (!addresses.some(a => a.isDefault) && index === 0);
+                return (
+                  <article key={addr.id} className="user-address-card">
+                    <div className="address-card-head-row">
+                      <span className={`user-address-card-badge ${isAddrDefault ? "is-default" : ""}`}>
+                        {addr.label} {isAddrDefault ? "• Utama" : ""}
+                      </span>
+                      {!isAddrDefault && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetDefault(addr.id)}
+                          className="set-default-btn"
+                          disabled={busy}
+                          title="Jadikan Alamat Utama"
+                        >
+                          <Star size={12} /> Jadikan Utama
+                        </button>
+                      )}
+                    </div>
                   <div className="user-address-card-details">
                     <h3>{addr.contactName}</h3>
                     <p>{addr.address}</p>
@@ -301,8 +382,9 @@ export function UserAddressesClient({
                       <Trash2 size={13} /> Hapus
                     </button>
                   </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <div className="empty-state address-empty-state">
@@ -321,13 +403,31 @@ export function UserAddressesClient({
             <ArrowLeft size={14} /> Kembali ke daftar alamat
           </button>
 
-          <div className={embedded ? "account-settings-section-head" : "user-content-header"}>
+          <div className={embedded ? "account-settings-section-head account-settings-section-head-actions" : "user-content-header"}>
             {embedded && <span className="account-settings-icon"><MapPin size={19} aria-hidden="true" /></span>}
             <div>
-            {embedded
-              ? <h2 id="address-form-title">{mode === "add" ? "Tambah alamat baru" : "Edit alamat"}</h2>
-              : <h1 id="address-form-title">{mode === "add" ? "Tambah Alamat Baru" : "Edit Alamat"}</h1>}
-            <p>Masukkan rincian lokasi penerima dengan lengkap untuk mempermudah kurir.</p>
+              {embedded
+                ? <h2 id="address-form-title">{mode === "add" ? "Tambah alamat baru" : "Edit alamat"}</h2>
+                : <h1 id="address-form-title">{mode === "add" ? "Tambah Alamat Baru" : "Edit Alamat"}</h1>}
+              <p>Masukkan rincian lokasi penerima dengan lengkap untuk mempermudah kurir.</p>
+            </div>
+
+            <div className="address-default-switch-row">
+              <div className="address-default-switch-label">
+                <strong>Alamat Utama</strong>
+                <small>{isDefault ? "Alamat default checkout" : "Jadikan default"}</small>
+              </div>
+              <label className="settings-switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={isDefault}
+                  disabled={busy}
+                  onChange={e => setIsDefault(e.target.checked)}
+                  aria-label="Atur sebagai alamat utama"
+                />
+                <span aria-hidden="true" />
+              </label>
             </div>
           </div>
 

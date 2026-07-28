@@ -1,6 +1,6 @@
 # Laporan verifikasi REMPAHKARTA v1.3.0
 
-Tanggal verifikasi terakhir: 27 Juli 2026 (Asia/Jakarta)
+Tanggal verifikasi terakhir: 28 Juli 2026 (Asia/Jakarta)
 
 ## Verifikasi tambahan integrasi WhatsApp GOWA
 
@@ -12,13 +12,13 @@ Audit dan implementasi WhatsApp pada 27 Juli 2026 telah diverifikasi dengan hasi
 | `npx prisma generate` | Lulus menggunakan Prisma 6.19.3. |
 | `npx tsc --noEmit` | Lulus tanpa error TypeScript. |
 | `npm run lint` | Lulus tanpa error; tersisa tiga warning lama berupa variabel tidak terpakai pada halaman invoice. |
-| `npm test` | Lulus, 44/44 test; tidak ada skip/todo/failure. |
-| `npm run build` | Lulus dengan Next.js 16.2.10; seluruh 58 unit page/static generation selesai. |
-| `git diff --check` | Lulus; tidak ditemukan whitespace error. |
+| `npm test` | Lulus, 48/48 test; tidak ada skip/todo/failure. |
+| `npm run build` | Lulus dengan Next.js 16.2.12; seluruh 59 unit page/static generation selesai. |
+| `npm audit --omit=dev` | Lulus, 0 vulnerability; `sharp` 0.35.0 dipakai oleh Next. |
 
 Test tambahan mencakup normalisasi nomor WhatsApp Indonesia/internasional, footer pesan otomatis yang tidak digandakan, multipart pengiriman gambar, parameter keamanan OTP, pemisahan konteks HMAC, binding OTP terhadap payload rekening refund, serta konsistensi copy event perjalanan paket.
 
-Production build memuat route baru untuk OTP, preferensi notifikasi, campaign promosi admin, dispatch campaign bertahap, dan media promosi privat. Build masih menampilkan satu warning tracing Turbopack pada konfigurasi preview media admin yang sudah ada; warning tidak menghentikan build.
+Production build memuat route OTP, preferensi notifikasi, campaign promosi, media privat, metadata robots/sitemap, serta hardening cron/payment/shipment.
 
 Migration `202607270002_add_gowa_whatsapp_verification` dan `202607270003_add_whatsapp_consents_and_promotions` telah divalidasi dari schema dan build, tetapi **belum diterapkan ke database `.env` aktif** pada sesi verifikasi ini. Penerapan harus dilakukan secara eksplisit melalui `npm run setup`/`npm run db:migrate` pada target yang sudah dipastikan dan dicadangkan; tidak ada seed atau `db push` yang dijalankan.
 
@@ -27,13 +27,13 @@ Migration `202607270002_add_gowa_whatsapp_verification` dan `202607270003_add_wh
 | Pemeriksaan | Hasil |
 | --- | --- |
 | `npx tsc --noEmit` | Lulus. |
-| `npm run lint` | Lulus tanpa error; warning lama tersisa pada invoice dan payment client. |
-| `npm test` | Lulus, 32/32 test; tidak ada skip/todo/failure. |
-| `npm run build` | Lulus; Prisma generate, compile, TypeScript, page-data collection, dan 47/47 unit static generation selesai. |
+| `npm run lint` | Lulus tanpa error; tersisa tiga warning lama berupa variabel tidak terpakai pada halaman invoice. |
+| `npm test` | Lulus, 49/49 test; tidak ada skip/todo/failure. |
+| `npm run build` | Lulus dengan Next.js 16.2.12; Prisma generate, compile, TypeScript, page-data collection, dan 59/59 unit static generation selesai. |
 | `npx prisma validate` | Lulus. |
-| `npm run db:migrate` | Lulus tanpa seed; migration finance diterapkan. |
+| `npm audit --omit=dev` | Lulus, 0 vulnerability. |
 
-Production build menghasilkan manifest lengkap untuk **37 page route** dan **62 API route file**, termasuk finance, voucher/cron, serta `proxy.ts`. Angka 48/48 pada output build adalah unit static-generation internal Next.js, bukan jumlah page aplikasi.
+Production source memuat **41 page route file** dan **79 API route file**, ditambah `robots.ts`, `sitemap.ts`, serta `proxy.ts`. Angka 59/59 pada output build adalah unit static-generation internal Next.js, bukan jumlah page aplikasi.
 
 ## Cakupan test otomatis
 

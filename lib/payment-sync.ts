@@ -198,12 +198,14 @@ export async function checkAndExpireAllStaleOrders() {
       paymentState: "pending",
       payments: {
         some: {
-          status: "pending",
+          status: { in: ["not_created", "pending"] },
           expiresAt: { lt: now },
         },
       },
     },
     select: { id: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: 100,
   });
 
   if (staleOrders.length === 0) return 0;

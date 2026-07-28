@@ -8,8 +8,35 @@ import { StoreHeader } from "@/components/store-header";
 import { getCatalogProducts } from "@/lib/catalog";
 
 import { HolidayNoticeBanner } from "@/components/holiday-notice-banner";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const products = await getCatalogProducts();
+  const product = products.find(item => item.slug === slug);
+  if (!product) return { title: "Produk tidak ditemukan", robots: { index: false, follow: false } };
+  return {
+    title: product.name,
+    description: product.description,
+    alternates: { canonical: `/products/${product.slug}` },
+    openGraph: {
+      type: "website",
+      locale: "id_ID",
+      url: `/products/${product.slug}`,
+      title: product.name,
+      description: product.description,
+      images: product.images.map(image => ({ url: image, alt: product.name })),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: product.name,
+      description: product.description,
+      images: product.image ? [product.image] : undefined,
+    },
+  };
+}
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

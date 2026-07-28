@@ -9,6 +9,11 @@ import { CustomerProfileSection } from "@/components/customer-profile-section";
 import { UserAccountNavigation } from "@/components/user-account-navigation";
 import { UserCompletionGate } from "@/components/user-completion-gate";
 import { getProfileCompleteness } from "@/lib/user-profile";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function UserLayout({
   children,
@@ -92,4 +97,3 @@ export default async function UserLayout({
     </div>
   );
 }
-

@@ -84,7 +84,7 @@ export class BstnPaymentAdapter {
         finish_url: input.finishUrl,
         webhook_url: input.webhookUrl,
         expiry_minutes: input.expiryMinutes ?? 10,
-        metadata: { source: "amk-store" },
+        metadata: { source: "rempahkarta-store" },
       }),
     });
   }

@@ -5,6 +5,7 @@ import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { privateImageExists } from "@/lib/local-media";
 import { syncOrderRevenue } from "@/lib/finance";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 const terminalReturnStates = ["rejected", "closed", "cancelled", "finished", "refunded"] as const;
 const schema = z.object({
@@ -16,6 +17,7 @@ const schema = z.object({
     quantity: z.number().int().positive().max(20),
   })).min(1).max(20),
   evidence: z.array(z.string().max(500)).min(1).max(5),
+  turnstileToken: z.string().min(1).max(2048),
 }).superRefine((value, context) => {
   const ids = new Set<string>();
   for (const item of value.items) {
@@ -45,6 +47,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   catch { return NextResponse.json({ error: "Payload tidak valid" }, { status: 400 }); }
   const body = schema.safeParse(json);
   if (!body.success) return NextResponse.json({ error: "Payload tidak valid", details: body.error.flatten() }, { status: 400 });
+  const verification = await verifyTurnstile(request, body.data.turnstileToken, "return_request");
+  if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
   const { number } = await params;
 
   const order = await prisma.order.findUnique({

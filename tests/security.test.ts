@@ -5,6 +5,10 @@ import { canApplyAuthoritativePaid } from "../lib/payment-sync";
 import { verifyTurnstile } from "../lib/turnstile";
 import { safeInternalPath } from "../lib/safe-redirect";
 import { createAdminPasswordHash, verifyAdminPasswordHash } from "../lib/password";
+import { authorizeCronRequest } from "../lib/security";
+import { isDevToolsEnabled } from "../lib/env";
+import { resolveSafeMediaPath } from "../lib/media-path";
+import { hasOversizedContentLength } from "../lib/request-body";
 
 test("password admin memakai scrypt bersalt dan verifikasi konstan", async () => {
   const encoded = await createAdminPasswordHash("password-admin-yang-panjang");
@@ -72,4 +76,64 @@ test("Turnstile menolak respons yang tidak mengikat action", async context => {
   } finally {
     if (previous === undefined) delete process.env.TURNSTILE_SECRET_KEY; else process.env.TURNSTILE_SECRET_KEY = previous;
   }
+});
+
+test("cron fail-closed dan hanya menerima secret kuat yang cocok", () => {
+  const previousSecret = process.env.CRON_SECRET;
+  const previousMode = process.env.APP_MODE;
+  try {
+    process.env.APP_MODE = "development";
+    delete process.env.CRON_SECRET;
+    assert.equal(authorizeCronRequest(new Request("https://store.test/api/cron/test")), false);
+    process.env.CRON_SECRET = "short";
+    assert.equal(authorizeCronRequest(new Request("https://store.test/api/cron/test", {
+      headers: { authorization: "Bearer short" },
+    })), false);
+    process.env.CRON_SECRET = "a".repeat(48);
+    assert.equal(authorizeCronRequest(new Request("https://store.test/api/cron/test", {
+      headers: { authorization: `Bearer ${"a".repeat(48)}` },
+    })), true);
+    assert.equal(authorizeCronRequest(new Request("https://store.test/api/cron/test", {
+      headers: { "x-cron-secret": "b".repeat(48) },
+    })), false);
+  } finally {
+    if (previousSecret === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = previousSecret;
+    if (previousMode === undefined) delete process.env.APP_MODE; else process.env.APP_MODE = previousMode;
+  }
+});
+
+test("devtools memerlukan mode development dan opt-in eksplisit", () => {
+  const previousMode = process.env.APP_MODE;
+  const previousFlag = process.env.ENABLE_DEVTOOLS;
+  try {
+    process.env.APP_MODE = "development";
+    process.env.ENABLE_DEVTOOLS = "false";
+    assert.equal(isDevToolsEnabled(), false);
+    process.env.ENABLE_DEVTOOLS = "true";
+    assert.equal(isDevToolsEnabled(), true);
+    process.env.APP_MODE = "production";
+    assert.equal(isDevToolsEnabled(), false);
+  } finally {
+    if (previousMode === undefined) delete process.env.APP_MODE; else process.env.APP_MODE = previousMode;
+    if (previousFlag === undefined) delete process.env.ENABLE_DEVTOOLS; else process.env.ENABLE_DEVTOOLS = previousFlag;
+  }
+});
+
+test("path media wajib berada pada segmen root yang benar", () => {
+  assert.match(resolveSafeMediaPath("public/uploads/products/example.webp"), /public[\\/]uploads[\\/]products[\\/]example\.webp$/);
+  assert.throws(
+    () => resolveSafeMediaPath("public/uploads-evil/example.webp"),
+    /di luar jangkauan izin/,
+  );
+  assert.throws(
+    () => resolveSafeMediaPath("storage/private/returns/order/file.txt"),
+    /tidak didukung/,
+  );
+});
+
+test("batas Content-Length menolak nilai besar atau malformed", () => {
+  assert.equal(hasOversizedContentLength(new Request("https://store.test"), 100), false);
+  assert.equal(hasOversizedContentLength(new Request("https://store.test", { headers: { "content-length": "100" } }), 100), false);
+  assert.equal(hasOversizedContentLength(new Request("https://store.test", { headers: { "content-length": "101" } }), 100), true);
+  assert.equal(hasOversizedContentLength(new Request("https://store.test", { headers: { "content-length": "invalid" } }), 100), true);
 });

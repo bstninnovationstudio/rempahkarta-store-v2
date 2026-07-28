@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Script from "next/script";
+import { useTurnstile } from "@/components/use-turnstile";
 
 const buyerReasons = [
   "Ingin mengubah alamat pengiriman",
@@ -11,12 +13,13 @@ const buyerReasons = [
   "Alasan lainnya"
 ];
 
-export function OrderCancelButton({number,paymentState}:{number:string;paymentState:string}){
+export function OrderCancelButton({number,paymentState,turnstileSiteKey}:{number:string;paymentState:string;turnstileSiteKey:string}){
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [reason, setReason] = useState(buyerReasons[0]);
   const [customReason, setCustomReason] = useState("");
+  const { containerRef, token } = useTurnstile(turnstileSiteKey);
 
   async function cancel() {
     const selectedReason = reason === "Alasan lainnya" ? customReason.trim() : reason;
@@ -31,10 +34,11 @@ export function OrderCancelButton({number,paymentState}:{number:string;paymentSt
     setBusy(true);
     setMessage("");
     try {
+      const turnstileToken = await token("order_cancel");
       const response = await fetch(`/api/orders/${encodeURIComponent(number)}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: selectedReason })
+        body: JSON.stringify({ reason: selectedReason, turnstileToken })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Pembatalan gagal");
@@ -62,6 +66,8 @@ export function OrderCancelButton({number,paymentState}:{number:string;paymentSt
 
   return (
     <div>
+      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" />
+      <div ref={containerRef} aria-hidden="true" />
       <div className="action-review action-review-danger">
         <label className="field">
           <span>{paymentState === "pending" ? "Alasan pembatalan" : "Alasan pembatalan pelanggan"}</span>

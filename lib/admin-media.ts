@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-
-const UPLOADS_DIR = path.resolve(process.cwd(), "public", "uploads");
-const PRIVATE_DIR = path.resolve(process.cwd(), "storage", "private");
+import {
+  MEDIA_PRIVATE_DIR,
+  MEDIA_UPLOADS_DIR,
+  resolveSafeMediaPath,
+} from "@/lib/media-path";
 
 export type MediaCategory = "products" | "returns" | "refunds" | "promotions" | "other";
 
@@ -27,17 +29,6 @@ function formatBytes(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-function resolveSafeAbsolutePath(relativePath: string): string {
-  const cleanRel = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
-  const fullPath = path.resolve(process.cwd(), cleanRel);
-  const isUploads = fullPath.startsWith(UPLOADS_DIR);
-  const isPrivate = fullPath.startsWith(PRIVATE_DIR);
-  if (!isUploads && !isPrivate) {
-    throw new Error("Akses path media tidak valid atau di luar jangkauan izin");
-  }
-  return fullPath;
 }
 
 async function walkDir(dir: string): Promise<string[]> {
@@ -69,8 +60,8 @@ export async function scanAllMediaItems(): Promise<{
   };
 }> {
   const [uploadFiles, privateFiles] = await Promise.all([
-    walkDir(UPLOADS_DIR),
-    walkDir(PRIVATE_DIR),
+    walkDir(MEDIA_UPLOADS_DIR),
+    walkDir(MEDIA_PRIVATE_DIR),
   ]);
 
   const allFiles = [...uploadFiles, ...privateFiles];
@@ -230,7 +221,7 @@ export async function deleteMediaItem(
   relativePath: string,
   force = false,
 ): Promise<{ success: boolean; isUsed: boolean; usedBy: string[] }> {
-  const fullPath = resolveSafeAbsolutePath(relativePath);
+  const fullPath = resolveSafeMediaPath(relativePath);
   const fileName = path.basename(fullPath);
 
   // Check usage first

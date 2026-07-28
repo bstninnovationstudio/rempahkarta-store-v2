@@ -1,8 +1,8 @@
 # Peta sistem REMPAHKARTA v1.3.0
 
-Snapshot source: 21 Juli 2026 (Asia/Jakarta)
+Snapshot source: 28 Juli 2026 (Asia/Jakarta)
 
-Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumlah pada snapshot ini adalah **38 page route** dan **63 API route file**. Route dinamis ditulis dengan parameter dalam kurung siku.
+Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumlah pada snapshot 28 Juli 2026 adalah **43 page route file** dan **79 API route file**. Route dinamis ditulis dengan parameter dalam kurung siku; `robots.ts` dan `sitemap.ts` adalah metadata route, bukan page UI.
 
 ## Legenda
 
@@ -31,7 +31,7 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | `package.json`, `package-lock.json`, `.env.example` | Script/runtime dependency terkunci dan contract environment tanpa secret nyata. |
 | `scripts/` | Generator scrypt admin dan migrasi dry-run/apply media private legacy. |
 
-## Page route: storefront, akun, dan pesanan (16)
+## Page route: storefront, akun, dan pesanan (18)
 
 | # | Route | Akses | Data/komponen utama | Query dan perilaku |
 | ---: | --- | --- | --- | --- |
@@ -42,14 +42,16 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 5 | `/login` | Publik | Google Identity, mode mock development | Redirect lokal divalidasi; login tidak lengkap diarahkan ke onboarding settings. |
 | 6 | `/pages/shipping` | Publik | Kebijakan pengiriman | Konten statis. |
 | 7 | `/pages/returns` | Publik | Kebijakan retur/refund | Konten statis. |
-| 8 | `/orders/[number]` | Owner | Status, timeline, item, alamat, shipment, cancel/return/refund | Lookup nomor unik lalu ownership; tidak menerima token URL sebagai kredensial. |
-| 9 | `/orders/[number]/payment` | Owner | QRIS/status, `PaymentPageClient` | Payment terbaru untuk order milik customer; sync manual melalui API terlindungi. |
-| 10 | `/orders/[number]/return` | Owner | Wizard `ReturnForm`, item, bukti, alasan | Memastikan order eligible dan milik user; upload/submission melalui API owner. |
-| 12 | `/user` | Customer | Metrik, completeness, tiga pesanan terbaru | `count`/`aggregate` terpisah dan `take: 3`; layout account terpadu. |
-| 13 | `/user/orders` | Customer | Riwayat pesanan, payment/fulfillment pill | Pagination server 10 row/page; order customer + fallback email legacy. |
-| 14 | `/user/settings` | Customer | Kontak + OTP, consent WhatsApp, alamat, rekening refund, progress onboarding | Satu layar universal; nomor/rekening memakai OTP dan consent perjalanan/promosi independen. |
-| 15 | `/user/addresses` | Customer | Route kompatibilitas | Redirect ke `/user/settings#addresses`, mempertahankan query aksi/redirect aman. |
-| 16 | `/user/payment` | Customer | Route kompatibilitas | Redirect ke `/user/settings#payment`. |
+| 8 | `/pages/terms` | Publik | Syarat &amp; ketentuan platform | Konten statis. |
+| 9 | `/pages/privacy` | Publik | Kebijakan privasi &amp; data | Konten statis. |
+| 10 | `/orders/[number]` | Owner | Status, timeline, item, alamat, shipment, cancel/return/refund | Lookup nomor unik lalu ownership; tidak menerima token URL sebagai kredensial. |
+| 11 | `/orders/[number]/payment` | Owner | QRIS/status, `PaymentPageClient` | Payment terbaru untuk order milik customer; sync manual melalui API terlindungi. |
+| 12 | `/orders/[number]/return` | Owner | Wizard `ReturnForm`, item, bukti, alasan | Memastikan order eligible dan milik user; upload/submission melalui API owner. |
+| 13 | `/user` | Customer | Metrik, completeness, tiga pesanan terbaru | `count`/`aggregate` terpisah dan `take: 3`; layout account terpadu. |
+| 14 | `/user/orders` | Customer | Riwayat pesanan, payment/fulfillment pill | Pagination server 10 row/page; order customer + fallback email legacy. |
+| 15 | `/user/settings` | Customer | Kontak + OTP, consent WhatsApp, alamat, rekening refund, progress onboarding | Satu layar universal; nomor/rekening memakai OTP dan consent perjalanan/promosi independen. |
+| 16 | `/user/addresses` | Customer | Route kompatibilitas | Redirect ke `/user/settings#addresses`, mempertahankan query aksi/redirect aman. |
+| 17 | `/user/payment` | Customer | Route kompatibilitas | Redirect ke `/user/settings#payment`. |
 
 ## Page route: admin (21)
 
@@ -92,16 +94,17 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 5 | `/api/products/[slug]` | `GET` | Publik | — | — | Detail satu produk dari cache katalog. |
 | 6 | `/api/locations/search` | `GET` | Customer | Hasil provider dibatasi | 25/menit; Turnstile `location_search`; saldo shadow | Cari Area ID Biteship setelah aksi user dan catat biaya request. |
 | 7 | `/api/checkout/quotes` | `POST` | Customer | Hasil provider dibatasi | 25/menit; Turnstile `shipping_quotes`; saldo shadow | Hitung tarif kurir aktif dari item server dan catat biaya request. |
-| 8 | `/api/checkout/orders` | `POST` | Customer + profil lengkap | Maks. 20 item | 10/menit; Turnstile `checkout_order`; saldo shadow | Re-rate berbiaya, reserve stok, buat order/payment, rollback reservation bila payment gagal. |
-| 9 | `/api/orders/[number]/payment/status` | `GET` | Owner | Satu payment terbaru | — | Status payment terbaru tanpa mengubah data. |
+| 8 | `/api/checkout/orders` | `POST` | Customer + profil lengkap | Maks. 20 item | 10/menit; Turnstile `checkout_order`; saldo shadow | Re-rate, reserve stok, buat order + payment intent, lalu create BSTN idempoten; hasil ambigu tetap dapat direkonsiliasi. |
+| 9 | `/api/orders/[number]/payment/status` | `GET` | Owner | Satu payment terbaru | 60/menit/customer | Verifikasi ownership sebelum expiry check, lalu kembalikan status terbaru. |
 | 10 | `/api/orders/[number]/payment/sync` | `POST` | Owner | — | 15/menit; Turnstile `payment_sync` | Rekonsiliasi status BSTN server-to-server. |
-| 11 | `/api/orders/[number]/cancel` | `POST` | Owner | — | 10/menit | Cancel pending payment atau buat cancellation request sesuai state. |
-| 12 | `/api/orders/[number]/media` | `POST` | Owner + order eligible | 5 MB/file, 10 file tersimpan | 10/menit | Simpan bukti return di private storage dan kembalikan URL API owner/admin. |
+| 11 | `/api/orders/[number]/cancel` | `POST` | Owner | — | 10/menit; Turnstile `order_cancel` | Cancel pending payment atau buat cancellation request sesuai state. |
+| 12 | `/api/orders/[number]/media` | `POST` | Owner + order eligible | 5 MB/file, 5 file tersimpan | 10/menit; Turnstile `return_media` | Simpan bukti return di private storage dan kembalikan URL API owner/admin. |
 | 13 | `/api/orders/[number]/media/[file]` | `GET` | Owner atau Admin | Satu file | `private, no-store` | Sajikan bukti return privat; akses asing mendapat 404. |
-| 14 | `/api/orders/[number]/returns` | `POST` | Owner | 1–5 bukti, maks. 20 item | 5/menit | Validasi bukti privat, masa/eligibility/item, serialisasi klaim, dan hitung refund. |
+| 14 | `/api/orders/[number]/returns` | `POST` | Owner | 1–5 bukti, maks. 20 item | 5/menit; Turnstile `return_request` | Validasi bukti privat, masa/eligibility/item, serialisasi klaim, dan hitung refund. |
+| 15 | `/api/store/status` | `GET` | Publik | Satu status operasional | 100/menit universal | Status jadwal libur/maintenance aktif untuk storefront. |
 | 16 | `/api/returns/[id]/media/[file]` | `GET` | Owner order atau Admin | Satu file | `private, no-store` | Sajikan bukti refund privat; akses asing mendapat 404. |
 
-## API route: customer account (7)
+## API route: customer account (9)
 
 | # | Route | Metode | Akses | Pagination/batas | Kontrol tambahan | Tujuan |
 | ---: | --- | --- | --- | --- | --- | --- |
@@ -111,15 +114,15 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | — | `/api/user/otp` | `POST` | Customer aktif | OTP 5 menit, 1 resend, 5 percobaan | 6/user + 10/IP/15 menit; 3 sesi baru/jam; Turnstile `user_otp_send` | Buat/resend challenge nomor atau refund; kode tidak pernah dikembalikan/disimpan plaintext. |
 | — | `/api/user/notifications` | `PATCH` | Customer aktif | Dua consent boolean | 20/menit; Turnstile `user_notifications` | Ubah consent shipment/promosi beserta timestamp dan audit. |
 | 20 | `/api/user/addresses` | `GET`, `POST` | Customer | GET maksimum 5 alamat | `POST`: 20/menit + Turnstile `user_address` | List/tambah alamat; transaksi berserial menjaga maksimal lima alamat per customer. |
-| 21 | `/api/user/addresses/[id]` | `PUT`, `DELETE` | Customer pemilik alamat | — | 20/menit gabungan + Turnstile `user_address` | Ubah/hapus alamat setelah pemeriksaan ownership. |
+| 21 | `/api/user/addresses/[id]` | `PUT`, `PATCH`, `DELETE` | Customer pemilik alamat | — | 20/menit gabungan + Turnstile `user_address` | Ubah/toggle default/hapus alamat setelah pemeriksaan ownership; menjaga invarian tepat satu alamat default per customer. |
 | 22 | `/api/user/payment` | `GET`, `POST` | Customer + kontak terverifikasi | Satu setting | `POST`: 20/menit + Turnstile `user_payment` + OTP terikat payload | Baca/upsert rekening refund bank/e-wallet secara atomik dengan konsumsi challenge. |
 | 23 | `/api/user/cart` | `GET`, `POST`, `PUT` | Customer | Maksimum 50 item | Write: 30/menit gabungan | Baca, tambah, atau sinkron penuh cart dengan validasi produk/varian. |
 
-## API route: admin (32)
+## API route: admin inti (48 total termasuk keuangan dan voucher)
 
 | # | Route | Metode | Akses | Pagination/batas | Kontrol tambahan | Tujuan |
 | ---: | --- | --- | --- | --- | --- | --- |
-| 24 | `/api/admin/login` | `POST` | Publik | — | 5/15 menit; Turnstile `admin_login` | Verifikasi email+scrypt dan terbitkan cookie JWT admin. |
+| 24 | `/api/admin/login` | `POST` | Publik | — | 20/client + 5/account/15 menit; Turnstile `admin_login` | Verifikasi email+scrypt dan terbitkan cookie JWT admin. |
 | 25 | `/api/admin/logout` | `POST` | Publik; idempoten | — | — | Hapus cookie admin milik caller; tidak mengubah data server. |
 | 26 | `/api/admin/dashboard/stats` | `GET` | Admin | Aggregate saja | — | Statistik order, payment, fulfillment, return, shipment, user, dan revenue. |
 | 27 | `/api/admin/orders` | `GET` | Admin | 20 default, 100 maksimum | — | List order dengan filter/search, relasi ringkas, dan metadata page. |
@@ -139,15 +142,25 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 40 | `/api/admin/orders/[number]/manual-status` | `POST` | Admin + demo lokal | — | — | Simulasi status/issue; 404 tanpa dua flag demo non-production. |
 | 41 | `/api/admin/orders/[number]/duplicate` | `POST` | Admin + demo lokal | — | — | Duplikasi order operasional; 404 tanpa dua flag demo non-production. |
 | 42 | `/api/admin/orders/[number]/shipment` | `POST` | Admin | — | 10/menit; saldo shadow ≥ quote | Book shipment Biteship dan debit harga quote setelah reservasi atomik. |
-| 43 | `/api/admin/orders/[number]/shipment/sync` | `POST` | Admin | — | Saldo shadow tracking | Rekonsiliasi shipment, waybill, harga, fulfillment, dan posisi omzet. |
+| 43 | `/api/admin/orders/[number]/shipment/sync` | `POST` | Admin | — | 15/menit; saldo shadow tracking | Lock shipment/order lalu rekonsiliasi status monotonic, waybill, harga, fulfillment, dan omzet. |
 | 44 | `/api/admin/orders/[number]/payment/sync` | `POST` | Admin | — | 15/menit; Turnstile `admin_payment_sync` | Rekonsiliasi payment BSTN dan audit actor admin. |
 | 45 | `/api/admin/orders/[number]/cancellation` | `POST` | Admin | — | 20/menit | Setujui/tolak cancellation, koordinasi provider, inventory, refund state. |
-| 46 | `/api/admin/orders/[number]/resolve` | `POST` | Admin | — | — | Selesaikan issue order melalui flow refund/return/finish yang ada. |
+| 46 | `/api/admin/orders/[number]/resolve` | `POST` | Admin | — | 10/menit; server guard `issueOrder` | Selesaikan issue order melalui flow refund/finish yang ada. |
 | 47 | `/api/admin/returns/[id]/decision` | `POST` | Admin | — | 20/menit | Setujui/tolak kasus secara serialized dan sinkronkan state order/return. |
 | 48 | `/api/admin/returns/[id]/refund` | `POST` | Admin | Satu refund operation | 10/menit | Verifikasi bukti privat, lock order, cegah over-refund, catat referensi/audit/state. |
 | — | `/api/admin/promotions` | `POST` | Admin | Semua user eligible, dedupe nomor | 3/jam; Turnstile `admin_promotion_send` | Buat campaign teks/JPG/PNG dan snapshot outbox penerima consent. |
 | — | `/api/admin/promotions/[id]/dispatch` | `POST` | Admin | 3 penerima/batch | 120 batch/15 menit | Dispatch resumable, recheck consent, dan agregasi hasil campaign. |
 | — | `/api/admin/promotions/[id]/media` | `GET` | Admin | Satu gambar | `private, no-store` | Sajikan lampiran promosi dari private storage. |
+| — | `/api/admin/media` | `GET`, `DELETE` | Admin | Scan gambar; delete 10/menit | Path containment, audit, force confirmation | Inventaris dan hapus media unused/terpilih. |
+| — | `/api/admin/media/preview` | `GET` | Admin | Maks. 5 MB | 120/menit, private/no-store | Preview gambar dalam root media yang tervalidasi. |
+| — | `/api/admin/orders/[number]/delete` | `POST` | Admin + devtools lokal | — | Dua flag devtools + policy order | Hapus data mock hanya pada development opt-in. |
+| — | `/api/admin/settings/schedules` | `GET`, `POST` | Admin | List jadwal | 30 GET / 15 POST; Serializable overlap guard | List/buat jadwal libur atau maintenance. |
+| — | `/api/admin/settings/schedules/[id]` | `PATCH`, `DELETE` | Admin + devtools lokal | — | Dua flag devtools | Edit/hapus log jadwal lokal. |
+| — | `/api/admin/settings/schedules/[id]/cancel` | `PATCH` | Admin | — | 15/menit | Batalkan jadwal aktif/terencana. |
+| — | `/api/admin/shipping/config`, `/warehouse` | `GET`, `PUT` | Admin | — | 10 write/menit; atomic dotenv write | Baca/simpan warehouse tervalidasi. |
+| — | `/api/admin/shipping/couriers` | `PATCH` | Admin | Minimal satu aktif | 20/menit | Toggle allowlist kurir secara serialized. |
+| — | `/api/admin/shipping/locations` | `GET` | Admin | Provider result | 30/menit; shadow balance | Cari area Biteship admin dan catat biaya. |
+| — | `/api/admin/users/[id]/status` | `PATCH` | Admin | — | 20/menit | Update ACTIVE/PAUSE/BLOCK; BLOCK mencabut session. |
 
 ## API route: keuangan admin (5)
 
@@ -166,13 +179,14 @@ Peta ini dihasilkan dari file `app/**/page.tsx` dan `app/api/**/route.ts`. Jumla
 | 49 | `/api/webhooks/biteship` | `POST` | Shared secret kuat; probe kosong/test tanpa side effect | — | Bucket webhook 1.000/menit | Deduplikasi/retry inbox, tolak stale/regressive state, proses status/price/waybill/inventory/issue. |
 | 50 | `/api/webhooks/bstn` | `POST` | HMAC + shared secret kuat | — | Bucket webhook 1.000/menit | Deduplikasi/retry inbox, verifikasi reference/amount, GET provider, update payment/order/inventory. |
 
-## API route: voucher dan cron (6)
+## API route: voucher dan cron (7)
 
 | Route | Metode | Akses | Kontrol tambahan | Tujuan |
 | --- | --- | --- | --- | --- |
 | `/api/vouchers/check` | `POST` | Customer | 15/menit, exact Origin, Turnstile `voucher_check` | Evaluasi UI kode berdasarkan subtotal/ongkir saat ini; checkout tetap authoritative. |
 | `/api/vouchers/public` | `GET` | Publik | Cache response singkat | Daftar voucher public yang active dan berada dalam masa berlaku. |
 | `/api/cron/vouchers` | `GET`, `POST` | Scheduler | Bearer atau `X-Cron-Secret` | Menandai promo expired/limit total habis sebagai `FINISH`. |
+| `/api/cron/expire-orders` | `GET`, `POST` | Scheduler | Secret kuat + 10/menit; batch 100 | Expire payment intent/pending stale dan lepas reservasi idempoten. |
 | `/api/admin/vouchers` | `GET`, `POST` | Admin | GET pagination; POST exact Origin | List dan create voucher + audit. |
 | `/api/admin/vouchers/[id]` | `GET`, `PUT` | Admin | PUT exact Origin | Detail voucher, 100 penggunaan terbaru, dan update + audit. |
 | `/api/admin/vouchers/[id]/duplicate` | `POST` | Admin | exact Origin | Duplikasi konfigurasi dengan kode baru dan status awal `PAUSE`. |

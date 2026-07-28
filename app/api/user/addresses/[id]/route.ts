@@ -5,6 +5,7 @@ import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { getProfileCompleteness } from "@/lib/user-profile";
+import { errorMessage } from "@/lib/error-message";
 
 const addressSchema = z.object({
   label: z.string().trim().min(1).max(80),
@@ -14,6 +15,7 @@ const addressSchema = z.object({
   address: z.string().trim().min(10).max(1000),
   postalCode: z.string().regex(/^\d{5}$/),
   areaId: z.string().min(3).max(120),
+  isDefault: z.boolean().optional(),
   turnstileToken: z.string().min(1).max(2048),
 });
 
@@ -47,11 +49,40 @@ export async function PUT(
     }
     const verification = await verifyTurnstile(request, parsed.data.turnstileToken, "user_address");
     if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
-    const { turnstileToken: _turnstileToken, ...addressInput } = parsed.data;
+    const { turnstileToken: _turnstileToken, isDefault: requestIsDefault, ...addressInput } = parsed.data;
     void _turnstileToken;
 
     const updated = await prisma.$transaction(async tx => {
-      const address = await tx.userAddress.update({ where: { id }, data: addressInput });
+      let isDefaultVal = existing.isDefault;
+      if (requestIsDefault !== undefined) {
+        if (requestIsDefault) {
+          await tx.userAddress.updateMany({
+            where: { userId: customer.id },
+            data: { isDefault: false },
+          });
+          isDefaultVal = true;
+        } else if (existing.isDefault) {
+          const other = await tx.userAddress.findFirst({
+            where: { userId: customer.id, id: { not: id } },
+            orderBy: { id: "asc" },
+          });
+          if (other) {
+            await tx.userAddress.update({
+              where: { id: other.id },
+              data: { isDefault: true },
+            });
+            isDefaultVal = false;
+          } else {
+            isDefaultVal = true;
+          }
+        }
+      }
+
+      const address = await tx.userAddress.update({
+        where: { id },
+        data: { ...addressInput, isDefault: isDefaultVal },
+      });
+
       await tx.auditLog.create({
         data: { actorType: "customer", actorId: customer.id, action: "user.address_updated", entityType: "user_address", entityId: id },
       });
@@ -60,8 +91,62 @@ export async function PUT(
 
     const completion = await getProfileCompleteness(customer.id);
     return NextResponse.json({ success: true, address: updated, completion });
-  } catch {
-    return NextResponse.json({ error: "Gagal memperbarui alamat" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: errorMessage(error, "Gagal memperbarui alamat") }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const rate = checkRateLimit(request, { scope: "user:address-save", limit: 20 });
+  if (!rate.allowed) return rateLimitResponse(rate);
+  const customer = await customerFromRequest();
+  if (!customer) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userCheck = assertCustomerActive(customer);
+  if (userCheck) return userCheck;
+
+  const { id } = await params;
+
+  try {
+    let turnstileToken = request.headers.get("x-turnstile-token") || "";
+    if (!turnstileToken) {
+      try {
+        const body = z.object({ turnstileToken: z.string().min(1).max(2048) }).safeParse(await request.json());
+        if (body.success) turnstileToken = body.data.turnstileToken;
+      } catch { /* body is optional when token is sent as header */ }
+    }
+    const verification = await verifyTurnstile(request, turnstileToken, "user_address");
+    if (!verification.success) return NextResponse.json({ error: verification.error }, { status: 403 });
+
+    const existing = await prisma.userAddress.findFirst({
+      where: { id, userId: customer.id },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Alamat tidak ditemukan" }, { status: 404 });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.userAddress.updateMany({
+        where: { userId: customer.id },
+        data: { isDefault: false },
+      });
+      const address = await tx.userAddress.update({
+        where: { id },
+        data: { isDefault: true },
+      });
+      await tx.auditLog.create({
+        data: { actorType: "customer", actorId: customer.id, action: "user.address_set_default", entityType: "user_address", entityId: id },
+      });
+      return address;
+    });
+
+    return NextResponse.json({ success: true, address: updated });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: errorMessage(error, "Gagal memperbarui alamat utama") }, { status: 500 });
   }
 }
 
@@ -77,7 +162,6 @@ export async function DELETE(
   }
   const userCheckDelete = assertCustomerActive(customer);
   if (userCheckDelete) return userCheckDelete;
-
 
   const { id } = await params;
 
@@ -98,16 +182,30 @@ export async function DELETE(
       return NextResponse.json({ error: "Alamat tidak ditemukan" }, { status: 404 });
     }
 
-    await prisma.$transaction([
-      prisma.userAddress.delete({ where: { id } }),
-      prisma.auditLog.create({
+    await prisma.$transaction(async (tx) => {
+      await tx.userAddress.delete({ where: { id } });
+
+      if (existing.isDefault) {
+        const nextDefault = await tx.userAddress.findFirst({
+          where: { userId: customer.id },
+          orderBy: { id: "desc" },
+        });
+        if (nextDefault) {
+          await tx.userAddress.update({
+            where: { id: nextDefault.id },
+            data: { isDefault: true },
+          });
+        }
+      }
+
+      await tx.auditLog.create({
         data: { actorType: "customer", actorId: customer.id, action: "user.address_deleted", entityType: "user_address", entityId: id },
-      }),
-    ]);
+      });
+    });
 
     const completion = await getProfileCompleteness(customer.id);
     return NextResponse.json({ success: true, completion });
-  } catch {
-    return NextResponse.json({ error: "Gagal menghapus alamat" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: errorMessage(error, "Gagal menghapus alamat") }, { status: 500 });
   }
 }

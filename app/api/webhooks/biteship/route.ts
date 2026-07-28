@@ -11,6 +11,9 @@ import {
   enqueueShipmentTrackingNotification,
   scheduleWhatsappDispatch,
 } from "@/lib/whatsapp-notifications";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { hasOversizedContentLength, MAX_WEBHOOK_BYTES } from "@/lib/request-body";
 
 type BiteshipWebhook = {
   event: "order.status" | "order.price" | "order.waybill_id" | string;
@@ -23,6 +26,18 @@ type BiteshipWebhook = {
   note?: string;
   updated_at?: string;
 };
+
+const webhookSchema = z.object({
+  event: z.string().min(1).max(80).optional(),
+  order_id: z.string().min(1).max(120).optional(),
+  courier_tracking_id: z.string().max(120).optional(),
+  courier_waybill_id: z.string().max(120).optional(),
+  status: z.string().max(50).optional(),
+  price: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  order_price: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  note: z.string().max(2_000).optional(),
+  updated_at: z.string().max(80).optional(),
+}).passthrough();
 
 const fulfillmentRank: Record<string, number> = {
   awaiting_payment: 0,
@@ -74,19 +89,28 @@ function canAdvanceShipment(current: string, next: string) {
 }
 
 export async function POST(request: Request) {
+  if (hasOversizedContentLength(request, MAX_WEBHOOK_BYTES)) {
+    return NextResponse.json({ error: "Webhook body terlalu besar" }, { status: 413 });
+  }
   const raw = await request.text();
+  if (Buffer.byteLength(raw, "utf8") > MAX_WEBHOOK_BYTES) {
+    return NextResponse.json({ error: "Webhook body terlalu besar" }, { status: 413 });
+  }
   
   // 1. Accept empty body immediately for Biteship registration probe
   if (!raw || raw.trim() === "") {
     return NextResponse.json({ ok: true, message: "Biteship Webhook Ready" });
   }
 
-  let payload: BiteshipWebhook;
+  let json: unknown;
   try {
-    payload = JSON.parse(raw) as BiteshipWebhook;
+    json = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  const parsedPayload = webhookSchema.safeParse(json);
+  if (!parsedPayload.success) return NextResponse.json({ error: "Payload tidak valid" }, { status: 400 });
+  const payload = parsedPayload.data as BiteshipWebhook;
 
   // 2. Skip verification for test/ping events or incomplete installation pings
   const isTest = !payload.event || payload.event === "ping" || payload.event === "test" || !payload.order_id;
@@ -102,7 +126,10 @@ export async function POST(request: Request) {
   }
 
   const payloadHash = await sha256(raw);
-  const deliveryKey = `${payload.event}:${payload.order_id}:${payloadHash}`;
+  const deliveryKeySource = `${payload.event}:${payload.order_id}:${payloadHash}`;
+  const deliveryKey = deliveryKeySource.length <= 180
+    ? deliveryKeySource
+    : `biteship:${await sha256(deliveryKeySource)}`;
   try {
     await prisma.webhookInbox.create({data:{source:"biteship",deliveryKey,signatureValid:true,payloadHash,payload}});
   } catch (error) {
@@ -137,79 +164,82 @@ export async function POST(request: Request) {
     parsedOccurredAt.getTime() <= Date.now() + 5 * 60_000,
   );
   const occurredAt = providerTimestampValid ? parsedOccurredAt! : new Date();
-  const isStaleStatus = Boolean(
-    payload.event === "order.status" &&
-    providerTimestampValid &&
-    shipment.lastProviderSyncAt &&
-    occurredAt.getTime() < shipment.lastProviderSyncAt.getTime(),
-  );
-  if (isStaleStatus) {
-    await prisma.$transaction([
-      prisma.auditLog.create({ data: { actorType: "system", action: "biteship.stale_ignored", entityType: "shipment", entityId: shipment.id, after: { status: payload.status, updatedAt: payload.updated_at } } }),
-      prisma.webhookInbox.update({ where: { source_deliveryKey: { source: "biteship", deliveryKey } }, data: { status: "ignored", processedAt: new Date(), error: "Stale provider event" } }),
-    ]);
-    return NextResponse.json({ success: true });
-  }
-
-  let whatsappMessageId: string | null = null;
-  await prisma.$transaction(async tx=>{
-    {
-      const normalized=normalizeBiteshipStatus(payload.status);
-      const actual=payload.price??payload.order_price;
-      const waybill=payload.courier_waybill_id||shipment.waybillId;
-      const statusAccepted = payload.event !== "order.status"
-        || !payload.status
-        || canAdvanceShipment(shipment.status, normalized);
-      const appliedStatus = payload.event === "order.status" && payload.status
-        ? (statusAccepted ? normalized : shipment.status)
-        : shipment.status;
-      const update:Record<string,unknown>={raw:payload};
-      if(payload.courier_tracking_id)update.trackingId=payload.courier_tracking_id;
-      if(payload.event==="order.status"&&payload.status){
-        update.lastProviderSyncAt=occurredAt;
-        if(statusAccepted)update.status=normalized;
-      }
-      if((payload.event==="order.price"||actual!=null)&&actual!=null){update.actualPrice=BigInt(actual);update.priceAdjustment=BigInt(actual)-shipment.quotedPrice}
-      if(payload.event==="order.waybill_id"&&waybill){update.waybillId=waybill;update.waybillUpdatedAt=new Date()}
-      await tx.shipment.update({where:{id:shipment.id},data:update});
-      const trackingEvent = await tx.shipmentTrackingEvent.create({data:{shipmentId:shipment.id,providerStatus:payload.event==="order.status"?normalized:payload.event,note:payload.note||undefined,occurredAt,payloadHash,payload}});
-
-      if(payload.event==="order.status"&&payload.status&&statusAccepted){
-        const fulfillment=fulfillmentFromBiteshipStatus(normalized);
-        const updateData: Record<string, unknown> = {};
-
-        if(fulfillment&&fulfillment!==shipment.order.fulfillmentState&&canAdvanceFulfillment(shipment.order.fulfillmentState,fulfillment,shipment.status)){
-          if(fulfillment==="cancelled"&&!handedOverBiteshipStatuses.has(normalizeBiteshipStatus(shipment.status))){
-            if(["packed","shipment_booked","handover_pending"].includes(shipment.order.fulfillmentState))await restockCommittedOrder(tx,shipment.orderId,`biteship_${normalized}`);
-            else if(["awaiting_payment","awaiting_processing","processing"].includes(shipment.order.fulfillmentState))await releaseOrderReservation(tx,shipment.orderId,`biteship_${normalized}`);
-          }
-          updateData.fulfillmentState = fulfillment;
-          if (fulfillment==="cancelled" && shipment.order.paymentState==="paid") {
-            updateData.paymentState = "refund_pending";
-          }
-        }
-
-        const issueStatuses = ["cancelled", "courier_not_found", "rejected", "disposed", "return_in_transit", "returned"];
-        const originalStatus = payload.status || "";
-        const isIssue = issueStatuses.includes(originalStatus) || issueStatuses.includes(normalized);
-        const hasPaid = ["paid", "refund_pending"].includes(shipment.order.paymentState) || updateData.paymentState === "refund_pending";
-
-        if (isIssue && hasPaid) {
-          updateData.issueOrder = true;
-          updateData.issueReason = originalStatus || normalized;
-        }
-
-        if (Object.keys(updateData).length > 0) {
-          await tx.order.update({where:{id:shipment.orderId},data:updateData});
-        }
-      }
-      await tx.auditLog.create({data:{actorType:"system",action:statusAccepted?`biteship.${payload.event}`:"biteship.signal_ignored",entityType:"shipment",entityId:shipment.id,before:{status:shipment.status,waybillId:shipment.waybillId,actualPrice:shipment.actualPrice?.toString()},after:{status:appliedStatus,providerStatus:normalized,waybillId:waybill,actualPrice:actual}}});
-      whatsappMessageId = (await enqueueShipmentTrackingNotification(tx, trackingEvent.id))?.id || null;
+  const outcome = await prisma.$transaction(async tx=>{
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Shipment\` WHERE id = ${shipment.id} FOR UPDATE`);
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${shipment.orderId} FOR UPDATE`);
+    const currentShipment = await tx.shipment.findUniqueOrThrow({
+      where: { id: shipment.id },
+      include: { order: true },
+    });
+    const isStaleStatus = Boolean(
+      payload.event === "order.status"
+      && providerTimestampValid
+      && currentShipment.lastProviderSyncAt
+      && occurredAt.getTime() < currentShipment.lastProviderSyncAt.getTime()
+    );
+    if (isStaleStatus) {
+      await tx.auditLog.create({ data: { actorType: "system", action: "biteship.stale_ignored", entityType: "shipment", entityId: currentShipment.id, after: { status: payload.status, updatedAt: payload.updated_at } } });
+      await tx.webhookInbox.update({ where: { source_deliveryKey: { source: "biteship", deliveryKey } }, data: { status: "ignored", processedAt: new Date(), error: "Stale provider event" } });
+      return { stale: true, whatsappMessageId: null as string | null };
     }
-    await syncOrderRevenue(tx, shipment.orderId);
+
+    const normalized=normalizeBiteshipStatus(payload.status);
+    const actual=payload.price??payload.order_price;
+    const waybill=payload.courier_waybill_id||currentShipment.waybillId;
+    const statusAccepted = payload.event !== "order.status"
+      || !payload.status
+      || canAdvanceShipment(currentShipment.status, normalized);
+    const appliedStatus = payload.event === "order.status" && payload.status
+      ? (statusAccepted ? normalized : currentShipment.status)
+      : currentShipment.status;
+    const update:Record<string,unknown>={raw:payload};
+    if(payload.courier_tracking_id)update.trackingId=payload.courier_tracking_id;
+    if(payload.event==="order.status"&&payload.status){
+      update.lastProviderSyncAt=occurredAt;
+      if(statusAccepted)update.status=normalized;
+    }
+    if((payload.event==="order.price"||actual!=null)&&actual!=null){update.actualPrice=BigInt(actual);update.priceAdjustment=BigInt(actual)-currentShipment.quotedPrice}
+    if(payload.event==="order.waybill_id"&&waybill){update.waybillId=waybill;update.waybillUpdatedAt=new Date()}
+    await tx.shipment.update({where:{id:currentShipment.id},data:update});
+    const trackingEvent = await tx.shipmentTrackingEvent.create({data:{shipmentId:currentShipment.id,providerStatus:payload.event==="order.status"?normalized:payload.event,note:payload.note||undefined,occurredAt,payloadHash,payload}});
+
+    if(payload.event==="order.status"&&payload.status&&statusAccepted){
+      const fulfillment=fulfillmentFromBiteshipStatus(normalized);
+      const updateData: Record<string, unknown> = {};
+
+      if(fulfillment&&fulfillment!==currentShipment.order.fulfillmentState&&canAdvanceFulfillment(currentShipment.order.fulfillmentState,fulfillment,currentShipment.status)){
+        if(fulfillment==="cancelled"&&!handedOverBiteshipStatuses.has(normalizeBiteshipStatus(currentShipment.status))){
+          if(["packed","shipment_booked","handover_pending"].includes(currentShipment.order.fulfillmentState))await restockCommittedOrder(tx,currentShipment.orderId,`biteship_${normalized}`);
+          else if(["awaiting_payment","awaiting_processing","processing"].includes(currentShipment.order.fulfillmentState))await releaseOrderReservation(tx,currentShipment.orderId,`biteship_${normalized}`);
+        }
+        updateData.fulfillmentState = fulfillment;
+        if (fulfillment==="cancelled" && currentShipment.order.paymentState==="paid") {
+          updateData.paymentState = "refund_pending";
+        }
+      }
+
+      const issueStatuses = ["cancelled", "courier_not_found", "rejected", "disposed", "return_in_transit", "returned"];
+      const originalStatus = payload.status || "";
+      const isIssue = issueStatuses.includes(originalStatus) || issueStatuses.includes(normalized);
+      const hasPaid = ["paid", "refund_pending"].includes(currentShipment.order.paymentState) || updateData.paymentState === "refund_pending";
+
+      if (isIssue && hasPaid) {
+        updateData.issueOrder = true;
+        updateData.issueReason = originalStatus || normalized;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await tx.order.update({where:{id:currentShipment.orderId},data:updateData});
+      }
+    }
+    await tx.auditLog.create({data:{actorType:"system",action:statusAccepted?`biteship.${payload.event}`:"biteship.signal_ignored",entityType:"shipment",entityId:currentShipment.id,before:{status:currentShipment.status,waybillId:currentShipment.waybillId,actualPrice:currentShipment.actualPrice?.toString()},after:{status:appliedStatus,providerStatus:normalized,waybillId:waybill,actualPrice:actual}}});
+    const whatsappMessageId = (await enqueueShipmentTrackingNotification(tx, trackingEvent.id))?.id || null;
+    await syncOrderRevenue(tx, currentShipment.orderId);
     await tx.webhookInbox.update({where:{source_deliveryKey:{source:"biteship",deliveryKey}},data:{status:"processed",processedAt:new Date(),error:null}});
+    return { stale: false, whatsappMessageId };
   });
+  if (outcome.stale) return NextResponse.json({ success: true });
   invalidateCatalogCache();
-  scheduleWhatsappDispatch(whatsappMessageId);
+  scheduleWhatsappDispatch(outcome.whatsappMessageId);
   return NextResponse.json({ success: true });
 }

@@ -26,11 +26,12 @@
     "@prisma/client": "6.19.3",
     "jose": "^6.1.0",
     "lucide-react": "^0.468.0",
-    "next": "16.2.10",
+    "next": "16.2.12",
     "prisma": "6.19.3",
     "react": "19.2.6",
     "react-barcode": "^1.6.1",
     "react-dom": "19.2.6",
+    "sharp": "0.35.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -38,13 +39,14 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.2.12",
     "tsx": "^4.20.6",
     "typescript": "5.9.3"
   },
   "overrides": {
-    "postcss": "8.5.19"
+    "postcss": "8.5.19",
+    "sharp": "0.35.0"
   },
   "type": "module",
-  "displayName": "AMK Store"
+  "displayName": "Rempahkarta Store"
 }

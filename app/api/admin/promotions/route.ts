@@ -5,6 +5,7 @@ import { formatWhatsappPhone } from "@/lib/gowa";
 import { saveLocalImage } from "@/lib/local-media";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { hasOversizedContentLength, MAX_IMAGE_MULTIPART_BYTES } from "@/lib/request-body";
 
 export async function POST(request: Request) {
   const rate = checkRateLimit(request, {
@@ -15,6 +16,9 @@ export async function POST(request: Request) {
   if (!rate.allowed) return rateLimitResponse(rate);
   const admin = await adminFromRequest();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (hasOversizedContentLength(request, MAX_IMAGE_MULTIPART_BYTES)) {
+    return NextResponse.json({ error: "Ukuran request upload melebihi batas" }, { status: 413 });
+  }
 
   try {
     const form = await request.formData();

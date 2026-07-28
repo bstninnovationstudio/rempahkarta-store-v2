@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { BiteshipAdapter } from "@/lib/adapters/biteship";
-import { BstnPaymentAdapter } from "@/lib/adapters/bstn";
+import { BstnApiError, BstnPaymentAdapter } from "@/lib/adapters/bstn";
 import { buildBstnItems } from "@/lib/bstn-items";
 import { isProduction, getAppUrl, getBstnApiKey, getBiteshipApiKey, warehouseAreaId, getWebhookBaseUrl } from "@/lib/env";
 import { releaseOrderReservation } from "@/lib/inventory";
@@ -109,6 +109,9 @@ export async function POST(request: Request) {
     const webhookUrl = `${webhookBase}/api/webhooks/bstn`;
     const finishUrl = `${webhookBase}/orders/${order.publicNumber}`;
 
+    let paymentIntentId: string | null = null;
+    let providerCallStarted = false;
+    const localPaymentUrl = `${base}/orders/${order.publicNumber}/payment`;
     try {
       if (!bstnApiKey || !process.env.BSTN_RETURN_SIGNATURE_SECRET) throw new Error("Konfigurasi pembayaran BSTN belum lengkap");
       const { calculateServiceFee } = await import("@/lib/fee");
@@ -121,17 +124,99 @@ export async function POST(request: Request) {
         target: order.voucherTarget,
         serviceFee: feeBreakdown.fixedFee,
       });
+      const provisionalExpiry = new Date(Date.now() + 10 * 60_000);
+      const paymentIntent = await prisma.$transaction(async tx => {
+        const created = await tx.payment.create({
+          data: {
+            orderId: order.id,
+            projectPaymentRef: order.publicNumber,
+            amount: BigInt(feeBreakdown.bstnAmount),
+            status: "not_created",
+            paymentPageUrl: localPaymentUrl,
+            expiresAt: provisionalExpiry,
+          },
+        });
+        await tx.order.update({
+          where: { id: order.id },
+          data: { paymentState: "pending" },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorType: "system",
+            action: "payment.intent_created",
+            entityType: "order",
+            entityId: order.id,
+            after: { projectPaymentRef: order.publicNumber },
+          },
+        });
+        return created;
+      });
+      paymentIntentId = paymentIntent.id;
+      providerCallStarted = true;
       const result = await bstn.createPayment({ reference: order.publicNumber, amount: feeBreakdown.bstnAmount, description: `Pembayaran ${order.publicNumber}`, customer: { name: order.guestName, email: order.guestEmail, phone: order.guestPhone }, items: bstnItems, finishUrl, webhookUrl, expiryMinutes: 10 });
-      const localPaymentUrl = `${base}/orders/${order.publicNumber}/payment`;
+      if (
+        !result.data?.payment_id
+        || !Number.isFinite(result.data.payable_amount)
+        || !Number.isFinite(result.data.fee_amount)
+        || !Number.isFinite(new Date(result.data.expires_at).getTime())
+      ) {
+        throw new Error("Respons pembuatan pembayaran BSTN tidak lengkap");
+      }
       await prisma.$transaction([
-        prisma.payment.create({ data: { orderId: order.id, providerPaymentId: result.data.payment_id, projectPaymentRef: order.publicNumber, amount: BigInt(feeBreakdown.bstnAmount), payableAmount: BigInt(result.data.payable_amount), feeAmount: BigInt(result.data.fee_amount), uniqueCode: readBstnUniqueCode(result.data, Math.max(0, result.data.payable_amount - Number(order.grandTotal))), status: "pending", paymentPageUrl: localPaymentUrl, expiresAt: new Date(result.data.expires_at), raw: result.data as unknown as Prisma.InputJsonValue } }),
+        prisma.payment.update({ where: { id: paymentIntent.id }, data: { providerPaymentId: result.data.payment_id, payableAmount: BigInt(result.data.payable_amount), feeAmount: BigInt(result.data.fee_amount), uniqueCode: readBstnUniqueCode(result.data, Math.max(0, result.data.payable_amount - Number(order.grandTotal))), status: "pending", expiresAt: new Date(result.data.expires_at), raw: result.data as unknown as Prisma.InputJsonValue } }),
         prisma.order.update({ where: { id: order.id }, data: { paymentState: "pending" } }),
       ]);
       invalidateCatalogCache();
       return NextResponse.json({ success: true, order_number: order.publicNumber, payment_page_url: localPaymentUrl });
     } catch (cause) {
-      const errorMessage = cause instanceof Error ? cause.message : "Pembayaran belum dapat dibuat. Silakan ulangi.";
+      const configurationFailure = cause instanceof Error && cause.message.includes("Konfigurasi pembayaran BSTN belum lengkap");
+      const errorMessage = cause instanceof BstnApiError
+        ? `BSTN menolak pembuatan pembayaran dengan HTTP ${cause.status}`
+        : cause instanceof Error ? cause.message : "Pembayaran belum dapat dibuat. Silakan ulangi.";
+      const providerRejected = cause instanceof BstnApiError
+        && cause.status >= 400
+        && cause.status < 500
+        && ![408, 409, 425, 429].includes(cause.status);
+      const definitiveFailure = !providerCallStarted || providerRejected;
+      if (!definitiveFailure && paymentIntentId) {
+        try {
+          await prisma.$transaction([
+            prisma.payment.update({
+              where: { id: paymentIntentId },
+              data: { status: "pending" },
+            }),
+            prisma.order.update({
+              where: { id: order.id },
+              data: { paymentState: "pending" },
+            }),
+            prisma.auditLog.create({
+              data: {
+                actorType: "system",
+                action: "payment.create_ambiguous",
+                entityType: "order",
+                entityId: order.id,
+                after: { message: errorMessage.slice(0, 500), retryableByWebhook: true },
+              },
+            }),
+          ]);
+        } catch (persistError) {
+          console.error("[Checkout Payment Ambiguous Persist Error]", persistError);
+        }
+        invalidateCatalogCache();
+        return NextResponse.json({
+          success: true,
+          pending_confirmation: true,
+          order_number: order.publicNumber,
+          payment_page_url: localPaymentUrl,
+        }, { status: 202 });
+      }
       await prisma.$transaction(async tx => {
+        if (paymentIntentId) {
+          await tx.payment.updateMany({
+            where: { id: paymentIntentId, status: { in: ["not_created", "pending"] } },
+            data: { status: "failed" },
+          });
+        }
         await tx.order.update({ where: { id: order.id }, data: { paymentState: "failed", fulfillmentState: "cancelled" } });
         if (order.voucherId) {
           const usage = await tx.voucherUsage.deleteMany({ where: { orderId: order.id } });
@@ -141,7 +226,10 @@ export async function POST(request: Request) {
         await tx.auditLog.create({ data: { actorType: "system", action: "payment.create_failed", entityType: "order", entityId: order.id, after: { message: errorMessage } } });
       });
       invalidateCatalogCache();
-      return NextResponse.json({ error: errorMessage }, { status: cause instanceof Error && cause.message.includes("belum lengkap") ? 503 : 502 });
+      return NextResponse.json(
+        { error: configurationFailure ? "Konfigurasi pembayaran BSTN belum lengkap" : "Pembayaran belum dapat dibuat. Silakan ulangi." },
+        { status: configurationFailure ? 503 : 502 },
+      );
     }
   } catch (cause) {
     console.error("[Checkout API Error]", cause);

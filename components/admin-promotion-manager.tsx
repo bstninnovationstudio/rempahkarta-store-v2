@@ -165,7 +165,7 @@ export function AdminPromotionManager({
               <small>{message.length}/3000 karakter. Footer pesan otomatis ditambahkan oleh sistem.</small>
             </label>
             <label className="promotion-media-picker">
-              <ImagePlus size={18} aria-hidden="true" />
+              <ImagePlus size={18} aria-hidden="true" style={{ flexShrink: 0 }} />
               <span>
                 <strong>{media ? media.name : "Tambahkan gambar (opsional)"}</strong>
                 <small>JPG atau PNG, maksimal 5 MB.</small>
@@ -176,19 +176,23 @@ export function AdminPromotionManager({
                 accept="image/jpeg,image/png"
                 onChange={event => setMedia(event.target.files?.[0] || null)}
               />
+              {media ? (
+                <button
+                  type="button"
+                  className="promotion-remove-media-icon"
+                  aria-label="Hapus gambar"
+                  title="Hapus gambar"
+                  onClick={event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setMedia(null);
+                    if (fileRef.current) fileRef.current.value = "";
+                  }}
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              ) : null}
             </label>
-            {media ? (
-              <button
-                type="button"
-                className="promotion-remove-media"
-                onClick={() => {
-                  setMedia(null);
-                  if (fileRef.current) fileRef.current.value = "";
-                }}
-              >
-                <X size={13} aria-hidden="true" /> Hapus gambar
-              </button>
-            ) : null}
             <button
               type="submit"
               className="button button-dark promotion-submit"

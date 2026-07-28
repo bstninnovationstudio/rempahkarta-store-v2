@@ -18,17 +18,24 @@ export const ALL_COURIER_OPTIONS: Omit<CourierOption, "enabled">[] = [
 ];
 
 export const warehouseSchema = z.object({
-  name: z.string().min(2, "Nama gudang minimal 2 karakter"),
-  contactName: z.string().min(2, "Nama kontak minimal 2 karakter"),
-  contactPhone: z.string().min(8, "Nomor telepon minimal 8 karakter"),
-  address: z.string().min(10, "Alamat gudang minimal 10 karakter"),
-  postalCode: z.string().min(5, "Kode pos minimal 5 digit"),
-  areaId: z.string().min(1, "Area ID Biteship wajib dipilih"),
+  name: z.string().trim().min(2, "Nama gudang minimal 2 karakter").max(160).refine(value => !/[\u0000-\u001f\u007f]/.test(value), "Nama gudang mengandung karakter tidak valid"),
+  contactName: z.string().trim().min(2, "Nama kontak minimal 2 karakter").max(160).refine(value => !/[\u0000-\u001f\u007f]/.test(value), "Nama kontak mengandung karakter tidak valid"),
+  contactPhone: z.string().trim().min(8, "Nomor telepon minimal 8 karakter").max(20).regex(/^[0-9+() -]+$/, "Format nomor telepon tidak valid"),
+  address: z.string().trim().min(10, "Alamat gudang minimal 10 karakter").max(1000).refine(value => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value), "Alamat mengandung karakter tidak valid"),
+  postalCode: z.string().regex(/^\d{5}$/, "Kode pos harus 5 digit"),
+  areaId: z.string().trim().min(1, "Area ID Biteship wajib dipilih").max(120).regex(/^[a-zA-Z0-9_-]+$/, "Area ID Biteship tidak valid"),
 });
 
 export type WarehousePayload = z.infer<typeof warehouseSchema>;
 
-async function writeEnvUpdates(updates: Record<string, string>) {
+let envWriteQueue: Promise<void> = Promise.resolve();
+let configMutationQueue: Promise<void> = Promise.resolve();
+
+function encodedEnvValue(value: string) {
+  return JSON.stringify(value);
+}
+
+async function writeEnvUpdatesNow(updates: Record<string, string>) {
   const envPath = path.join(process.cwd(), ".env");
   let content = "";
   try {
@@ -39,24 +46,42 @@ async function writeEnvUpdates(updates: Record<string, string>) {
 
   let lines = content.split(/\r?\n/);
   for (const [key, value] of Object.entries(updates)) {
-    process.env[key] = value;
-
     const reg = new RegExp(`^#?\\s*${key}=.*$`);
     let found = false;
     lines = lines.map((line) => {
       if (reg.test(line)) {
         found = true;
-        return `${key}=${value}`;
+        return `${key}=${encodedEnvValue(value)}`;
       }
       return line;
     });
 
     if (!found) {
-      lines.push(`${key}=${value}`);
+      lines.push(`${key}=${encodedEnvValue(value)}`);
     }
   }
 
-  await fs.writeFile(envPath, lines.join("\n"), "utf-8");
+  const tempPath = `${envPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(tempPath, lines.join("\n"), { encoding: "utf-8", mode: 0o600, flag: "wx" });
+    await fs.rename(tempPath, envPath);
+    for (const [key, value] of Object.entries(updates)) process.env[key] = value;
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function writeEnvUpdates(updates: Record<string, string>) {
+  const task = envWriteQueue.then(() => writeEnvUpdatesNow(updates));
+  envWriteQueue = task.catch(() => undefined);
+  return task;
+}
+
+async function serializeConfigMutation<T>(operation: () => Promise<T>) {
+  const task = configMutationQueue.then(operation);
+  configMutationQueue = task.then(() => undefined, () => undefined);
+  return task;
 }
 
 export async function getShippingConfig(): Promise<{
@@ -96,33 +121,34 @@ export async function getShippingConfig(): Promise<{
 }
 
 export async function toggleCourierConfig(code: string, enabled: boolean) {
-  const validCodes = ALL_COURIER_OPTIONS.map((c) => c.code);
-  if (!validCodes.includes(code.toLowerCase())) {
-    throw new Error(`Jasa kirim ${code} tidak didukung`);
-  }
+  return serializeConfigMutation(async () => {
+    const validCodes = ALL_COURIER_OPTIONS.map((c) => c.code);
+    if (!validCodes.includes(code.toLowerCase())) {
+      throw new Error(`Jasa kirim ${code} tidak didukung`);
+    }
 
-  const currentConfig = await getShippingConfig();
-  const currentEnabled = new Set(currentConfig.enabledCouriers.map((c) => c.toLowerCase()));
+    const currentConfig = await getShippingConfig();
+    const currentEnabled = new Set(currentConfig.enabledCouriers.map((c) => c.toLowerCase()));
 
-  if (enabled) {
-    currentEnabled.add(code.toLowerCase());
-  } else {
-    currentEnabled.delete(code.toLowerCase());
-  }
+    if (enabled) {
+      currentEnabled.add(code.toLowerCase());
+    } else {
+      currentEnabled.delete(code.toLowerCase());
+    }
 
-  // Ensure at least 1 courier remains enabled
-  if (currentEnabled.size === 0) {
-    throw new Error("Minimal satu jasa kirim harus diaktifkan");
-  }
+    if (currentEnabled.size === 0) {
+      throw new Error("Minimal satu jasa kirim harus diaktifkan");
+    }
 
-  const enabledCouriersStr = Array.from(currentEnabled).join(",");
-  await writeEnvUpdates({ ENABLED_COURIERS: enabledCouriersStr });
-
-  return getShippingConfig();
+    const enabledCouriersStr = Array.from(currentEnabled).join(",");
+    await writeEnvUpdates({ ENABLED_COURIERS: enabledCouriersStr });
+    return getShippingConfig();
+  });
 }
 
 export async function updateWarehouseConfig(payload: WarehousePayload) {
-  const parsed = warehouseSchema.parse(payload);
+  return serializeConfigMutation(async () => {
+    const parsed = warehouseSchema.parse(payload);
 
   const updates: Record<string, string> = {
     WAREHOUSE_NAME: parsed.name,
@@ -133,32 +159,39 @@ export async function updateWarehouseConfig(payload: WarehousePayload) {
     WAREHOUSE_AREA_ID: parsed.areaId,
   };
 
-  // Update ENV
+  const previousUpdates = Object.fromEntries(
+    Object.keys(updates).map(key => [key, process.env[key] || ""]),
+  );
   await writeEnvUpdates(updates);
 
-  // Sync Prisma Warehouse
-  await prisma.warehouse.upsert({
-    where: { id: "wh_main" },
-    update: {
-      name: parsed.name,
-      contactName: parsed.contactName,
-      contactPhone: parsed.contactPhone,
-      address: parsed.address,
-      postalCode: parsed.postalCode,
-      areaId: parsed.areaId,
-      isDefault: true,
-    },
-    create: {
-      id: "wh_main",
-      name: parsed.name,
-      contactName: parsed.contactName,
-      contactPhone: parsed.contactPhone,
-      address: parsed.address,
-      postalCode: parsed.postalCode,
-      areaId: parsed.areaId,
-      isDefault: true,
-    },
-  });
+  try {
+    await prisma.warehouse.upsert({
+      where: { id: "wh_main" },
+      update: {
+        name: parsed.name,
+        contactName: parsed.contactName,
+        contactPhone: parsed.contactPhone,
+        address: parsed.address,
+        postalCode: parsed.postalCode,
+        areaId: parsed.areaId,
+        isDefault: true,
+      },
+      create: {
+        id: "wh_main",
+        name: parsed.name,
+        contactName: parsed.contactName,
+        contactPhone: parsed.contactPhone,
+        address: parsed.address,
+        postalCode: parsed.postalCode,
+        areaId: parsed.areaId,
+        isDefault: true,
+      },
+    });
+  } catch (error) {
+    await writeEnvUpdates(previousUpdates).catch(() => undefined);
+    throw error;
+  }
 
-  return getShippingConfig();
+    return getShippingConfig();
+  });
 }

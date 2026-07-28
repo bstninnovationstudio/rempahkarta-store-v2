@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -6,7 +7,11 @@ import { serializeBigInt } from "@/lib/serialize";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { syncOrderRevenue } from "@/lib/finance";
 
-const schema=z.object({decision:z.enum(["approved","rejected"]),reason:z.string().min(3),refundAmount:z.number().int().positive().optional()});
+const schema=z.object({
+  decision:z.enum(["approved","rejected"]),
+  reason:z.string().trim().min(3).max(500),
+  refundAmount:z.number().int().positive().max(10_000_000_000).optional(),
+});
 class ReturnDecisionConflictError extends Error {}
 
 export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){
@@ -24,6 +29,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
 
   try {
   const updated=await prisma.$transaction(async tx=>{
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${current.orderId} FOR UPDATE`);
     const claimed=await tx.returnRequest.updateMany({
       where:{id,state:{in:["requested","under_review","awaiting_approval"]}},
       data:{

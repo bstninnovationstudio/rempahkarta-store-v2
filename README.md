@@ -1,6 +1,6 @@
-# AMK Store / REMPAHKARTA v1.3.0
+# REMPAHKARTA v1.3.0
 
-Toko online D2C single-brand berbasis Next.js, Prisma, dan MySQL. Versi 1.3.0 mewajibkan pelanggan masuk dengan Google, melengkapi data akun, lalu checkout dengan identitas yang terikat ke session. Panel admin tetap mempertahankan flow transaksi yang ada, tetapi daftar besar, statistik, autentikasi, rate limit, dan akses detail pesanan telah dipisahkan dengan batas yang lebih aman untuk produksi.
+Toko online D2C single-brand penyedia rempah-rempah, bumbu alami, serta bahan makanan dan minuman berkualitas berbasis Next.js, Prisma, dan MySQL. Versi 1.3.0 mewajibkan pelanggan masuk dengan Google, melengkapi data akun, lalu checkout dengan identitas yang terikat ke session. Panel admin tetap mempertahankan flow transaksi yang ada, tetapi daftar besar, statistik, autentikasi, rate limit, dan akses detail pesanan telah dipisahkan dengan batas yang lebih aman untuk produksi.
 
 Dokumentasi aktif:
 
@@ -26,7 +26,7 @@ Dokumentasi aktif:
 
 ## Arsitektur singkat
 
-- Next.js 16.2.10 App Router + React 19.2.6 + TypeScript menjalankan storefront, akun pelanggan, admin, API, dan webhook dalam satu aplikasi.
+- Next.js 16.2.12 App Router + React 19.2.6 + TypeScript menjalankan storefront, akun pelanggan, admin, API, dan webhook dalam satu aplikasi.
 - Prisma/client 6.19.3 + MySQL 8 menyimpan katalog, stok, akun, pesanan, pembayaran, pengiriman, retur, audit, dan idempotency webhook.
 - Google Identity dipakai untuk login pelanggan; aplikasi menerbitkan JWT session pelanggan sendiri setelah ID token Google diverifikasi.
 - Admin memakai kredensial server dan JWT admin terpisah.
@@ -125,6 +125,7 @@ Panel admin tersedia di `/admin-login`.
 | Variabel | Fungsi |
 | --- | --- |
 | `APP_MODE` | Mode aplikasi (`development` atau `production`). Aplikasi secara otomatis memilih URL dan API key yang sesuai. |
+| `ENABLE_DEVTOOLS` | Opt-in kedua untuk tool destruktif lokal. Hanya aktif bila nilainya `true` **dan** `APP_MODE=development`; selalu `false` di production. |
 | `APP_URL_DEV`, `APP_URL_LIVE` | Origin publik callback/provider. Mode production menggunakan `APP_URL_LIVE` (wajib HTTPS). Mode development menggunakan `APP_URL_DEV`. |
 | `DATABASE_URL` | Koneksi MySQL runtime dan migration. |
 | `AUTH_SECRET` | Secret JWT admin minimal 32 karakter; buat dengan `openssl rand -base64 48`. Placeholder production ditolak. |
@@ -140,13 +141,13 @@ Panel admin tersedia di `/admin-login`.
 | `ENABLED_COURIERS` | Kode kurir yang boleh ditawarkan, dipisahkan koma. |
 | `WAREHOUSE_*` | Origin/pickup dan Area ID gudang. |
 | `RATE_LIMIT_TRUSTED_IP_HEADER` | Header IP yang sudah dihapus/ditulis ulang oleh reverse proxy tepercaya; hanya `cf-connecting-ip`, `x-real-ip`, atau `x-forwarded-for`. |
-| `CRON_SECRET` | Secret Bearer atau `X-Cron-Secret` untuk cron voucher harian. Wajib diisi sebelum scheduler diaktifkan. |
+| `CRON_SECRET` | Secret minimal 32 karakter untuk seluruh `/api/cron/*`, dikirim sebagai Bearer atau `X-Cron-Secret`. Endpoint fail-closed bila kosong/lemah/salah. |
 
 `.env.example` sengaja memakai placeholder secret yang gagal validasi dan test key resmi Turnstile untuk localhost. Ganti seluruhnya; production (APP_MODE=production) menolak marker contoh, shared webhook secret di bawah 16 karakter, test key Turnstile, action/hostname yang tidak cocok, atau JWT secret di bawah 32 karakter. Jangan masukkan `.env`, credential, dump database, atau media pelanggan ke Git/arsip distribusi.
 
 `ADMIN_PASSWORD_HASH` SHA-256 hanya didukung sebagai kompatibilitas development dan ditolak di production. Jangan memasukkan `ADMIN_PASSWORD` plaintext ke `.env`; variabel itu hanya input sementara saat menjalankan generator hash.
 
-Versi Next, Prisma/client, dan eslint-config-next dikunci ke patch yang diaudit; override PostCSS dikunci ke 8.5.19. Pada snapshot 19 Juli 2026, `npm audit --omit=dev` melaporkan 0 vulnerability. Jalankan ulang audit setiap perubahan lockfile.
+Versi Next, Prisma/client, dan eslint-config-next dikunci ke patch yang diaudit; Next 16.2.12 memakai override `sharp` 0.35.0 dan PostCSS 8.5.19. Pada snapshot 28 Juli 2026, `npm audit --omit=dev` melaporkan 0 vulnerability. Jalankan ulang audit setiap perubahan lockfile.
 
 ## Login, onboarding, dan hak akses pelanggan
 
@@ -160,7 +161,7 @@ Versi Next, Prisma/client, dan eslint-config-next dikunci ke patch yang diaudit;
 
 Semua mutasi API non-webhook (`POST`/`PUT`/`PATCH`/`DELETE`) juga harus memiliki header `Origin` yang sama persis dengan origin `APP_URL`. Production fail-closed bila origin hilang/tidak cocok atau `APP_URL` tidak valid. Webhook provider dikecualikan karena memakai signature/secret sendiri.
 
-Halaman `/user/settings` menyatukan kontak, OTP WhatsApp, dua consent notifikasi yang independen, alamat, dan rekening refund. Nomor baru wajib OTP 5 menit; rekening refund hanya terbuka setelah kontak lengkap dan setiap create/update rekening memerlukan OTP baru yang terikat ke payload. Consent perjalanan/promosi tidak memengaruhi pengiriman atau validasi OTP. Route lama `/user/addresses` dan `/user/payment` tetap ada sebagai redirect kompatibilitas.
+Halaman `/user/settings` menyatukan kontak, OTP WhatsApp, dua consent notifikasi yang independen, alamat (dengan penanda `UserAddress.isDefault` dan switcher pengatur Alamat Utama), dan rekening refund. Setiap mutasi alamat (`POST`, `PUT`, `PATCH`, `DELETE`) menjaga invarian bahwa tepat satu alamat pelanggan aktif menjadi Alamat Utama. Navigasi bantuan pada footer storefront dibatasi secara bersih hanya pada link "Masuk akun" (`/login`), "Syarat & ketentuan" (`/pages/terms`), dan "Kebijakan privasi" (`/pages/privacy`). Route lama `/user/addresses` dan `/user/payment` tetap ada sebagai redirect kompatibilitas.
 
 ## Query, pagination, statistik, dan cache
 
@@ -181,7 +182,7 @@ Semua `/api/*` dibatasi 100 request/menit per identitas IP. Webhook provider mem
 
 | Aksi | Batas |
 | --- | ---: |
-| Login admin | 5 / 15 menit |
+| Login admin | 20/client dan 5/account / 15 menit |
 | Login Google | 10 / menit |
 | Buat pesanan | 10 / menit |
 | Cari lokasi / cek ongkir | masing-masing 25 / menit |
@@ -198,6 +199,11 @@ Semua `/api/*` dibatasi 100 request/menit per identitas IP. Webhook provider mem
 | Booking shipment admin | 10 / menit |
 | Keputusan pembatalan admin | 20 / menit |
 | Penyelesaian refund admin | 10 / menit |
+| Polling status pembayaran | 60 / menit per customer |
+| Sinkronisasi shipment admin | 15 / menit |
+| Resolve issue order | 10 / menit |
+| Cron internal | 10 / menit per job, ditambah bucket cron global |
+| Mutasi katalog/order/shipping/media/voucher | policy path+method 10–30 / menit sesuai biaya |
 
 Limiter memakai fixed window, maksimal 10.000 bucket, dan header `X-RateLimit-*`/`Retry-After`. Forwarded IP hanya dipercaya bila `RATE_LIMIT_TRUSTED_IP_HEADER` diatur eksplisit; tanpa itu request memakai bucket aman bersama `unidentified`. Karena state limiter berada di memori proses, batas berlaku per instance dan reset saat restart. Gunakan satu instance atau tambahkan limit di reverse proxy/CDN bila deployment horizontal membutuhkan batas global.
 
@@ -211,13 +217,16 @@ Siteverify server wajib untuk aksi berikut:
 - membuat pesanan: `checkout_order`;
 - mengecek kode voucher: `voucher_check`;
 - simpan kontak: `user_profile`;
-- tambah/edit/hapus alamat: `user_address`;
+- tambah/edit/set default/hapus alamat: `user_address`;
 - simpan rekening refund: `user_payment`;
 - kirim/resend OTP: `user_otp_send`;
 - ubah consent WhatsApp: `user_notifications`;
 - buat campaign promosi admin: `admin_promotion_send`;
 - sinkronisasi pembayaran pelanggan: `payment_sync`;
 - sinkronisasi pembayaran admin: `admin_payment_sync`.
+- pembatalan pesanan pelanggan: `order_cancel`;
+- unggah bukti retur: `return_media`;
+- pengajuan retur: `return_request`.
 
 Token dibatasi 2.048 karakter, diverifikasi dengan IP bila tersedia, menggunakan idempotency key, dan action wajib sama persis. Pada production, hostname hasil Siteverify juga wajib sama dengan hostname `APP_URL` dan official test key ditolak. Kegagalan Siteverify bersifat fail-closed.
 
@@ -245,8 +254,9 @@ awaiting_payment → awaiting_processing → processing → packed
 ```
 
 - Redirect browser tidak pernah menjadi bukti pembayaran. Status final berasal dari webhook BSTN yang valid atau GET server-to-server.
+- Payment intent lokal dibuat sebelum request BSTN dengan reference idempoten. Timeout/5xx diperlakukan sebagai hasil ambigu yang tetap menahan reservasi sampai webhook/reconciliation/expiry, bukan langsung membatalkan order.
 - Webhook BSTN memverifikasi HMAC raw body, delivery ID, payment ID, reference, dan amount, lalu membaca ulang detail provider.
-- Webhook Biteship memproses status, perubahan harga, dan perubahan waybill secara idempoten.
+- Webhook Biteship mengunci shipment lalu order, menolak event stale/regresif, dan memproses status, perubahan harga, serta waybill secara idempoten.
 - Payment terminal gagal melepas reservasi satu kali. Paid setelah order dibatalkan menjadi `refund_pending`.
 - Cancel sebelum handover dapat mengembalikan stok; setelah handover pelanggan memakai alur retur.
 - Refund tetap manual dan membutuhkan rekening pelanggan, bukti, serta referensi admin.
@@ -259,6 +269,7 @@ awaiting_payment → awaiting_processing → processing → packed
 - Order menyimpan snapshot `voucherCode`, `discountAmount`, dan target voucher. Pemakaian mempunyai relasi unik ke order; kuota total dinaikkan atomik dan dilepas kembali bila pembentukan pembayaran gagal.
 - Diskon diterapkan sebelum biaya layanan/QRIS. Karena BSTN hanya menerima harga item non-negatif, diskon dipetakan ke harga line produk/ongkir (dengan pemecahan unit bila diperlukan) sehingga jumlah item tetap tepat sama dengan nominal BSTN.
 - Voucher yang lewat `endAt` atau mencapai limit total ditandai `FINISH` secara lazy saat evaluasi dan oleh `GET`/`POST /api/cron/vouchers`. Jadwalkan endpoint cron tersebut sekali setiap hari dengan `Authorization: Bearer $CRON_SECRET` (atau header `X-Cron-Secret`). Limit harian/per-user tidak menandai `FINISH` karena dapat berlaku lagi pada hari/account lain.
+- Order pembayaran stale diproses oleh `GET`/`POST /api/cron/expire-orders` dalam batch maksimum 100 menggunakan secret yang sama.
 - Voucher public muncul setelah katalog pada beranda, bergerak otomatis namun berhenti saat hover/fokus serta menghormati reduced motion. Voucher private tetap dapat dipakai bila kode diketahui tetapi tidak ditampilkan.
 
 ## Keuangan internal

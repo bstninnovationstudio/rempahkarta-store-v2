@@ -43,7 +43,15 @@ export function RevenueFinanceManager({ availableBalance }: { availableBalance: 
 
   return (
     <section className="admin-panel finance-action-panel" aria-labelledby="withdraw-title">
-      <div className="admin-panel-head"><div><h2 id="withdraw-title">Catat penarikan dana</h2><p>Penarikan ini hanya pencatatan internal, tidak mengirim instruksi ke penyedia pembayaran.</p></div><Banknote size={18} aria-hidden="true" /></div>
+      <div className="admin-panel-head">
+        <div>
+          <h2 id="withdraw-title">Catat penarikan dana</h2>
+          <p>Penarikan ini hanya pencatatan internal, tidak mengirim instruksi ke penyedia pembayaran.</p>
+        </div>
+        <span className="finance-panel-icon" aria-hidden="true">
+          <Banknote size={18} />
+        </span>
+      </div>
       <form className="finance-form" onSubmit={submit}>
         {message && <p className={`form-banner ${message.includes("berhasil") ? "success" : "error"}`} role="status">{message}</p>}
         <div className="field-grid">

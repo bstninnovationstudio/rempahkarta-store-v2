@@ -1,21 +1,26 @@
 import { z } from "zod";
 import { sha256 } from "@/lib/security";
 
+const safeAccountText = (maximum: number) => z.string().trim().min(2).max(maximum)
+  .refine(value => !/[\u0000-\u001f\u007f]/.test(value), "Data rekening mengandung karakter tidak valid");
+const accountNumber = z.string().trim().min(5).max(80)
+  .regex(/^[0-9 -]+$/, "Nomor rekening atau e-wallet tidak valid");
+
 export const refundSettingSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("bank"),
-    bankName: z.string().trim().min(2).max(100),
-    bankOwnerName: z.string().trim().min(2).max(160),
-    bankNumber: z.string().trim().min(5).max(80),
+    bankName: safeAccountText(100),
+    bankOwnerName: safeAccountText(160),
+    bankNumber: accountNumber,
     ewalletName: z.null().optional(),
     ewalletOwnerName: z.null().optional(),
     ewalletNumber: z.null().optional(),
   }),
   z.object({
     type: z.literal("ewallet"),
-    ewalletName: z.string().trim().min(2).max(100),
-    ewalletOwnerName: z.string().trim().min(2).max(160),
-    ewalletNumber: z.string().trim().min(5).max(80),
+    ewalletName: safeAccountText(100),
+    ewalletOwnerName: safeAccountText(160),
+    ewalletNumber: accountNumber,
     bankName: z.null().optional(),
     bankOwnerName: z.null().optional(),
     bankNumber: z.null().optional(),

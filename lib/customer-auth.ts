@@ -117,7 +117,7 @@ export const customerCookie = {
     secure: isProduction(),
     sameSite: "lax" as const,
     path: "/",
-    maxAge: 60 * 60 * 24 * 7 // 7 days
+    maxAge: 60 * 60 * 24 * 7, // 7 days
+    priority: "high" as const,
   }
 };
-

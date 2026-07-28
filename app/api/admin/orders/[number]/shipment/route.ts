@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import { serializeBigInt } from "@/lib/serialize";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBiteshipApiKey } from "@/lib/env";
-import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds } from "@/lib/finance";
+import { BiteshipBalanceError, reserveBiteshipFunds, reverseBiteshipFunds, type BiteshipReservation } from "@/lib/finance";
 
 const schema = z.object({
   collectionMethod: z.enum(["pickup", "drop_off"]),
@@ -48,6 +48,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
   if (!order) return NextResponse.json({ error: "Pesanan tidak ditemukan" }, { status: 404 });
   if (order.fulfillmentState === "cancelled") return NextResponse.json({ error: "Pesanan sudah dibatalkan" }, { status: 409 });
   if (order.paymentState !== "paid") return NextResponse.json({ error: "Pesanan belum lunas" }, { status: 409 });
+  if (!["packed", "shipment_booked"].includes(order.fulfillmentState)) {
+    return NextResponse.json({ error: "Pesanan harus selesai dikemas sebelum booking pengiriman" }, { status: 409 });
+  }
 
   const quote = order.quotes[0];
   const shippingAddr = order.addresses.find(item => item.type === "shipping");
@@ -69,6 +72,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
     height: item.height || undefined,
   }));
 
+  let bookedProviderOrderId: string | null = null;
+  let bookingAdapter: BiteshipAdapter | null = null;
+  let providerFundReservation: BiteshipReservation | null = null;
   try {
     const claim = await prisma.$transaction(async tx => {
       const existing = await tx.shipment.findFirst({ where: { orderId: order.id }, orderBy: { createdAt: "desc" } });
@@ -105,6 +111,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
       process.env.BITESHIP_BASE_URL || "https://api.biteship.com",
       apiKey,
     );
+    bookingAdapter = adapter;
     const reference = `SHP-${order.publicNumber}`;
     const fundReservation = await reserveBiteshipFunds({
       kind: "shipment",
@@ -114,6 +121,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
       notes: `Pembuatan shipment ${order.publicNumber}`,
       actorId: String(admin.email),
     });
+    providerFundReservation = fundReservation;
     let providerResult;
     try {
       providerResult = await adapter.createOrder({
@@ -140,18 +148,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
         order_note: shippingAddr.note || undefined,
         items: shippingItems,
       });
+      bookedProviderOrderId = providerResult.id;
     } catch (cause) {
       await reverseBiteshipFunds(fundReservation, `Pembuatan shipment ${order.publicNumber} gagal`);
       await prisma.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
       throw cause;
     }
 
+    const claimRow = await prisma.shipment.findFirst({
+      where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } },
+      select: { id: true },
+    });
     const shipment = await prisma.$transaction(async tx => {
-      const currentOrder = await tx.order.findUnique({ where: { id: order.id }, select: { fulfillmentState: true } });
-      if (currentOrder?.fulfillmentState === "cancelled") {
-        try { await adapter.cancelOrder(providerResult.id, "others", "Pesanan dibatalkan bersamaan dengan booking"); }
-        catch { /* ignore provider cancel error */ }
-        throw new BookingConflictError("Booking dibatalkan karena pesanan sudah dibatalkan");
+      if (claimRow) {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Shipment\` WHERE id = ${claimRow.id} FOR UPDATE`);
+      }
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM \`Order\` WHERE id = ${order.id} FOR UPDATE`);
+      const currentOrder = await tx.order.findUnique({ where: { id: order.id }, select: { fulfillmentState: true, paymentState: true } });
+      if (
+        !currentOrder
+        || currentOrder.paymentState !== "paid"
+        || !["packed", "shipment_booked"].includes(currentOrder.fulfillmentState)
+      ) {
+        throw new BookingConflictError("Booking dibatalkan karena status pesanan berubah");
       }
 
       await tx.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
@@ -193,6 +212,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ num
 
     return NextResponse.json({ success: true, shipment: serializeBigInt(shipment) });
   } catch (cause) {
+    if (bookedProviderOrderId && bookingAdapter) {
+      try {
+        await bookingAdapter.cancelOrder(bookedProviderOrderId, "others", "Finalisasi booking lokal gagal");
+        if (providerFundReservation) {
+          await reverseBiteshipFunds(providerFundReservation, `Booking ${order.publicNumber} dikompensasi`);
+        }
+      } catch {
+        // Retry tetap aman karena reference shipment bersifat idempoten.
+      }
+    }
     await prisma.shipment.deleteMany({ where: { orderId: order.id, status: { in: ["booking_claimed", "booking_failed"] } } });
     if (cause instanceof BookingConflictError) return NextResponse.json({ error: cause.message }, { status: 409 });
     if (cause instanceof BiteshipBalanceError) return NextResponse.json({ error: "Saldo Biteship tidak mencukupi untuk membuat shipment" }, { status: 409 });

@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { ReturnForm } from "@/components/return-form";
 import { StoreHeader } from "@/components/store-header";
 import { customerFromRequest } from "@/lib/customer-auth";
+import { turnstileSiteKey } from "@/lib/turnstile";
 
 export default async function ReturnPage({params}:{params:Promise<{number:string}>}) {
   const {number}=await params;
@@ -33,7 +34,7 @@ export default async function ReturnPage({params}:{params:Promise<{number:string
           <h1>Ajukan masalah</h1>
           <p>Semua proses peninjauan, pengiriman balik, tracking, dan status refund tersedia di aplikasi.</p>
         </div>
-        <ReturnForm number={number} orderItems={orderItems} />
+        <ReturnForm number={number} orderItems={orderItems} turnstileSiteKey={turnstileSiteKey()} />
       </main>
     </>
   );

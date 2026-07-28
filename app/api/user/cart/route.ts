@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { customerFromRequest, assertCustomerActive } from "@/lib/customer-auth";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { Prisma } from "@prisma/client";
 
 const MAX_CART_ITEMS = 50;
 const MAX_ITEM_QUANTITY = 20;
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
     if (!parsed.success) return NextResponse.json({ error: "Format data tidak valid", details: parsed.error.flatten() }, { status: 400 });
     const variants = await validateCartItems(parsed.data.cart);
     await prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM \`User\` WHERE id = ${customer.id} FOR UPDATE`);
       const existing = await tx.cartItem.findMany({ where: { userId: customer.id }, select: { id: true, variantId: true, quantity: true } });
       const existingByVariant = new Map(existing.map(item => [item.variantId, item]));
       const newVariantCount = parsed.data.cart.filter(item => !existingByVariant.has(item.variantId)).length;
@@ -150,6 +152,7 @@ export async function PUT(request: Request) {
       };
     });
     await prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM \`User\` WHERE id = ${customer.id} FOR UPDATE`);
       await tx.cartItem.deleteMany({ where: { userId: customer.id } });
       if (rows.length) await tx.cartItem.createMany({ data: rows });
     });

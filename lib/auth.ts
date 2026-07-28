@@ -61,4 +61,4 @@ export async function adminFromRequest() {
   }
 }
 export async function requireAdmin(){const admin=await adminFromRequest();if(!admin)redirect("/admin-login");return admin}
-export const adminCookie={name:COOKIE,options:{httpOnly:true,secure:isProduction(),sameSite:"lax" as const,path:"/",maxAge:60*60*12}};
+export const adminCookie={name:COOKIE,options:{httpOnly:true,secure:isProduction(),sameSite:"strict" as const,path:"/",maxAge:60*60*12,priority:"high" as const}};

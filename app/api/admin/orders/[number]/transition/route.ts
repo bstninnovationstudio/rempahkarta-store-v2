@@ -5,11 +5,14 @@ import { adminFromRequest } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { commitOrderReservation } from "@/lib/inventory";
 import { invalidateCatalogCache } from "@/lib/catalog";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const schema = z.object({ state: z.enum(["processing", "packed"]) });
 class TransitionConflictError extends Error {}
 
 export async function POST(request: Request, { params }: { params: Promise<{ number: string }> }) {
+  const rate = checkRateLimit(request, { scope: "admin:order-transition", limit: 20 });
+  if (!rate.allowed) return rateLimitResponse(rate);
   const admin = await adminFromRequest();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   let json: unknown;

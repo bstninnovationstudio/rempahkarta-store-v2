@@ -5,6 +5,8 @@ import Image from "next/image";
 import { Camera, CheckCircle2, Trash2 } from "lucide-react";
 import { rupiah } from "@/lib/format";
 import Link from "next/link";
+import Script from "next/script";
+import { useTurnstile } from "@/components/use-turnstile";
 
 interface OrderItem {
   id: string;
@@ -15,7 +17,7 @@ interface OrderItem {
   quantity: number;
 }
 
-export function ReturnForm({ number, orderItems }: { number: string; orderItems: OrderItem[] }) {
+export function ReturnForm({ number, orderItems, turnstileSiteKey }: { number: string; orderItems: OrderItem[]; turnstileSiteKey: string }) {
   const [step, setStep] = useState(1);
   const [problemCode, setProblemCode] = useState("damaged");
   
@@ -33,6 +35,7 @@ export function ReturnForm({ number, orderItems }: { number: string; orderItems:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const { containerRef, token } = useTurnstile(turnstileSiteKey);
 
   const problemLabels: Record<string, string> = {
     damaged: "Produk rusak atau cacat",
@@ -127,6 +130,7 @@ export function ReturnForm({ number, orderItems }: { number: string; orderItems:
       for (const file of files) {
         const upload = new FormData();
         upload.set("file", file);
+        upload.set("turnstileToken", await token("return_media"));
         const uploaded = await fetch(`/api/orders/${encodeURIComponent(number)}/media`, { method: "POST", body: upload });
         const result = await uploaded.json();
         if (!uploaded.ok) throw new Error(result.error || "Upload bukti gambar gagal");
@@ -135,6 +139,7 @@ export function ReturnForm({ number, orderItems }: { number: string; orderItems:
 
       // 2. Submit return request. The current customer flow requests a refund;
       // any physical return instructions are decided after admin review.
+      const turnstileToken = await token("return_request");
       const response = await fetch(`/api/orders/${encodeURIComponent(number)}/returns`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -143,7 +148,8 @@ export function ReturnForm({ number, orderItems }: { number: string; orderItems:
           cause: problemCode,
           description,
           items: itemsPayload,
-          evidence
+          evidence,
+          turnstileToken,
         })
       });
 
@@ -191,6 +197,8 @@ export function ReturnForm({ number, orderItems }: { number: string; orderItems:
 
   return (
     <section className="panel return-wizard">
+      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" strategy="afterInteractive" />
+      <div ref={containerRef} aria-hidden="true" />
       <div className="tracking-progress return-progress" aria-label={`Langkah ${step} dari 4`}>
         <div className={`tracking-step ${step >= 1 ? "done" : ""}`}>Pilih masalah</div>
         <div className={`tracking-step ${step >= 2 ? "done" : ""}`}>Produk & bukti</div>

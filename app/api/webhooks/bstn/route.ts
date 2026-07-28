@@ -14,17 +14,19 @@ import {
   scheduleWhatsappDispatch,
 } from "@/lib/whatsapp-notifications";
 import { deriveUniqueCode, readBstnUniqueCode } from "@/lib/payment-amounts";
+import { z } from "zod";
+import { hasOversizedContentLength, MAX_WEBHOOK_BYTES } from "@/lib/request-body";
 
-type WebhookPayload = {
-  event?: string;
-  payment: {
-    payment_id: string;
-    project_payment_ref: string;
-    status: string;
-    amount: number;
-    paid_at?: string | null;
-  };
-};
+const webhookSchema = z.object({
+  event: z.string().max(120).optional(),
+  payment: z.object({
+    payment_id: z.string().min(1).max(120),
+    project_payment_ref: z.string().min(1).max(100),
+    status: z.string().min(1).max(50),
+    amount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    paid_at: z.string().datetime().nullable().optional(),
+  }),
+}).passthrough();
 
 const failedStatuses = ["expired", "canceled", "failed", "denied"] as const;
 function localStatus(status:string){
@@ -36,11 +38,20 @@ function localStatus(status:string){
 }
 
 export async function POST(request: Request) {
+  if (hasOversizedContentLength(request, MAX_WEBHOOK_BYTES)) {
+    return NextResponse.json({ error: "Webhook body terlalu besar" }, { status: 413 });
+  }
   const raw = await request.text();
+  if (Buffer.byteLength(raw, "utf8") > MAX_WEBHOOK_BYTES) {
+    return NextResponse.json({ error: "Webhook body terlalu besar" }, { status: 413 });
+  }
   const bstnApiKey = getBstnApiKey();
   if (!isStrongSharedSecret(process.env.BSTN_RETURN_SIGNATURE_SECRET) || !bstnApiKey) return NextResponse.json({ error: "Webhook BSTN belum dikonfigurasi dengan aman" }, { status: 503 });
   const signature = request.headers.get("x-bstn-signature") || "";
-  const deliveryId = request.headers.get("x-bstn-delivery-id") || await sha256(raw);
+  const rawDeliveryId = request.headers.get("x-bstn-delivery-id")?.trim() || "";
+  const deliveryId = rawDeliveryId && rawDeliveryId.length <= 160
+    ? rawDeliveryId
+    : await sha256(`bstn:${rawDeliveryId}:${raw}`);
   const adapter = new BstnPaymentAdapter(
     process.env.BSTN_BASE_URL || "https://www.bstn-innovation-studio.web.id",
     bstnApiKey,
@@ -50,9 +61,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
-  let payload: WebhookPayload;
-  try { payload = JSON.parse(raw) as WebhookPayload; } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
-  if (!payload.payment?.payment_id || !payload.payment.project_payment_ref || !Number.isFinite(payload.payment.amount)) return NextResponse.json({ error: "Payload tidak lengkap" }, { status: 400 });
+  let json: unknown;
+  try { json = JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+  const parsedPayload = webhookSchema.safeParse(json);
+  if (!parsedPayload.success) return NextResponse.json({ error: "Payload tidak lengkap" }, { status: 400 });
+  const payload = parsedPayload.data;
   const payloadHash = await sha256(raw);
   try {
     await prisma.webhookInbox.create({
@@ -62,7 +75,7 @@ export async function POST(request: Request) {
         signatureValid: true,
         payloadHash,
         headers: { event: request.headers.get("x-bstn-event") },
-        payload,
+        payload: payload as unknown as Prisma.InputJsonValue,
       },
     });
   } catch (error) {
@@ -76,9 +89,18 @@ export async function POST(request: Request) {
     // Received/failed inbox rows are intentionally retried; only processed is terminal.
   }
 
-  const local = await prisma.payment.findUnique({
-    where: { providerPaymentId: payload.payment.payment_id },
-  });
+  const [byProviderId, byProjectReference] = await Promise.all([
+    prisma.payment.findUnique({ where: { providerPaymentId: payload.payment.payment_id } }),
+    prisma.payment.findUnique({ where: { projectPaymentRef: payload.payment.project_payment_ref } }),
+  ]);
+  if (byProviderId && byProjectReference && byProviderId.id !== byProjectReference.id) {
+    await prisma.webhookInbox.update({
+      where: { source_deliveryKey: { source: "bstn", deliveryKey: deliveryId } },
+      data: { status: "failed", error: "Provider ID and project reference resolve to different payments" },
+    });
+    return NextResponse.json({ error: "Payment mismatch" }, { status: 409 });
+  }
+  const local = byProviderId || byProjectReference;
   if (!local) {
     // BSTN can notify before the local payment insert becomes visible. Do not
     // permanently consume that delivery; ask the provider to retry it.
@@ -89,6 +111,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Pembayaran belum tersedia" }, { status: 503 });
   }
   if (
+    (local.providerPaymentId !== null && local.providerPaymentId !== payload.payment.payment_id) ||
     local.projectPaymentRef !== payload.payment.project_payment_ref ||
     (Number(local.amount) !== payload.payment.amount && Number(local.payableAmount || 0) !== payload.payment.amount)
   ) {
@@ -123,17 +146,20 @@ export async function POST(request: Request) {
     await tx.payment.update({
       where: { id: local.id },
       data: {
+        ...(current.providerPaymentId === null ? { providerPaymentId: payload.payment.payment_id } : {}),
         ...(providerPayable !== null ? { payableAmount: providerPayable } : {}),
         ...(providerFee !== null ? { feeAmount: providerFee } : {}),
         uniqueCode: providerUnique,
       },
     });
-    await tx.paymentEvent.create({
-      data: {
+    await tx.paymentEvent.upsert({
+      where: { providerEventId: deliveryId },
+      update: {},
+      create: {
         paymentId: local.id,
         providerEventId: deliveryId,
         status:providerStatus,
-        payload,
+        payload: payload as unknown as Prisma.InputJsonValue,
         occurredAt: new Date(),
       },
     });

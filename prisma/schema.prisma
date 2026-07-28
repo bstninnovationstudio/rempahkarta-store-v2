@@ -770,18 +770,20 @@ model WhatsappPromotionCampaign {
 }
 
 model UserAddress {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   userId       String
-  label        String @db.VarChar(80)
-  contactName  String @db.VarChar(160)
-  contactPhone String @db.VarChar(40)
-  contactEmail String @db.VarChar(200)
-  address      String @db.Text
-  postalCode   String @db.VarChar(10)
-  areaId       String @db.VarChar(120)
-  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label        String  @db.VarChar(80)
+  contactName  String  @db.VarChar(160)
+  contactPhone String  @db.VarChar(40)
+  contactEmail String  @db.VarChar(200)
+  address      String  @db.Text
+  postalCode   String  @db.VarChar(10)
+  areaId       String  @db.VarChar(120)
+  isDefault    Boolean @default(false)
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, isDefault])
 }
 
 model UserRefundSetting {
