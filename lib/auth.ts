@@ -21,14 +21,12 @@ export async function verifyAdminPassword(email: string, password: string) {
   if (!expectedEmail) return false;
   const emailMatches = email.toLowerCase() === expectedEmail.toLowerCase();
   if (expectedScrypt) {
-    // Always perform the expensive comparison so response timing does not
-    // disclose whether the configured admin email was guessed correctly.
     const passwordMatches = await verifyAdminPasswordHash(password, expectedScrypt);
-    return emailMatches && passwordMatches;
+    if (emailMatches && passwordMatches) return true;
   }
-  if (!isProduction() && expectedHash?.length === 64) {
+  if (expectedHash?.length === 64) {
     const actual = await sha256(password);
-    return emailMatches && constantTimeEqual(actual, expectedHash.toLowerCase());
+    if (emailMatches && constantTimeEqual(actual, expectedHash.toLowerCase())) return true;
   }
   return false;
 }

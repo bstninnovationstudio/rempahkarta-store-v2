@@ -59,8 +59,8 @@ Jangan mencantumkan kredensial SSH atau database di file yang di-commit ke Git.
 - **App Service User**: `bstn-innovation-studio`
 - **App Root Path**: `/home/bstn-innovation-studio/apps/rempahkarta`
 - **PM2 Process Name**: `rempahkarta`
-- **Internal Production Port**: `3020`
-- **Internal Smoke Test Port**: `3021`
+- **Internal Production Port**: `3030`
+- **Internal Smoke Test Port**: `3031`
 - **Domain Publik**: `rempahkarta.com` / `www.rempahkarta.com`
 
 ---
@@ -173,17 +173,17 @@ ln -sfn \"\$SHARED_ENV\" \"\$NEW_REL/.env\"
 npm install
 npm run setup
 npm run build
-PORT=3021 timeout 10 node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3021 2>&1 | head -15
+PORT=3031 timeout 10 node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3031 2>&1 | head -15
 
 ln -sfn \"\$NEW_REL\" \"\$APP_ROOT/current\"
 cd \"\$APP_ROOT/current\"
 pm2 delete rempahkarta || true
-pm2 start node_modules/next/dist/bin/next --name rempahkarta -- start -H 127.0.0.1 -p 3020
+PORT=3030 pm2 start node_modules/next/dist/bin/next --name rempahkarta -- start -H 127.0.0.1 -p 3030
 pm2 save
 "
 
-ss -ltnp 2>/dev/null | grep 3020
-curl -sI http://127.0.0.1:3020/ | head
+ss -ltnp 2>/dev/null | grep 3030
+curl -sI http://127.0.0.1:3030/ | head
 curl -sI https://www.rempahkarta.com/ | head
 pm2 logs rempahkarta --lines 20 --nostream
 
@@ -211,7 +211,7 @@ sudo cp /usr/local/hestia/data/templates/web/nginx/php-fpm/n8n_proxy.stpl \
 sudo cp /usr/local/hestia/data/templates/web/nginx/php-fpm/n8n_proxy.sh \
   /usr/local/hestia/data/templates/web/nginx/php-fpm/rempahkarta-next.sh
 
-sudo sed -i 's/localhost:5679/127.0.0.1:3020/g' \
+sudo sed -i 's/localhost:5679/127.0.0.1:3030/g' \
   /usr/local/hestia/data/templates/web/nginx/php-fpm/rempahkarta-next.tpl \
   /usr/local/hestia/data/templates/web/nginx/php-fpm/rempahkarta-next.stpl
 ```
@@ -239,7 +239,7 @@ OLD_REL=$APP_ROOT/releases/<YYYYMMDD>-web
 ln -sfn "$OLD_REL" "$APP_ROOT/current"
 cd "$APP_ROOT/current"
 pm2 delete rempahkarta || true
-pm2 start node_modules/next/dist/bin/next --name rempahkarta -- start -H 127.0.0.1 -p 3020
+PORT=3030 pm2 start node_modules/next/dist/bin/next --name rempahkarta -- start -H 127.0.0.1 -p 3030
 pm2 save
 ```
 
@@ -252,4 +252,4 @@ pm2 save
 | `APP_MODE=development` aktif di server | `.env` belum diubah sebelum diarsip | Pastikan `.env` memiliki `APP_MODE=production` dan `ENABLE_DEVTOOLS=false`, buat arsip baru dan upload ulang. |
 | `MYSQL_HOST` / `DATABASE_URL` error | `.env` tidak terbaca | Pastikan `$APP_ROOT/shared/.env` ada dan symlinked ke `current/.env`. |
 | public static Hestia "We're working on it" | Proxy template Hestia belum aktif | Jalankan `v-change-web-domain-tpl bstn-innovation-studio rempahkarta.com rempahkarta-next yes` & `v-rebuild-web-domain`. |
-| Port `3020` in use | Proses lain memakai port 3020 | Cek `ss -ltnp \| grep 3020` dan hentikan/sesuaikan service PM2. |
+| Port `3030` in use | Proses lain memakai port 3030 | Cek `ss -ltnp \| grep 3030` dan hentikan/sesuaikan service PM2. |

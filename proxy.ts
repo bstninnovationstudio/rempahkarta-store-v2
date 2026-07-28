@@ -56,19 +56,32 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Ukuran request melebihi batas" }, { status: 413 });
   }
   if (!webhook && unsafeMethod) {
-    let expectedOrigin = request.nextUrl.origin;
-    const appUrl = getAppUrl();
-    if (appUrl) {
-      try { expectedOrigin = new URL(appUrl).origin; }
-      catch {
-        if (isProduction()) {
-          return NextResponse.json({ error: "APP_URL_LIVE production tidak valid" }, { status: 503 });
-        }
-      }
-    }
     const origin = request.headers.get("origin");
-    if ((isProduction() || origin) && origin !== expectedOrigin) {
-      return NextResponse.json({ error: "Origin permintaan tidak diizinkan" }, { status: 403 });
+    if (origin) {
+      const allowedOrigins = new Set<string>([request.nextUrl.origin]);
+      const appUrl = getAppUrl();
+      if (appUrl) {
+        try { allowedOrigins.add(new URL(appUrl).origin); } catch {}
+      }
+      const appDev = process.env.APP_URL_DEV;
+      if (appDev) {
+        try { allowedOrigins.add(new URL(appDev).origin); } catch {}
+      }
+      const appLive = process.env.APP_URL_LIVE;
+      if (appLive) {
+        try {
+          const liveUrl = new URL(appLive);
+          allowedOrigins.add(liveUrl.origin);
+          if (liveUrl.hostname.startsWith("www.")) {
+            allowedOrigins.add(`${liveUrl.protocol}//${liveUrl.hostname.slice(4)}${liveUrl.port ? `:${liveUrl.port}` : ""}`);
+          } else {
+            allowedOrigins.add(`${liveUrl.protocol}//www.${liveUrl.hostname}${liveUrl.port ? `:${liveUrl.port}` : ""}`);
+          }
+        } catch {}
+      }
+      if (!allowedOrigins.has(origin)) {
+        return NextResponse.json({ error: "Origin permintaan tidak diizinkan" }, { status: 403 });
+      }
     }
   }
   const universal = checkRateLimit(request, {
