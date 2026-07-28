@@ -395,7 +395,7 @@ export function UserAddressesClient({
             </div>
 
             <div className="field full">
-              <label htmlFor="area-search">Kecamatan atau Kode Pos</label>
+              <label htmlFor="area-search">Masukan Kode Pos Alamat</label>
               <div className="search-field">
                 <input
                   id="area-search"

@@ -377,7 +377,7 @@ export function CheckoutForm({
               <h3 className="form-sub-title">Alamat Pengiriman</h3>
               <div className="field-grid">
                 <div className="field full">
-                  <label htmlFor="area">Kecamatan atau kode pos</label>
+                  <label htmlFor="area">Masukan Kode Pos Alamat</label>
                   <div className="search-field">
                     <input id="area" required minLength={3} maxLength={120} value={areaQuery} onChange={event => { setAreaQuery(event.target.value); setArea(null); setAreaResults([]); setOptions([]); setShipping(null); }} autoComplete="off" placeholder="Tulis kecamatan atau kode pos" disabled={busy || selectedAddressId !== "custom"} />
                     <button className="button button-light" type="button" disabled={busy || searchingArea || selectedAddressId !== "custom"} onClick={searchArea}>

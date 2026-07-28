@@ -1,4 +1,6 @@
 import { getBiteshipStatusDetail } from "@/lib/shipping-state";
+import { getWebhookBaseUrl } from "@/lib/env";
+import { WHATSAPP_AUTOMATED_FOOTER } from "@/lib/gowa";
 
 function humanizeMachineValue(value: string) {
   return value
@@ -79,6 +81,7 @@ export function formatWhatsappTimelineMessage(input: {
   occurredAt: Date;
   title: string;
   note: string;
+  publicNumber?: string | null;
 }) {
   const timestamp = new Intl.DateTimeFormat("id-ID", {
     day: "2-digit",
@@ -92,5 +95,25 @@ export function formatWhatsappTimelineMessage(input: {
     .format(input.occurredAt)
     .replace(/\./g, ":")
     .replace(",", "");
-  return [`[${timestamp}]`, input.title, input.note].join("\n");
+
+  const appUrl = (getWebhookBaseUrl() || "https://rempahkarta.com").replace(/\/+$/, "");
+  const trackingUrl = input.publicNumber ? `${appUrl}/orders/${input.publicNumber}` : null;
+
+  const parts = [
+    `\`[${timestamp}]\``,
+    "",
+    "*UPDATE PESANAN:*",
+    `\`${input.publicNumber || "-"}\``,
+    "",
+    `*${input.title.toUpperCase()}*`,
+    input.note,
+  ];
+
+  if (trackingUrl) {
+    parts.push("", "*LACAK PESANAN:*", trackingUrl);
+  }
+
+  parts.push("", WHATSAPP_AUTOMATED_FOOTER);
+
+  return parts.join("\n");
 }

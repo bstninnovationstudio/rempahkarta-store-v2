@@ -27,10 +27,40 @@ type OtpSession = {
   resendCount: number;
 };
 
+const STORAGE_KEY = "rempahkarta_otp_session_contact";
+
 function comparablePhone(value: string) {
   let digits = value.replace(/\D/g, "");
   if (digits.startsWith("0")) digits = `62${digits.slice(1)}`;
   return digits;
+}
+
+function loadInitialOtpSession(phone: string): OtpSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed
+      && parsed.challengeId
+      && parsed.expiresAt
+      && new Date(parsed.expiresAt).getTime() > Date.now()
+      && comparablePhone(parsed.phone || "") === comparablePhone(phone)
+    ) {
+      return {
+        challengeId: parsed.challengeId,
+        expiresAt: parsed.expiresAt,
+        resendAvailableAt: parsed.resendAvailableAt,
+        resendCount: parsed.resendCount,
+      };
+    } else {
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    sessionStorage.removeItem(STORAGE_KEY);
+  }
+  return null;
 }
 
 export function UserContactSettingsClient({
@@ -46,7 +76,7 @@ export function UserContactSettingsClient({
   const [phone, setPhone] = useState(initialContact.phone);
   const [savedPhone, setSavedPhone] = useState(initialContact.phone);
   const [phoneVerified, setPhoneVerified] = useState(initialPhoneVerified);
-  const [otpSession, setOtpSession] = useState<OtpSession | null>(null);
+  const [otpSession, setOtpSession] = useState<OtpSession | null>(() => loadInitialOtpSession(initialContact.phone));
   const [otpCode, setOtpCode] = useState("");
   const [shipmentNotifications, setShipmentNotifications] = useState(initialShipmentNotifications);
   const [promotionNotifications, setPromotionNotifications] = useState(initialPromotionNotifications);
@@ -57,6 +87,19 @@ export function UserContactSettingsClient({
   const { containerRef, token } = useTurnstile(turnstileSiteKey);
   const needsPhoneVerification = !phoneVerified
     || comparablePhone(phone) !== comparablePhone(savedPhone);
+
+  function updateOtpSession(session: OtpSession | null, targetPhone?: string) {
+    setOtpSession(session);
+    if (typeof window === "undefined") return;
+    if (!session) {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } else {
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ ...session, phone: targetPhone || phone }),
+      );
+    }
+  }
 
   async function requestOtp(resend = false) {
     setBusy(true);
@@ -76,12 +119,12 @@ export function UserContactSettingsClient({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Gagal mengirim kode OTP");
-      setOtpSession({
+      updateOtpSession({
         challengeId: data.challengeId,
         expiresAt: data.expiresAt,
         resendAvailableAt: data.resendAvailableAt,
         resendCount: data.resendCount,
-      });
+      }, phone.trim());
       setOtpCode("");
       setSuccess(data.message || "Kode OTP telah dikirim melalui WhatsApp.");
     } catch (caught: unknown) {
@@ -152,7 +195,7 @@ export function UserContactSettingsClient({
       setSavedPhone(data.user.phone);
       setPhone(data.user.phone);
       setPhoneVerified(Boolean(data.user.phoneVerified));
-      setOtpSession(null);
+      updateOtpSession(null);
       setOtpCode("");
       setSuccess(needsPhoneVerification
         ? "Nomor WhatsApp berhasil diverifikasi dan data kontak disimpan."
@@ -166,156 +209,160 @@ export function UserContactSettingsClient({
   }
 
   return (
-    <section id="contact" className="account-settings-section" aria-labelledby="contact-settings-title">
-      <div className="account-settings-section-head">
-        <span className="account-settings-icon"><Contact size={19} aria-hidden="true" /></span>
-        <div>
-          <div className="account-settings-title-row">
-            <h2 id="contact-settings-title">Kontak utama</h2>
-            <span className={`completion-chip ${isComplete ? "complete" : "incomplete"}`}>
-              {isComplete && <CheckCircle2 size={13} aria-hidden="true" />}
-              {isComplete ? "Lengkap" : "Wajib diisi"}
-            </span>
-          </div>
-          <p>Informasi data diri terkait profil dan pengiriman.</p>
-        </div>
-      </div>
-
-      {error && <div className="form-banner error" role="alert">{error}</div>}
-      {success && <div className="form-banner success" role="status">{success}</div>}
-
-      <form className="account-settings-form" onSubmit={handleSubmit}>
-        <div className="account-settings-fields">
-          <div className="field">
-            <label htmlFor="settings-name">Nama lengkap</label>
-            <input
-              id="settings-name"
-              type="text"
-              required
-              minLength={2}
-              maxLength={160}
-              autoComplete="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Nama sesuai identitas"
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="settings-phone">Nomor WhatsApp / handphone</label>
-            <div className="verified-input-wrap">
-              <input
-                id="settings-phone"
-                type="tel"
-                required
-                inputMode="tel"
-                minLength={8}
-                maxLength={20}
-                pattern="[0-9+() -]{8,20}"
-                autoComplete="tel"
-                value={phone}
-                onChange={(event) => {
-                  setPhone(event.target.value);
-                  setOtpSession(null);
-                  setOtpCode("");
-                }}
-                placeholder="0812 3456 7890"
-              />
-              <span className={`phone-verification-badge ${needsPhoneVerification ? "unverified" : "verified"}`}>
-                {needsPhoneVerification ? "Belum terverifikasi" : <><BadgeCheck size={13} /> Terverifikasi</>}
+    <>
+      <section id="contact" className="account-settings-section" aria-labelledby="contact-settings-title">
+        <div className="account-settings-section-head">
+          <span className="account-settings-icon"><Contact size={19} aria-hidden="true" /></span>
+          <div>
+            <div className="account-settings-title-row">
+              <h2 id="contact-settings-title">Kontak utama</h2>
+              <span className={`completion-chip ${isComplete ? "complete" : "incomplete"}`}>
+                {isComplete && <CheckCircle2 size={13} aria-hidden="true" />}
+                {isComplete ? "Lengkap" : "Wajib diisi"}
               </span>
             </div>
-            <small>Kode keamanan akan dikirim ke nomor ini melalui WhatsApp.</small>
-          </div>
-          <div className="field full">
-            <label htmlFor="settings-email">Alamat email</label>
-            <input id="settings-email" type="email" value={initialContact.email} disabled />
-            <small>Email mengikuti akun Google yang digunakan (tidak dapat di rubah).</small>
+            <p>Informasi data diri terkait profil dan pengiriman.</p>
           </div>
         </div>
-        {otpSession && needsPhoneVerification ? (
-          <>
-            <WhatsappOtpPanel
-              idPrefix="contact"
-              code={otpCode}
-              onCodeChange={setOtpCode}
-              expiresAt={otpSession.expiresAt}
-              resendAvailableAt={otpSession.resendAvailableAt}
-              resendCount={otpSession.resendCount}
-              busy={busy}
-              onResend={() => requestOtp(true)}
-              phoneLabel={phone}
-            />
-            {otpSession.resendCount >= 1 ? (
-              <button
-                type="button"
-                className="otp-restart-button"
-                onClick={() => {
-                  setOtpSession(null);
-                  setOtpCode("");
-                  setSuccess("");
-                }}
-              >
-                Mulai verifikasi baru
-              </button>
-            ) : null}
-          </>
-        ) : null}
-        <div className="account-settings-form-actions">
-          <span>Pastikan nomor aktif dan dapat menerima pesan.</span>
-          <button type="submit" className="button button-dark" disabled={busy}>
-            {needsPhoneVerification && !otpSession
-              ? <Send size={15} aria-hidden="true" />
-              : <Save size={15} aria-hidden="true" />}
-            {busy
-              ? "Memproses…"
-              : needsPhoneVerification && !otpSession
-                ? "Kirim kode OTP"
-                : needsPhoneVerification
-                  ? "Verifikasi & simpan kontak"
-                  : "Simpan kontak"}
-          </button>
-        </div>
-      </form>
-      <div className="whatsapp-consent-settings" aria-label="Persetujuan notifikasi WhatsApp">
-        <div className="whatsapp-consent-row">
-          <div>
-            <strong>Aktifkan notifikasi perjalanan paket melalui WhatsApp</strong>
-            <p>Anda akan menerima update pesanan secara detail melalui nomor WhatsApp yang telah didaftarkan.</p>
+
+        {error && <div className="form-banner error" role="alert">{error}</div>}
+        {success && <div className="form-banner success" role="status">{success}</div>}
+
+        <form className="account-settings-form" onSubmit={handleSubmit}>
+          <div className="account-settings-fields">
+            <div className="field">
+              <label htmlFor="settings-name">Nama lengkap</label>
+              <input
+                id="settings-name"
+                type="text"
+                required
+                minLength={2}
+                maxLength={160}
+                autoComplete="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Nama sesuai identitas"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="settings-phone">Nomor WhatsApp / handphone</label>
+              <div className="verified-input-wrap">
+                <input
+                  id="settings-phone"
+                  type="tel"
+                  required
+                  inputMode="tel"
+                  minLength={8}
+                  maxLength={20}
+                  pattern="[0-9+() -]{8,20}"
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(event) => {
+                    setPhone(event.target.value);
+                    updateOtpSession(null);
+                    setOtpCode("");
+                  }}
+                  placeholder="0812 3456 7890"
+                />
+                <span className={`phone-verification-badge ${needsPhoneVerification ? "unverified" : "verified"}`}>
+                  {needsPhoneVerification ? "Belum terverifikasi" : <><BadgeCheck size={13} /> Terverifikasi</>}
+                </span>
+              </div>
+            </div>
+            <div className="field full">
+              <label htmlFor="settings-email">Alamat email</label>
+              <input id="settings-email" type="email" value={initialContact.email} disabled />
+              <small>Email mengikuti akun Google yang digunakan (tidak dapat diganti).</small>
+            </div>
           </div>
-          <label className="settings-switch">
-            <input
-              type="checkbox"
-              role="switch"
-              checked={shipmentNotifications}
-              disabled={Boolean(preferenceBusy)}
-              onChange={event => updatePreference("shipment", event.target.checked)}
-              aria-label="Aktifkan notifikasi perjalanan paket melalui WhatsApp"
-            />
-            <span aria-hidden="true" />
-          </label>
-        </div>
-        <div className="whatsapp-consent-row">
-          <div>
-            <strong>Aktifkan notifikasi promo, info, dan penawaran terbaik melalui WhatsApp</strong>
-            <p>Anda akan menerima pesan promosi, info, dan penawaran terbaik melalui nomor WhatsApp yang telah didaftarkan.</p>
+          {otpSession && needsPhoneVerification ? (
+            <>
+              <WhatsappOtpPanel
+                idPrefix="contact"
+                code={otpCode}
+                onCodeChange={setOtpCode}
+                expiresAt={otpSession.expiresAt}
+                resendAvailableAt={otpSession.resendAvailableAt}
+                resendCount={otpSession.resendCount}
+                busy={busy}
+                onResend={(isExpired) => requestOtp(!isExpired)}
+                phoneLabel={phone}
+              />
+              {otpSession.resendCount >= 1 ? (
+                <button
+                  type="button"
+                  className="otp-restart-button"
+                  onClick={() => {
+                    updateOtpSession(null);
+                    setOtpCode("");
+                    setSuccess("");
+                  }}
+                >
+                  Mulai verifikasi baru
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          <div className="account-settings-form-actions">
+            <span>Pastikan nomor aktif dan dapat menerima pesan. Kode OTP akan dikirim ke nomor yang dicantumkan melalui WhatsApp.</span>
+            <button type="submit" className="button button-dark" disabled={busy}>
+              {needsPhoneVerification && !otpSession
+                ? <Send size={15} aria-hidden="true" />
+                : <Save size={15} aria-hidden="true" />}
+              {busy
+                ? "Memproses…"
+                : needsPhoneVerification && !otpSession
+                  ? "Kirim kode OTP"
+                  : needsPhoneVerification
+                    ? "Verifikasi & simpan kontak"
+                    : "Simpan kontak"}
+            </button>
           </div>
-          <label className="settings-switch">
-            <input
-              type="checkbox"
-              role="switch"
-              checked={promotionNotifications}
-              disabled={Boolean(preferenceBusy)}
-              onChange={event => updatePreference("promotion", event.target.checked)}
-              aria-label="Aktifkan notifikasi promo dan penawaran melalui WhatsApp"
-            />
-            <span aria-hidden="true" />
-          </label>
+        </form>
+        <div className="turnstile-hidden" ref={containerRef} />
+      </section>
+
+      <section className="account-settings-section">
+        <div className="whatsapp-consent-settings" aria-label="Persetujuan notifikasi WhatsApp">
+          <div className="whatsapp-consent-row">
+            <div>
+              <strong>Aktifkan notifikasi perjalanan paket melalui WhatsApp</strong>
+              <p>Anda akan menerima update pesanan secara detail melalui nomor WhatsApp yang telah didaftarkan.</p>
+            </div>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={shipmentNotifications}
+                disabled={Boolean(preferenceBusy)}
+                onChange={event => updatePreference("shipment", event.target.checked)}
+                aria-label="Aktifkan notifikasi perjalanan paket melalui WhatsApp"
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+          <div className="whatsapp-consent-row">
+            <div>
+              <strong>Aktifkan notifikasi promo, info, dan penawaran terbaik melalui WhatsApp</strong>
+              <p>Anda akan menerima pesan promosi, info, dan penawaran terbaik melalui nomor WhatsApp yang telah didaftarkan.</p>
+            </div>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={promotionNotifications}
+                disabled={Boolean(preferenceBusy)}
+                onChange={event => updatePreference("promotion", event.target.checked)}
+                aria-label="Aktifkan notifikasi promo dan penawaran melalui WhatsApp"
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+          {!phoneVerified ? (
+            <small>Persetujuan dapat disimpan sekarang, tetapi pesan baru dikirim setelah nomor WhatsApp terverifikasi.</small>
+          ) : null}
         </div>
-        {!phoneVerified ? (
-          <small>Persetujuan dapat disimpan sekarang, tetapi pesan baru dikirim setelah nomor WhatsApp terverifikasi.</small>
-        ) : null}
-      </div>
-      <div className="turnstile-hidden" ref={containerRef} />
-    </section>
+      </section>
+    </>
   );
 }

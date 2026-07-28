@@ -1,7 +1,7 @@
 import { getGowaBaseUrl, isProduction } from "@/lib/env";
 
 export const WHATSAPP_AUTOMATED_FOOTER =
-  "[Pesan Otomatis!] - Ini adalah pesan yang dikirimkan otomatis oleh sistem, mohon jangan membalas apapun di Chat Whatsapp ini";
+  "`[Pesan Otomatis!] - Ini adalah pesan yang dikirimkan otomatis oleh sistem, mohon jangan membalas apapun di Chat Whatsapp ini`";
 
 type GowaBody = {
   code?: string;

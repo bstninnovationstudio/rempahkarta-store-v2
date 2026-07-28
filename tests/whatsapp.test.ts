@@ -10,6 +10,7 @@ import {
   canonicalRefundSetting,
   refundSettingBindingHash,
 } from "../lib/refund-setting";
+import { getWebhookBaseUrl } from "../lib/env";
 import {
   formatCustomerShipmentEvent,
   formatWhatsappTimelineMessage,
@@ -130,7 +131,22 @@ test("copy event shipment sama untuk timeline dan pesan WhatsApp", () => {
   });
   const message = formatWhatsappTimelineMessage({
     occurredAt: new Date("2026-07-24T05:05:11.000Z"),
+    publicNumber: "ORD-20260728-004EA278",
     ...formatted,
   });
-  assert.equal(message, "[24 Jul 12:05:11]\nPaket telah diterima\nPaket berhasil diserahkan kepada penerima");
+  const expected = [
+    "`[24 Jul 12:05:11]`",
+    "",
+    "*UPDATE PESANAN:*",
+    "`ORD-20260728-004EA278`",
+    "",
+    "*PAKET TELAH DITERIMA*",
+    "Paket berhasil diserahkan kepada penerima",
+    "",
+    "*LACAK PESANAN:*",
+    `${getWebhookBaseUrl()}/orders/ORD-20260728-004EA278`,
+    "",
+    "`[Pesan Otomatis!] - Ini adalah pesan yang dikirimkan otomatis oleh sistem, mohon jangan membalas apapun di Chat Whatsapp ini`",
+  ].join("\n");
+  assert.equal(message, expected);
 });

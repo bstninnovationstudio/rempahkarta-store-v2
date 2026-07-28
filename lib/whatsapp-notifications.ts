@@ -53,6 +53,7 @@ export async function enqueuePaidNotification(
     occurredAt: input.occurredAt,
     title: "Pembayaran QRIS berhasil",
     note: "Pesanan diteruskan ke tim fulfillment.",
+    publicNumber: order.publicNumber,
   });
   return tx.whatsappMessage.upsert({
     where: { dedupeKey: `payment:${input.paymentId}:paid` },
@@ -106,6 +107,7 @@ export async function enqueueShipmentTrackingNotification(
     occurredAt: event.occurredAt,
     title: formatted.title,
     note: formatted.note,
+    publicNumber: order.publicNumber,
   });
   return tx.whatsappMessage.upsert({
     where: { dedupeKey: `shipment-event:${event.id}` },

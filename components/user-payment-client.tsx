@@ -34,9 +34,42 @@ type OtpSession = {
   resendCount: number;
 };
 
+const STORAGE_KEY = "rempahkarta_otp_session_refund";
+
 function maskedAccountNumber(value: string | null | undefined) {
   if (!value) return "—";
   return value.length <= 4 ? value : `•••• ${value.slice(-4)}`;
+}
+
+function loadInitialOtpSession(payloadKey: string): { session: OtpSession | null; payloadKey: string } {
+  if (typeof window === "undefined") return { session: null, payloadKey: "" };
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return { session: null, payloadKey: "" };
+    const parsed = JSON.parse(raw);
+    if (
+      parsed
+      && parsed.challengeId
+      && parsed.expiresAt
+      && new Date(parsed.expiresAt).getTime() > Date.now()
+      && parsed.payloadKey === payloadKey
+    ) {
+      return {
+        session: {
+          challengeId: parsed.challengeId,
+          expiresAt: parsed.expiresAt,
+          resendAvailableAt: parsed.resendAvailableAt,
+          resendCount: parsed.resendCount,
+        },
+        payloadKey: parsed.payloadKey,
+      };
+    } else {
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    sessionStorage.removeItem(STORAGE_KEY);
+  }
+  return { session: null, payloadKey: "" };
 }
 
 export function UserPaymentClient({
@@ -61,14 +94,6 @@ export function UserPaymentClient({
   const [ewalletOwnerName, setEwalletOwnerName] = useState(initialSetting?.ewalletOwnerName || "");
   const [ewalletNumber, setEwalletNumber] = useState(initialSetting?.ewalletNumber || "");
 
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [otpSession, setOtpSession] = useState<OtpSession | null>(null);
-  const [otpCode, setOtpCode] = useState("");
-  const [otpPayloadKey, setOtpPayloadKey] = useState("");
-  const { containerRef, token } = useTurnstile(turnstileSiteKey);
-
   const payload = type === "bank"
     ? {
         type,
@@ -83,7 +108,30 @@ export function UserPaymentClient({
         ewalletNumber: ewalletNumber.trim(),
       };
   const payloadKey = JSON.stringify(payload);
+
+  const [initialOtpState] = useState(() => loadInitialOtpSession(payloadKey));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [otpSession, setOtpSession] = useState<OtpSession | null>(initialOtpState.session);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpPayloadKey, setOtpPayloadKey] = useState(initialOtpState.payloadKey);
+  const { containerRef, token } = useTurnstile(turnstileSiteKey);
+
   const activeOtpSession = otpSession && otpPayloadKey === payloadKey ? otpSession : null;
+
+  function updateOtpSession(session: OtpSession | null, targetPayloadKey?: string) {
+    setOtpSession(session);
+    if (typeof window === "undefined") return;
+    if (!session) {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } else {
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ ...session, payloadKey: targetPayloadKey || payloadKey }),
+      );
+    }
+  }
 
   async function requestOtp(resend = false) {
     setBusy(true);
@@ -103,12 +151,13 @@ export function UserPaymentClient({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Gagal mengirim kode OTP");
-      setOtpSession({
+      const sessionData = {
         challengeId: data.challengeId,
         expiresAt: data.expiresAt,
         resendAvailableAt: data.resendAvailableAt,
         resendCount: data.resendCount,
-      });
+      };
+      updateOtpSession(sessionData, payloadKey);
       setOtpPayloadKey(payloadKey);
       setOtpCode("");
       setSuccess(data.message || "Kode OTP telah dikirim melalui WhatsApp.");
@@ -154,7 +203,7 @@ export function UserPaymentClient({
       setSetting(data.setting);
       setSuccess("Pengaturan rekening refund berhasil disimpan.");
       setIsEditing(false);
-      setOtpSession(null);
+      updateOtpSession(null);
       setOtpCode("");
       setOtpPayloadKey("");
       router.refresh();
@@ -393,7 +442,7 @@ export function UserPaymentClient({
                 resendAvailableAt={activeOtpSession.resendAvailableAt}
                 resendCount={activeOtpSession.resendCount}
                 busy={busy}
-                onResend={() => requestOtp(true)}
+                onResend={(isExpired) => requestOtp(!isExpired)}
                 phoneLabel={verifiedPhone || "nomor terverifikasi"}
               />
               {activeOtpSession.resendCount >= 1 ? (
@@ -401,7 +450,7 @@ export function UserPaymentClient({
                   type="button"
                   className="otp-restart-button"
                   onClick={() => {
-                    setOtpSession(null);
+                    updateOtpSession(null);
                     setOtpCode("");
                     setOtpPayloadKey("");
                     setSuccess("");
