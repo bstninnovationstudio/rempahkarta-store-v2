@@ -91,12 +91,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const isMobile = useSyncExternalStore(subscribeMobile, getMobileSnapshot, () => false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
+
+  const isResiPage = path?.endsWith("/resi");
   const sidebarExpanded = isMobile ? mobileSidebarOpen : !desktopSidebarCollapsed;
   const allNavigationItems: NavigationItem[] = navigation.flatMap(section => section.items as readonly NavigationItem[]);
   const currentItem = allNavigationItems.find(([href]) => href === "/admin" ? path === href : path.startsWith(href));
   const currentLabel = currentItem?.[1] || "Panel admin";
 
   useEffect(() => {
+    if (isResiPage) return;
     if (!isMobile || !mobileSidebarOpen) return;
 
     const previousOverflow = document.body.style.overflow;
@@ -140,7 +143,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isMobile, mobileSidebarOpen]);
+  }, [isResiPage, isMobile, mobileSidebarOpen]);
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -164,6 +167,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   function closeSidebarOnMobile() {
     if (isMobile) setMobileSidebarOpen(false);
+  }
+
+  if (isResiPage) {
+    return <>{children}</>;
   }
 
   return (

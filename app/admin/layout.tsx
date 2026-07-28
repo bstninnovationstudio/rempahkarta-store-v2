@@ -3,6 +3,7 @@ import { AdminShell } from "@/components/admin-shell";
 import { requireAdmin } from "@/lib/auth";
 
 export const metadata: Metadata = {
+  manifest: "/admin/manifest.webmanifest",
   title: {
     template: "%s | Admin Rempahkarta",
     default: "Admin Panel | Rempahkarta",

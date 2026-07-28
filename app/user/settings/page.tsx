@@ -147,7 +147,7 @@ export default async function UserSettingsPage({
             <strong>Pengaturan akun sudah lengkap</strong>
             <p>Anda dapat membuat pesanan dan menyelesaikan checkout.</p>
           </div>
-          <Link href={requestedRedirect} className="button button-dark">
+          <Link href={requestedRedirect} className="button button-dark button-block">
             {requestedRedirect === "/checkout" ? "Lanjutkan checkout" : "Mulai Belanja"}
             <ArrowRight size={15} aria-hidden="true" />
           </Link>

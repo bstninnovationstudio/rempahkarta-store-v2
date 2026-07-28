@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   description: "Rempah pilihan dan minuman tradisional Yogyakarta dengan mutu, kebersihan, dan kesegaran yang terjaga.",
   alternates: { canonical: "/" },
   icons: { icon: "/main-logo.webp" },
-  manifest: "/manifest.json",
+  manifest: "/manifest.webmanifest",
   keywords: [
     "100% Rempah Asli Nusantara",
     "Rempah Pilihan Nusantara",

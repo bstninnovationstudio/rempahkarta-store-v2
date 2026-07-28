@@ -120,8 +120,8 @@ export default function ShippingLabel({ data }: ShippingLabelProps) {
   const courierLogo = `/shipping-logos/${slugify(data.courierCompany)}.png`;
 
   return (
-    <section ref={containerRef} className={styles.printArea} aria-label="Label pengiriman">
-      <div className={styles.actions}>
+    <section ref={containerRef} id="shipping-label-root" className={styles.printArea} aria-label="Label pengiriman">
+      <div className={`${styles.actions} shipping-label-actions-block`}>
         <button
           type="button"
           className={styles.printButton}
@@ -132,14 +132,14 @@ export default function ShippingLabel({ data }: ShippingLabelProps) {
         </button>
       </div>
 
-      <div className={styles.labelWrapper}>
+      <div className={`${styles.labelWrapper} shipping-label-wrapper-block`}>
         <div
-          className={styles.labelScaleContainer}
+          className={`${styles.labelScaleContainer} shipping-label-scale-block`}
           style={scaledHeight ? { height: `${scaledHeight}px` } : undefined}
         >
           <article
             ref={labelRef}
-            className={styles.label}
+            className={`${styles.label} shipping-label-article-block`}
             style={
               scale < 1
                 ? {

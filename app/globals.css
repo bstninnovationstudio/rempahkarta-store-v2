@@ -712,6 +712,9 @@ input::placeholder,textarea::placeholder { color:#aaa199; }
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
 .saved-address-note { margin-top:8px; font-size:10px; }
 .saved-address-note.muted { color:var(--ink-muted); }
 .saved-address-note a { color:var(--accent); font-weight:700; text-decoration:underline; text-underline-offset:3px; }
@@ -3737,8 +3740,8 @@ body .user-panel-page .type-btn.active { border-color:var(--ink); background:var
   .payment-info-grid { grid-template-columns:1fr 1fr; }
   .refund-field-group { grid-template-columns:1fr; }
   .type-selector { grid-template-columns:1fr; }
-  .account-settings-complete { display:grid; }
-  .account-settings-complete .button { width:100%; }
+  .account-settings-complete { display:flex; flex-direction:column; gap:14px; width:100%; box-sizing:border-box; }
+  .account-settings-complete .button { width:100%; display:flex; justify-content:center; align-items:center; box-sizing:border-box; }
   .orders-list-toolbar>span { display:none; }
   .order-card-main { grid-template-columns:38px minmax(0,1fr); gap:10px; padding:14px; }
   .order-card-icon { width:38px; height:38px; }
@@ -6347,11 +6350,69 @@ button.op-cancel-btn:disabled {
     margin-top: 6px;
     padding: 6px 12px;
   }
-  .whatsapp-otp-input-row { flex-direction: column; align-items: stretch; gap: 8px; }
-  .whatsapp-otp-input-row input { width: 100%; }
-  .whatsapp-otp-timer-badge { justify-content: center; width: 100%; height: auto; }
-  .whatsapp-otp-resend-row { align-items: stretch; flex-direction: column; gap: 10px; }
-  .whatsapp-otp-resend-btn { width: 100%; justify-content: center; }
+  .whatsapp-otp-panel {
+    gap: 14px;
+    padding: 16px;
+    margin-top: 14px;
+  }
+  .whatsapp-otp-heading {
+    gap: 10px;
+  }
+  .whatsapp-otp-icon-wrap {
+    flex: 0 0 34px;
+    height: 34px;
+    border-radius: 8px;
+  }
+  .whatsapp-otp-title {
+    font-size: 13.5px;
+  }
+  .whatsapp-otp-heading p {
+    font-size: 11.5px;
+  }
+  .whatsapp-otp-input-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .whatsapp-otp-input-row input {
+    width: 100%;
+    height: auto;
+    min-height: 46px;
+    font-size: 20px;
+    letter-spacing: 0.32em;
+    border-radius: 8px;
+    box-sizing: border-box;
+    padding: 0 12px;
+  }
+  .whatsapp-otp-timer-badge {
+    justify-content: center;
+    width: 100%;
+    height: auto;
+    min-height: 46px;
+    font-size: 13px;
+    padding: 0 14px;
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+  .whatsapp-otp-resend-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .whatsapp-otp-resend-btn {
+    width: 100%;
+    justify-content: center;
+    height: auto;
+    min-height: 46px;
+    font-size: 13px;
+    padding: 0 14px;
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+  .whatsapp-otp-resend-info {
+    font-size: 11px;
+    margin-top: 2px;
+  }
 }
 
 .whatsapp-consent-settings { display:grid; }

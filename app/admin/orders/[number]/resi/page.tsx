@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import ShippingLabel from "@/components/shipping-label";
-import type { ShippingLabelProps } from "@/components/shipping-label";
+import ShippingLabel, { type ShippingLabelProps } from "@/components/shipping-label";
+
+export async function generateMetadata({ params }: { params: Promise<{ number: string }> }): Promise<Metadata> {
+  const { number } = await params;
+  return {
+    title: `Resi ${number}`,
+  };
+}
 
 export default async function AdminOrderResiPage({ params }: { params: Promise<{ number: string }> }) {
   const { number } = await params;

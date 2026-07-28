@@ -88,8 +88,7 @@ export default async function Home({
               <em>untuk Keluarga!</em>
             </h1>
             <p>
-              Menghadirkan sukacita dan damai sejahtera dalam kehangatan untuk keluarga Anda. Mari
-              temukan bersama REMPAHKARTA.
+              REMPAHKARTA adalah platform toko online resmi wedang uwuh khas Nusantara. Masuk dengan akun Google untuk mengelola profil, menyimpan alamat pengiriman, dan memantau status pesanan secara praktis dan aman.
             </p>
             <Link className="button button-dark" href="#product">
               Jelajahi produk <ArrowRight size={18} />

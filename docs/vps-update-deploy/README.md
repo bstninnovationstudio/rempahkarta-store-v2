@@ -1,6 +1,6 @@
 # Panduan Deployment VPS - REMPAHKARTA Store
 
-Dokumen ini berisi panduan resmi deployment baru (*fresh deployment*) maupun pembaruan (*update deployment*) aplikasi **REMPAHKARTA Store (v1.3.0)** ke VPS HestiaCP.
+Dokumen ini berisi panduan resmi deployment baru (*fresh deployment*) maupun pembaruan (*update deployment*) aplikasi **REMPAHKARTA Store (v1.3.4)** ke VPS HestiaCP.
 
 ---
 
@@ -16,7 +16,7 @@ Sebelum membuat arsip deploy, **WAJIB** memastikan file `.env` diisi dengan para
 > Jangan pernah membuat arsip deployment bila `APP_MODE=development` atau `ENABLE_DEVTOOLS=true`. Selalu pastikan `APP_MODE=production` dan `ENABLE_DEVTOOLS=false` di `.env` sebelum mengemas aplikasi!
 
 ### Versioning
-Setiap deployment wajib menaikkan/memeriksa versi aplikasi di `package.json` pada field `"version"` (saat ini `1.3.0`) sesuai perubahan yang terjadi:
+Setiap deployment wajib menaikkan/memeriksa versi aplikasi di `package.json` pada field `"version"` (saat ini `1.3.4`) sesuai perubahan yang terjadi:
 - Patch kecil/bugfix/cache/UI minor: naikkan patch, contoh `1.3.0` -> `1.3.1`.
 - Perubahan fitur yang terlihat pengguna: naikkan minor, contoh `1.3.0` -> `1.4.0`.
 - Perubahan besar/tidak kompatibel: naikkan major, contoh `1.3.0` -> `2.0.0`.

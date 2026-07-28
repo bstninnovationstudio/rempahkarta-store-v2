@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { AlertCircle, ArrowLeft, CheckCircle2, Download, MapPin, PackageOpen, RotateCcw, Truck } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, MapPin, PackageOpen, RotateCcw, Truck } from "lucide-react";
 import { StatusPill, type StatusKey } from "@/components/status-pill";
 import { StoreHeader } from "@/components/store-header";
 import { OrderCancelButton } from "@/components/order-cancel-button";
@@ -12,6 +12,7 @@ import { rupiah } from "@/lib/format";
 import type { OrderStatus } from "@/lib/types";
 import { customerFromRequest } from "@/lib/customer-auth";
 import { HolidayNoticeBanner } from "@/components/holiday-notice-banner";
+import { InvoiceDownloadButton } from "@/components/invoice-download-button";
 import { formatCustomerShipmentEvent, getCustomerShipmentStatusDetail } from "@/lib/shipment-event";
 import { turnstileSiteKey } from "@/lib/turnstile";
 
@@ -883,9 +884,7 @@ export default async function OrderPage({
             </div>
 
             <div className="order-actions">
-              <a href={`/orders/${number}/invoice?print=1`} className="button button-light">
-                <Download size={15} aria-hidden="true" /> Unduh invoice
-              </a>
+              <InvoiceDownloadButton orderNumber={number} />
               <OrderTrackingButton courier={view.courier} tracking={view.tracking} hasResi={view.hasResi} />
             </div>
           </section>

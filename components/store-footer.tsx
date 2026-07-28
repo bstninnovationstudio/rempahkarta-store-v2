@@ -15,7 +15,7 @@ export function StoreFooter() {
             </div>
           </div>
           <p>
-            Menghadirkan sukacita dan damai sejahtera dalam kehangatan untuk keluarga Anda. Mari temukan bersama REMPAHKARTA.
+            REMPAHKARTA adalah platform toko online resmi wedang uwuh khas Nusantara. Masuk dengan akun Google untuk mengelola profil, menyimpan alamat pengiriman, dan memantau status pesanan secara praktis dan aman.
           </p>
         </div>
         <nav aria-label="Navigasi belanja">

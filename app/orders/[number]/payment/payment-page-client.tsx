@@ -176,10 +176,11 @@ export function PaymentPageClient({
     setError("");
 
     try {
-      const response = await fetch(`/api/orders/${number}/cancel`, {
+      const turnstileToken = await getTurnstileToken("order_cancel");
+      const response = await fetch(`/api/orders/${encodeURIComponent(number)}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "Pembatalan oleh pelanggan" }),
+        body: JSON.stringify({ reason: "Pembatalan oleh pelanggan", turnstileToken }),
       });
 
       const text = await response.text();
